@@ -1,0 +1,12 @@
+{
+  "name": "lm-editor",
+  "version": "0.1.0",
+  "description": "Dokument-Editor für Arbeitsblätter mit eingebetteten Lernmodulen und Stift-Ebene (.zlm)",
+  "author": "Martin Metzler",
+  "license": "AGPL-3.0-or-later",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  }
+}

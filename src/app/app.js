@@ -1,7 +1,7 @@
 // ==================== LM-EDITOR (STANDALONE) ====================
 //
-// Startseite: .zlm öffnen, Beispiel oder neues Karoblatt, zuletzt geöffnete
-// Entwürfe. Ein Dokument öffnet im Stift-Editor auf dem Hintergrund
+// Startseite: .zlm öffnen (oder .odt/.pdf übernehmen), Beispiel oder neues
+// Karoblatt, zuletzt geöffnete Entwürfe. Ein Dokument öffnet im Stift-Editor auf dem Hintergrund
 // „Dokument“; jede Änderung landet als Entwurf in diesem Browser (IndexedDB),
 // „💾 Speichern“ schreibt die .zlm-Datei.
 
@@ -9,6 +9,7 @@ import { createZlm, readZlm, writeZlm, editorStateOf, layerOf, ZlmError } from '
 import { ensureBlockIds } from '../doc/ids.js';
 import { openInkEditor } from '../ink/ink-editor.js';
 import { H5pRenderer } from '../modules/h5p-renderer.js';
+import { sniff, importOdt, importPdfPages } from '../import/import.js';
 
 const GENERATOR = 'lm-editor 0.1.0';
 const $ = (sel) => document.querySelector(sel);
@@ -52,13 +53,16 @@ async function saveDraft(session) {
 // ---------- Dateien ----------
 
 const ZLM_TYPES = [{ description: 'lm-editor-Dokument', accept: { 'application/zip': ['.zlm'] } }];
+const OPEN_TYPES = [
+  { description: 'lm-editor, Writer, PDF', accept: { 'application/zip': ['.zlm'], 'application/vnd.oasis.opendocument.text': ['.odt', '.ott'], 'application/pdf': ['.pdf'] } },
+];
 const fileNameOf = (title) => `${String(title || 'Dokument').replace(/[\\/:*?"<>|]+/g, '-').trim() || 'Dokument'}.zlm`;
 
 /** Datei wählen – mit File System Access (Chrome/Edge) behält man den Ort zum Speichern. */
 async function pickFile() {
   if (window.showOpenFilePicker) {
     try {
-      const [handle] = await window.showOpenFilePicker({ types: ZLM_TYPES });
+      const [handle] = await window.showOpenFilePicker({ types: OPEN_TYPES });
       const file = await handle.getFile();
       return { bytes: new Uint8Array(await file.arrayBuffer()), name: file.name, handle };
     } catch (err) {
@@ -69,7 +73,7 @@ async function pickFile() {
   return new Promise((resolve) => {
     const input = document.createElement('input');
     input.type = 'file';
-    input.accept = '.zlm,application/zip';
+    input.accept = '.zlm,.odt,.ott,.pdf,application/zip,application/vnd.oasis.opendocument.text,application/pdf';
     input.onchange = async () => {
       const file = input.files[0];
       resolve(file ? { bytes: new Uint8Array(await file.arrayBuffer()), name: file.name, handle: null } : null);
@@ -115,6 +119,20 @@ function toast(text, error = false) {
   el.textContent = text;
   document.body.appendChild(el);
   setTimeout(() => el.remove(), 3500);
+  return el;
+}
+
+/** Hinweise nach dem Übernehmen – bleiben stehen, bis man sie wegklickt. */
+function notice(title, lines) {
+  if (!lines.length) return;
+  document.querySelector('.app-notice')?.remove();
+  const el = document.createElement('div');
+  el.className = 'app-notice';
+  el.setAttribute('role', 'status');
+  el.innerHTML = `<strong>${esc(title)}</strong><ul>${lines.map((l) => `<li>${esc(l)}</li>`).join('')}</ul>
+    <button type="button" class="btn btn-secondary btn-sm">Verstanden</button>`;
+  el.querySelector('button').addEventListener('click', () => el.remove());
+  document.body.appendChild(el);
 }
 
 // ---------- Dokument öffnen ----------
@@ -172,8 +190,26 @@ async function openSession(doc, { fileName = null, handle = null } = {}) {
   await saveDraft(session);
 }
 
-async function openBytes(bytes, opts) {
-  try { await openSession(readZlm(bytes), opts); } catch (err) {
+/**
+ * Datei öffnen: .zlm direkt, .odt und .pdf als neues Dokument. Übernommenes
+ * wird als neue .zlm gespeichert – nie über das Original.
+ */
+async function openBytes(bytes, { fileName = '', handle = null } = {}) {
+  const kind = sniff(bytes) || (/\.zlm$/i.test(fileName) ? 'zlm' : null);
+  try {
+    if (kind === 'zlm') { await openSession(readZlm(bytes), { fileName, handle }); return; }
+    let result;
+    if (kind === 'odt') result = importOdt(bytes, fileName);
+    else if (kind === 'pdf') {
+      const busy = toast('PDF wird übernommen …');
+      try {
+        result = await importPdfPages(bytes, fileName, { onProgress: (i, n) => { busy.textContent = `PDF wird übernommen: Seite ${i} von ${n} …`; } });
+      } finally { busy.remove(); }
+    } else throw new Error('Diese Datei kenne ich nicht – geöffnet werden .zlm, .odt und .pdf.');
+    const name = `${(fileName.replace(/^.*[\\/]/, '').replace(/\.[^.]+$/, '') || result.doc.manifest.title)}.zlm`;
+    await openSession(result.doc, { fileName: name });
+    notice(`Übernommen aus ${fileName || 'der Datei'}`, result.warnings);
+  } catch (err) {
     showStart();
     toast(err instanceof ZlmError ? `⚠️ ${err.message}` : `⚠️ Öffnen nicht möglich: ${err.message}`, true);
   }
@@ -216,7 +252,8 @@ $('#recent').addEventListener('click', async (e) => {
 });
 $('#btnOpen').addEventListener('click', async () => {
   const f = await pickFile();
-  if (f) await openBytes(f.bytes, { fileName: f.name, handle: f.handle });
+  // Den Ort zum Speichern merken – nur bei einer .zlm, nie bei .odt oder .pdf.
+  if (f) await openBytes(f.bytes, { fileName: f.name, handle: sniff(f.bytes) === 'zlm' ? f.handle : null });
 });
 $('#btnExample').addEventListener('click', () => openExample());
 $('#btnKaro').addEventListener('click', () => newKaroSheet());

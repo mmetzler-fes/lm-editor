@@ -71,6 +71,8 @@ nie, sie ist nur das Datenmodell darunter.
 - [x] Stift-Editor: Optionen `store`, `actions`, `onClose`; Ebene in der Datei mit dem Stand des Editors (`editor`)
 - [ ] Bearbeiten: Dokument-Editor aus LearningModules (`docspec-editor.js`, YAML-Ansicht) übernehmen
 - [ ] Bilder aus `media/` einfügen (bisher nur anzeigen)
+- [x] Übernehmen ohne Server: `.odt` (Leser aus LearningModules nach `src/import/odt.js` übertragen, gleiche Ergebnisse geprüft; `docspec-html.js` liegt jetzt hier) und `.pdf` als Bilder der Seiten (pdf.js, weißer Rand abgeschnitten); Bilder nach `media/`; Hinweise, was nicht mitkam; gespeichert wird als neue `.zlm`
+- [ ] LearningModules liest `.odt` ebenfalls mit `src/import/odt.js` im Browser (der Server wandelt nur noch .docx um) – dann entfällt `odt.ts`
 - [ ] offline über Service Worker, „Zum Home-Bildschirm“ (iPad)
 - [ ] Browser-Druck mit Druck-CSS als Rückfall ohne Renderer
 
@@ -83,6 +85,7 @@ nie, sie ist nur das Datenmodell darunter.
 - [ ] `.zlm` → Renderer-Auftrag (Spec, Bilder, Stift-Ebene als SVG)
 - [ ] eingebettete Quizze: Druckfassung je Typ (Multiple Choice, Lückentext, Zuordnen, Wahr/Falsch …), sonst Bild der Vorschau – statt QR-Code
 - [ ] Renderer über LearningModules-Konto (Anmelden aus dem Editor, Weiterleitung durch den App-Server, Grenzen je Konto)
+- [ ] Übernehmen mit Renderer: `.pdf` mit Text und Struktur (pdf_import.py, wahlweise KI-Erkennung) und `.docx` (LibreOffice) – dieselbe Auswahl wie in LearningModules
 - [ ] Zwischenspeicher: gleicher Auftrag wird nicht zweimal gerendert
 
 ### 6 Lernmodule im Editor

@@ -25,3 +25,10 @@ body.app-drop .app-start { outline: 3px dashed var(--accent); outline-offset: -1
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25); font-size: 0.95rem;
 }
 .app-toast-error { background: #b91c1c; }
+.app-notice {
+  position: fixed; right: 16px; bottom: 16px; z-index: 3000; max-width: min(440px, calc(100vw - 32px));
+  padding: 14px 16px; border-radius: 12px; background: var(--bg-secondary); color: var(--text-primary);
+  border: 1px solid var(--border); box-shadow: 0 10px 30px rgba(15, 23, 42, 0.2); font-size: 0.92rem;
+}
+.app-notice ul { margin: 8px 0 12px; padding-left: 18px; }
+.app-notice li { margin: 4px 0; }

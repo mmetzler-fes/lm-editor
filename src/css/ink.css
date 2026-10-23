@@ -124,3 +124,5 @@ body.ink-open { overflow: hidden; }
 }
 .ink-karo-handle span { width: 36px; height: 6px; border-radius: 3px; background: #3b82f6; opacity: 0.75; box-shadow: 0 0 0 2px #fff; }
 .ink-tool-interact .ink-karo-handle { display: none; }
+.ink-action { color: var(--accent); white-space: nowrap; flex: 0 0 auto; margin-right: 4px; }
+.ink-title { flex: 0 1 auto; min-width: 6ch; }

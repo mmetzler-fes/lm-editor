@@ -21,6 +21,7 @@ schon an den ersten Bytes.
 {
   "format": "zlm",
   "version": 1,
+  "id": "k3f9a2x1m8q4w7e2",
   "title": "Ohmsches Gesetz",
   "kind": "worksheet",
   "lang": "de",
@@ -31,6 +32,8 @@ schon an den ersten Bytes.
 ```
 
 `kind`: `worksheet` (Arbeitsblatt), `exam` (Klassenarbeit) oder `text`.
+`id`: erkennt das Dokument wieder (z. B. seinen Entwurf im Browser); fehlt
+sie, vergibt das Programm beim Öffnen eine.
 
 Eine Datei mit höherer `version`, als das Programm kennt, wird abgelehnt –
 mit dem Hinweis, das Programm zu aktualisieren.
@@ -89,6 +92,10 @@ Eine Ebene mit Handschrift und Textfeldern, nach Bausteinen geordnet:
 - `karoLines`: In dieser Ebene ist das Karo länger als im Dokument (nur größer,
   nie kleiner). So kann ein Schüler sein Karo verlängern, ohne das Dokument der
   Lehrkraft zu ändern.
+- `editor` (optional): Stand des Stift-Editors – Hintergrund (`bg`: `paper`
+  = das Dokument, sonst `karo`, `linien`, `leer`, `file`), Geodreieck
+  (`ruler`) und die Seiten der übrigen Hintergründe (`pages`, Koordinaten der
+  Seite).
 - `role`: `teacher` oder `student`. In LearningModules liegt jede
   Schüler-Abgabe als eigene Ebene vor; in einer Datei zum Weitergeben steht in
   der Regel nur die Ebene der Lehrkraft.

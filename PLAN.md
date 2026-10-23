@@ -63,10 +63,14 @@ nie, sie ist nur das Datenmodell darunter.
 - [ ] Seitenumbrüche im Blatt anzeigen (wo der Druck umbricht)
 
 ### 3 Standalone-Webapp
-- [ ] Styles der Modul-Anzeige aus `styles.css` von LearningModules herauslösen (`src/css/`). Damit die Kaskade gleich bleibt, ganze Abschnitte in ihrer Reihenfolge; vorher/nachher per berechneter Styles vergleichen
-- [ ] Startseite: neues Dokument, `.zlm` öffnen, zuletzt geöffnet (IndexedDB)
+- [x] Styles der Anzeige: `src/css/modules.css`, erzeugt aus `styles.css` von LearningModules (`npm run css`, Regeln in ihrer Reihenfolge); die App behält vorerst ihre `styles.css`
+- [ ] Umdrehen: LearningModules bindet `modules.css` ein und streicht die Regeln aus `styles.css` (vorher/nachher per berechneter Styles vergleichen)
+- [x] Startseite (`index.html`, `src/app/`): `.zlm` öffnen (auch per Ziehen), Beispiel, neues Karoblatt, zuletzt geöffnet (Entwürfe in IndexedDB)
+- [x] Server ohne Abhängigkeiten: `npm start` → Port 5180, `--lan` fürs iPad
+- [x] Speichern: File System Access (Chrome/Edge, gleiche Datei), sonst Download; jede Änderung als Entwurf im Browser
+- [x] Stift-Editor: Optionen `store`, `actions`, `onClose`; Ebene in der Datei mit dem Stand des Editors (`editor`)
 - [ ] Bearbeiten: Dokument-Editor aus LearningModules (`docspec-editor.js`, YAML-Ansicht) übernehmen
-- [ ] Speichern: File System Access (Chrome/Edge), sonst Download; automatisches Zwischenspeichern
+- [ ] Bilder aus `media/` einfügen (bisher nur anzeigen)
 - [ ] offline über Service Worker, „Zum Home-Bildschirm“ (iPad)
 - [ ] Browser-Druck mit Druck-CSS als Rückfall ohne Renderer
 

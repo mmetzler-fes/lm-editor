@@ -27,3 +27,5 @@
 .lm-paper .docspec { line-height: 1.15; overflow-wrap: break-word; }
 .lm-paper code, .lm-paper pre, .lm-paper kbd { font-family: 'LM Mono', 'Liberation Mono', 'Courier New', monospace; }
 .lm-paper .ds-karo { position: relative; }
+/* Auf dem festen Blatt kein Bildlauf in Formeln (overflow-x: auto erzwänge bei 1,15 Zeilenhöhe eine senkrechte Leiste). */
+.lm-paper .docspec .ds-formula { overflow: visible; }

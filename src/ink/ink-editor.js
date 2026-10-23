@@ -131,10 +131,14 @@ const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<
  * - `paper`: das Dokument als Hintergrund –
  *   { mount(el, { solutions }), landscape?, karoResize? (Vorgabe: ja) }.
  *   `mount` schreibt das Dokument mit Block-Hüllen (data-bid) in `el`.
+ * - `store`: woanders speichern als auf diesem Gerät – { load() → Stand | null,
+ *   save(stand) → true/false, label }; der Stand ist { v, bg, pages, layer, ruler }.
+ * - `actions`: weitere Knöpfe in der Leiste – [{ label, title, onClick }].
+ * - `onClose`: nach dem Schließen (der Stand ist dann gespeichert).
  */
-export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = null, solutions = false, paper = null }) {
+export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = null, solutions = false, paper = null, store = null, actions = [], onClose = null }) {
   const storeKey = `ink:${key}`;
-  const saved = await dbGet(storeKey);
+  const saved = store ? await store.load() : await dbGet(storeKey);
   const doc = saved?.v === 1 ? saved : { v: 1, bg: paper ? 'paper' : loadPdf ? 'pdf' : 'karo', pages: [{ items: [] }] };
   if (!loadPdf && doc.bg === 'pdf') doc.bg = paper ? 'paper' : 'karo';
   if (!paper && doc.bg === 'paper') doc.bg = loadPdf ? 'pdf' : 'karo';
@@ -168,8 +172,9 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
   // Oben die Werkzeuge (wie in GoodNotes), darunter schwebend die Einstellungen des gewählten Werkzeugs.
   overlay.innerHTML = `
     <div class="ink-toolbar" role="toolbar">
-      ${btn('ink-close', 'close', 'Schließen – die Beschriftung bleibt auf diesem Gerät gespeichert')}
+      ${btn('ink-close', 'close', store ? 'Schließen' : 'Schließen – die Beschriftung bleibt auf diesem Gerät gespeichert')}
       <span class="ink-title">${esc(title)}</span>
+      ${actions.map((a, i) => `<button type="button" class="ink-btn ink-labeled ink-action" data-action="${i}" title="${esc(a.title || a.label)}">${esc(a.label)}</button>`).join('')}
       <span class="ink-group ink-tools">
         ${paper ? tool('interact', 'pointer', 'Bedienen: Quizze im Blatt ausfüllen – der Finger bedient immer, solange „Mit dem Finger zeichnen“ aus ist') : ''}
         ${tool('select', 'select', 'Auswählen: Strich antippen oder Rechteck aufziehen')}
@@ -411,7 +416,9 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     if (!paperNow) sheetPages = doc.pages;
     else layer = toLayer();
     const record = { ...doc, pages: sheetPages, layer };
-    status((await dbPut(storeKey, record)) ? '💾 Auf diesem Gerät gespeichert' : '⚠️ Speichern auf diesem Gerät nicht möglich');
+    const ok = store ? await store.save(record) : await dbPut(storeKey, record);
+    const where = store?.label || 'auf diesem Gerät';
+    status(ok ? `💾 ${where[0].toUpperCase()}${where.slice(1)} gespeichert` : `⚠️ Speichern ${where} nicht möglich`);
   }
 
   // ---------- Seiten ----------
@@ -1242,9 +1249,14 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     for (const v of Object.values(pdfs)) Promise.resolve(v).then((d) => d?.destroy?.()).catch(() => {});
     overlay.remove();
     document.body.classList.remove('ink-open');
+    onClose?.();
   }
 
+  overlay.querySelectorAll('.ink-action').forEach((b) => b.addEventListener('click', async () => {
+    await persist();
+    await actions[Number(b.dataset.action)].onClick();
+  }));
   paintToolbar();
   await layout();
-  return { close };
+  return { close, persist };
 }

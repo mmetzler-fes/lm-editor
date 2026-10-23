@@ -74,3 +74,23 @@ test('unzulässige Namen beim Schreiben', () => {
   doc.modules['../x'] = {};
   assert.throws(() => writeZlm(doc), ZlmError);
 });
+
+test('Stand des Stift-Editors ↔ Ebene der Datei', async () => {
+  const { editorStateOf, layerOf } = await import('../src/zlm/zlm.js');
+  assert.equal(editorStateOf(undefined), null);
+  const state = { v: 1, bg: 'paper', ruler: { visible: false }, pages: [{ items: [] }], layer: { blocks: { b7k2m9qa: { items: [], karoLines: 10, at: 120 } } } };
+  const layer = layerOf(state);
+  assert.equal(layer.role, 'teacher');
+  assert.deepEqual(layer.blocks, state.layer.blocks);
+  assert.deepEqual(editorStateOf(layer), state);
+  const doc = sample();
+  doc.layers.teacher = layer;
+  assert.deepEqual(readZlm(writeZlm(doc, { now })).layers.teacher, layer);
+});
+
+test('Dokument-ID: neu vergeben, fehlende beim Lesen ergänzt', () => {
+  const doc = createZlm({ now });
+  assert.match(doc.manifest.id, /^[a-z0-9]{16}$/);
+  delete doc.manifest.id;
+  assert.match(readZlm(writeZlm(doc, { now })).manifest.id, /^[a-z0-9]{16}$/);
+});

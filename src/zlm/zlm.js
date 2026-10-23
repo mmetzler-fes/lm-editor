@@ -9,6 +9,7 @@
 //     layers: { id: ebene }, preview: Uint8Array | null }
 
 import { zipSync, unzipSync, strToU8, strFromU8 } from '../vendor/fflate/fflate.js';
+import { newBlockId } from '../doc/ids.js';
 
 export const ZLM_MIME = 'application/vnd.lm-editor.zlm+zip';
 export const FORMAT_VERSION = 1;
@@ -31,7 +32,7 @@ export class ZlmError extends Error {
 export function createZlm({ title = 'Neues Dokument', kind = 'worksheet', lang = 'de', now = new Date() } = {}) {
   const stamp = now.toISOString();
   return {
-    manifest: { format: 'zlm', version: FORMAT_VERSION, title, kind, lang, created: stamp, modified: stamp },
+    manifest: { format: 'zlm', version: FORMAT_VERSION, id: newBlockId() + newBlockId(), title, kind, lang, created: stamp, modified: stamp },
     spec: { titel: title, content: [] },
     modules: {},
     media: {},
@@ -96,6 +97,8 @@ export function readZlm(bytes) {
     throw new ZlmError(`Die Datei hat Formatversion ${manifest.version}, dieses Programm kennt nur bis ${FORMAT_VERSION}. Bitte das Programm aktualisieren.`);
   }
   if (!KINDS.includes(manifest.kind)) manifest.kind = 'worksheet';
+  // Ältere oder fremde Dateien ohne ID: eine neue (zum Wiedererkennen des Entwurfs).
+  if (typeof manifest.id !== 'string' || !/^[a-z0-9]{8,64}$/.test(manifest.id)) manifest.id = newBlockId() + newBlockId();
   const document = parse('document.json');
   if (!document || typeof document.spec !== 'object' || document.spec === null || Array.isArray(document.spec)) {
     throw new ZlmError('document.json fehlt oder enthält kein Dokument.');
@@ -114,6 +117,25 @@ export function readZlm(bytes) {
     else if (dir === 'media') doc.media[name] = entries[path];
   }
   return doc;
+}
+
+// ---------- Stift-Ebene ↔ Stand des Stift-Editors ----------
+//
+// In der Datei liegt die Ebene je Baustein (layers/<id>.json); der Editor
+// arbeitet mit seinem Stand { v, bg, pages, layer, ruler }. Hintergrund,
+// Geodreieck und die Seiten der übrigen Hintergründe (Karo, …) stehen in
+// der Ebene unter `editor`.
+
+/** Ebene aus der Datei → Stand für openInkEditor (null: noch nichts geschrieben). */
+export function editorStateOf(layer) {
+  if (!layer) return null;
+  const e = layer.editor || {};
+  return { v: 1, bg: e.bg || 'paper', ruler: e.ruler, pages: e.pages || [{ items: [] }], layer: { blocks: layer.blocks || {} } };
+}
+
+/** Stand des Editors → Ebene für die Datei. */
+export function layerOf(state, { id = 'teacher', role = 'teacher' } = {}) {
+  return { id, role, blocks: state.layer?.blocks || {}, editor: { bg: state.bg, ruler: state.ruler, pages: state.pages } };
 }
 
 function checkName(name, what) {

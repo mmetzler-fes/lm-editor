@@ -1,0 +1,45 @@
+{
+  "title": "Ohmsches Gesetz",
+  "kind": "worksheet",
+  "spec": {
+    "titel": "Ohmsches Gesetz",
+    "content": [
+      { "id": "s1ohm000", "type": "section", "text": "Spannung, Strom und Widerstand" },
+      { "id": "t1merke0", "type": "box", "title": "Merke", "shaded": true, "blocks": [
+        { "id": "t1formel", "type": "formula", "math": "R = U over I" },
+        { "id": "t1text00", "type": "text", "text": "Der Widerstand R ist das Verhältnis von Spannung U zu Stromstärke I." }
+      ] },
+      { "id": "a1aufg00", "type": "task", "title": "Strom berechnen", "text": "An einem Widerstand R = 10 Ω liegt die Spannung U = 5 V. Berechne die Stromstärke I.", "blocks": [
+        { "id": "a1karo00", "type": "karo", "lines": 6 },
+        { "id": "a1loes00", "type": "solution", "blocks": [{ "id": "a1loest0", "type": "text", "text": "I = U / R = 5 V / 10 Ω = 0,5 A" }] }
+      ] },
+      { "id": "a2aufg00", "type": "task", "title": "Kennlinie", "text": "Zeichne die Kennlinie I(U) für R = 10 Ω von 0 V bis 10 V. Nimm das Geodreieck für die Achsen.", "blocks": [
+        { "id": "a2karo00", "type": "karo", "lines": 12 }
+      ] },
+      { "id": "a3quiz00", "type": "quiz", "module": "quizmc01", "title": "Kurzquiz" },
+      { "id": "a4quiz00", "type": "quiz", "module": "quiztf01", "title": "Richtig oder falsch?" }
+    ]
+  },
+  "modules": {
+    "quizmc01": {
+      "id": "quizmc01", "type": "multipleChoice", "title": "Kurzquiz Ohm",
+      "content": {
+        "question": "Die Spannung an einem Widerstand wird verdoppelt. Was passiert mit der Stromstärke?",
+        "answers": [
+          { "text": "Sie verdoppelt sich.", "correct": true, "tip": "I = U / R: Bei gleichem R wächst I im selben Verhältnis wie U." },
+          { "text": "Sie halbiert sich.", "correct": false, "tip": "Das gälte, wenn sich der Widerstand verdoppelte." },
+          { "text": "Sie bleibt gleich.", "correct": false, "tip": "Der Strom hängt von der Spannung ab." }
+        ]
+      }
+    },
+    "quiztf01": {
+      "id": "quiztf01", "type": "trueFalse", "title": "Richtig oder falsch?",
+      "content": {
+        "questions": [
+          { "question": "1 Ω = 1 V / 1 A.", "correctAnswer": "true", "feedbackCorrect": "Richtig!", "feedbackWrong": "Leider falsch." },
+          { "question": "Je größer der Widerstand, desto größer der Strom bei gleicher Spannung.", "correctAnswer": "false", "feedbackCorrect": "Richtig!", "feedbackWrong": "Leider falsch." }
+        ]
+      }
+    }
+  }
+}

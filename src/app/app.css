@@ -1,0 +1,27 @@
+/* ===== Startseite (src/app/app.js) ===== */
+.app-start { max-width: 720px; margin: 0 auto; padding: 48px 20px; }
+.app-start[hidden] { display: none; }
+.app-start h1 { font-size: 2rem; margin: 0 0 6px; }
+.app-start header p { color: var(--text-secondary); margin: 0 0 28px; }
+.app-start h2 { font-size: 1.05rem; margin: 32px 0 10px; }
+.app-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.app-recent { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.app-recent li { display: flex; gap: 6px; }
+.app-recent-open {
+  flex: 1; display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
+  padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius-md, 10px);
+  background: var(--bg-secondary); color: var(--text-primary); cursor: pointer; text-align: left; font: inherit;
+}
+.app-recent-open:hover { border-color: var(--accent); }
+.app-recent-open span { font-size: 0.85em; color: var(--text-secondary); }
+.app-recent-del { border: none; background: transparent; color: var(--text-secondary); cursor: pointer; padding: 0 10px; font-size: 1rem; }
+.app-recent-del:hover { color: #dc2626; }
+.app-empty, .app-hint { color: var(--text-secondary); font-size: 0.9em; }
+.app-hint { margin-top: 18px; }
+body.app-drop .app-start { outline: 3px dashed var(--accent); outline-offset: -12px; }
+.app-toast {
+  position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 3000;
+  padding: 10px 18px; border-radius: 999px; background: #1e293b; color: #fff;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25); font-size: 0.95rem;
+}
+.app-toast-error { background: #b91c1c; }

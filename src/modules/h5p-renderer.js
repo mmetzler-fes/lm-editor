@@ -1535,7 +1535,8 @@ export class H5pRenderer {
 
       case 'document': {
         const spec = content.spec && typeof content.spec === 'object' ? content.spec : { content: [] };
-        div.innerHTML = renderDocSpecHtml(spec);
+        // blockIds: Hüllen mit der ID jedes Bausteins (für die Stift-Ebene).
+        div.innerHTML = renderDocSpecHtml(spec, { blockIds: !!options.blockIds });
         // Eingebettete Quizze: im Durchlauf liefert options.embedModule das Modul
         // (views/quiz.js). Jedes läuft in einem eigenen <form> – so stören sich
         // gleichnamige Optionsfelder zweier Quizze nicht.

@@ -47,17 +47,20 @@ nie, sie ist nur das Datenmodell darunter.
 - [x] Gastgeber-Schnittstelle für die Anzeige ([docs/HOST.md](docs/HOST.md)): Weiter-Knopf, Knöpfe am Dokument, Abgabe von Aufnahmen
 - [x] Einbindung in LearningModules: git submodule unter `src/renderer/lm-editor`, Docker-Build holt ihn mit; `js/lm-host.js` ist der Gastgeber
 - [ ] Gastgeber-Schnittstelle erweitern: Speichern/Laden, Medien, Module, Renderer, Rechte (Lehrkraft/Schüler)
-- [ ] Block-IDs auch in LearningModules: beim Speichern vergeben; prüfen, dass der worksheet-renderer das Feld `id` übergeht
+- [x] Stift-Editor (`src/ink/ink-editor.js`), pdf.js und seine Styles (`src/css/ink.css`) übernommen
+- [x] geprüft: der worksheet-renderer übergeht `id` und `orientation` (.odt bis auf Bildnamen gleich)
+- [ ] Block-IDs auch in LearningModules beim Speichern vergeben – der Dokument-Editor muss sie dafür durch seine HTML-Ansicht tragen; bis dahin gilt der Pfad (`p:2.0`)
 
 ### 2 Stift auf der HTML-Ansicht
-- [ ] Ansicht mit fester Satzbreite, Verkleinern statt Umbruch, eingebettete Schriften (gleiche Zeilenumbrüche auf allen Geräten)
-- [ ] A4 hoch/quer umstellbar (`spec.orientation`); beim Umstellen behalten Striche auf Karos ihre Lage, auf Text nur ungefähr
+- [x] Hintergrund „Dokument“: A4-Blatt mit Satzspiegel der Schulvorlage (`src/css/paper.css`), feste Breite, Verkleinern statt Umbruch, Liberation-Schriften mitgeliefert (`src/fonts/`, OFL)
+- [x] Stift-Ebene je Baustein: alle Werkzeuge des bisherigen Editors; ein Strich gehört zum Baustein, in dem er beginnt; Lage wird neu gemessen, wenn sich das Blatt ändert (ResizeObserver)
+- [x] Karos ziehbar (Anfasser unten, 0,5-cm-Schritte, nie kürzer als im Dokument); die Länge liegt in der Ebene, nicht im Dokument; Rückgängig inklusive
+- [x] Werkzeug „Bedienen“; der Finger bedient, solange er nicht zeichnet – eingebettete Quizze bleiben benutzbar
+- [x] in LearningModules: Notizbuch-Vorschau und Schüleransicht öffnen das Dokument; PDF bleibt als Hintergrund wählbar
+- [x] A4 quer in der Ansicht (`spec.orientation: landscape`)
+- [ ] A4 hoch/quer im Dokument-Editor umschalten
 - [ ] worksheet-renderer: Querformat (Seitenvorlage quer, Kopfzeile breiter)
-- [ ] Stift-Ebene je Baustein (Werkzeuge aus dem bisherigen Stift-Editor: Stift, Textmarker, Radierer, Auswahl, Textfelder, gerade Linie, Geodreieck)
-- [ ] Striche über Bausteingrenzen (gehören zum Baustein, in dem sie beginnen)
-- [ ] Karos ziehbar (Anfasser unten); Schüler-Verlängerung liegt in ihrer Ebene, nicht im Dokument
-- [ ] Schalter „Finger bedient / Stift schreibt“, damit eingebettete Quizze bedienbar bleiben
-- [ ] in LearningModules: Notizbuch-Vorschau und Schüleransicht nutzen die neue Ebene; der PDF-Weg bleibt, bis alles läuft
+- [ ] Seitenumbrüche im Blatt anzeigen (wo der Druck umbricht)
 
 ### 3 Standalone-Webapp
 - [ ] Styles der Modul-Anzeige aus `styles.css` von LearningModules herauslösen (`src/css/`). Damit die Kaskade gleich bleibt, ganze Abschnitte in ihrer Reihenfolge; vorher/nachher per berechneter Styles vergleichen

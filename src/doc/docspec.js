@@ -533,28 +533,46 @@ export function starmathToMathml(src) {
  */
 export function renderDocSpecHtml(spec, options = {}) {
   spec = resolveDocRefs(spec, options.refs || null);
-  const ctx = { counters: [0, 0, 0], options };
+  const ctx = { counters: [0, 0, 0], options, path: [] };
   const body = Array.isArray(spec?.content) ? renderBlocksHtml(spec.content, ctx) : '';
   return `<div class="docspec${options.showSolutions ? '' : ' ds-hide-solutions'}">${body}</div>`;
 }
 
-function renderBlocksHtml(blocks, ctx) {
+// `first`: Index des ersten Bausteins in der übergeordneten Liste (für den Pfad).
+function renderBlocksHtml(blocks, ctx, first = 0) {
   const list = blocks || [];
   let html = '';
   for (let i = 0; i < list.length; i++) {
     const b = list[i];
     // Bild mit float: left/right und die folgenden Texte stehen nebeneinander (wie im Druck).
     if (b && typeof b === 'object' && b.type === 'image' && (b.float === 'left' || b.float === 'right')) {
+      const start = i;
       const texts = [];
       while (i + 1 < list.length && (isText(list[i + 1]) || (list[i + 1] && ['text', 'list', 'note'].includes(list[i + 1].type || 'text')))) texts.push(list[++i]);
       if (texts.length) {
-        html += `<div class="ds-float ds-float-${b.float}">${renderBlockHtml({ ...b, float: undefined }, ctx)}<div class="ds-float-text">${renderBlocksHtml(texts, ctx)}</div></div>`;
+        html += `<div class="ds-float ds-float-${b.float}">${blockHtml({ ...b, float: undefined }, ctx, first + start)}<div class="ds-float-text">${renderBlocksHtml(texts, ctx, first + start + 1)}</div></div>`;
         continue;
       }
     }
-    html += renderBlockHtml(b, ctx);
+    html += blockHtml(b, ctx, first + i);
   }
   return html;
+}
+
+/**
+ * Ein Baustein; mit `options.blockIds` in einer Hülle mit seiner ID
+ * (data-bid) – daran hängt der Stift-Editor seine Striche. Ohne feste `id`
+ * zählt der Pfad („p:2.0“ = content[2].blocks[0]).
+ */
+function blockHtml(block, ctx, index) {
+  ctx.path.push(index);
+  const html = renderBlockHtml(block, ctx);
+  const path = ctx.path.join('.');
+  ctx.path.pop();
+  if (!ctx.options.blockIds || !html) return html;
+  const id = block && typeof block === 'object' && typeof block.id === 'string' && block.id ? block.id : `p:${path}`;
+  const type = isText(block) ? 'text' : block?.type || 'text';
+  return `<div class="ds-b" data-bid="${esc(id)}" data-bpath="${path}" data-btype="${esc(type)}">${html}</div>`;
 }
 
 function listHtml(items, ordered) {

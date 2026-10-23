@@ -43,9 +43,11 @@ nie, sie ist nur das Datenmodell darunter.
 ### 1 Herauslösen aus LearningModules
 - [x] `docspec.js` (Prüfen, Anzeige, StarMath → MathML) und `doc-quiz.js` übernehmen, mit Tests; LearningModules nutzt die Fassung von hier
 - [x] Stift-Geometrie und Geodreieck übernehmen (`ink-geometry.js`, `ink-ruler.js`, mit Tests)
-- [ ] Modul-Anzeige (`h5p-renderer.js` und Hilfsdateien) übernehmen; Server-Aufrufe (Audio, Diktat, PDF) laufen über die **Gastgeber-Schnittstelle**
-- [ ] Gastgeber-Schnittstelle festlegen: Speichern/Laden, Medien, Module, Renderer, Rechte (Lehrkraft/Schüler)
-- [ ] Einbindung in LearningModules (Vorschlag: git submodule unter `src/renderer/lm-editor`, Docker-Build holt ihn mit)
+- [x] Modul-Anzeige (`h5p-renderer.js` und 7 Hilfsdateien) und die gemeinsamen Hilfsfunktionen (`src/util/dom.js`) übernehmen, mit Tests für Formeln und Rätsel
+- [x] Gastgeber-Schnittstelle für die Anzeige ([docs/HOST.md](docs/HOST.md)): Weiter-Knopf, Knöpfe am Dokument, Abgabe von Aufnahmen
+- [x] Einbindung in LearningModules: git submodule unter `src/renderer/lm-editor`, Docker-Build holt ihn mit; `js/lm-host.js` ist der Gastgeber
+- [ ] Styles der Modul-Anzeige aus `styles.css` von LearningModules herauslösen (`src/css/`), App bindet sie ein
+- [ ] Gastgeber-Schnittstelle erweitern: Speichern/Laden, Medien, Module, Renderer, Rechte (Lehrkraft/Schüler)
 - [ ] Block-IDs auch in LearningModules: beim Speichern vergeben; prüfen, dass der worksheet-renderer das Feld `id` übergeht
 
 ### 2 Stift auf der HTML-Ansicht

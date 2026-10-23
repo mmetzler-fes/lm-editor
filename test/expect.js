@@ -52,6 +52,11 @@ function matchers(actual, negate) {
     toMatchObject: (v) => check(matchesObject(actual, v), `${JSON.stringify(actual)} enthält ${JSON.stringify(v)}`),
     toBeGreaterThan: (v) => check(actual > v, `${actual} > ${v}`),
     toBeLessThan: (v) => check(actual < v, `${actual} < ${v}`),
+    toBeGreaterThanOrEqual: (v) => check(actual >= v, `${actual} >= ${v}`),
+    toBeLessThanOrEqual: (v) => check(actual <= v, `${actual} <= ${v}`),
+    toBeNaN: () => check(Number.isNaN(actual), `${actual} ist NaN`),
+    // Wie Jest: Abstand unter 10^-digits / 2.
+    toBeCloseTo: (v, digits = 2) => check(Math.abs(actual - v) < 10 ** -digits / 2, `${actual} ≈ ${v}`),
     toThrow: (msg) => {
       let error = null;
       try { actual(); } catch (e) { error = e; }

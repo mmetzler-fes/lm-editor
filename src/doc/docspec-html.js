@@ -202,7 +202,19 @@ function blocksOf(parent, warnings) {
   for (const el of parent.children) {
     const tag = el.tagName;
     const ds = el.getAttribute('data-ds');
-    if (tag === 'DIV' && el.hasAttribute('data-block')) {
+    if (tag === 'DIV' && el.hasAttribute('data-solution')) {
+      // Ausgeblendeter Text aus der .odt (Lösung im Arbeitsblatt): bleibt verborgen.
+      const inner = blocksOf(el, warnings).filter((b) => !['solution', 'quiz'].includes(b.type));
+      const solution = { type: 'solution', blocks: inner };
+      const first = inner[0];
+      // „Lösung:“ als eigener erster Absatz ist die Überschrift der Lösung.
+      if (first?.type === 'text' && /^\**\s*(Lösung|Musterlösung|Lösungsvorschlag)\s*:?\s*\**$/i.test(first.text.split('\n\n')[0].trim())) {
+        const rest = first.text.split('\n\n').slice(1).join('\n\n');
+        solution.title = `${first.text.split('\n\n')[0].replace(/\*/g, '').trim().replace(/:?$/, ':')}`;
+        if (rest) first.text = rest; else inner.shift();
+      }
+      if (inner.length) { close(); out.push(solution); close(); }
+    } else if (tag === 'DIV' && el.hasAttribute('data-block')) {
       try {
         out.push(JSON.parse(decodeURIComponent(el.getAttribute('data-block'))));
       } catch (_) {

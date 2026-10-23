@@ -27,3 +27,10 @@ test('.odt → HTML: Überschriften, Tabellen, Bild, Titel aus den Metadaten', (
 test('kaputte Datei: lesbare Meldung', () => {
   assert.throws(() => odtToHtml(new TextEncoder().encode('kein zip')), /kein gültiges OpenDocument/);
 });
+
+test('.odt: ausgeblendeter Text (Lösung im Arbeitsblatt) bleibt verborgen', () => {
+  const { html } = odtToHtml(odt, 'erweitert.odt');
+  // Die Lösung steht in einer eigenen Hülle – htmlToDocSpec macht daraus einen Lösungs-Baustein.
+  assert.match(html, /<div data-solution="1"><p><strong>Lösung:<\/strong><\/p><p><strong>Lösung im Kasten<\/strong><\/p><\/div>/);
+  assert.equal((html.match(/Lösung im Kasten/g) || []).length, 1);
+});

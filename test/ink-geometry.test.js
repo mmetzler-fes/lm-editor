@@ -111,3 +111,21 @@ describe('Stift-Editor: Geodreieck (ink-geometry.js)', () => {
     expect(R.snapAngle(361, 1)).toBe(1);
   });
 });
+
+describe('Feld (Abdeckung)', () => {
+  const field = { type: 'field', x: 100, y: 50, w: 80, h: 40, pattern: 'karo' };
+  it('ist ein Rechteck wie ein Textfeld: Rahmen, Treffer, Auswahl, Verschieben', () => {
+    expect(g.isBox(field)).toBe(true);
+    expect(g.bounds(field)).toEqual({ x: 100, y: 50, w: 80, h: 40 });
+    expect(g.itemAt([field], 120, 60, 2)).toBe(field);
+    expect(g.itemAt([field], 300, 60, 2)).toBeNull();
+    expect(g.inSelection(field, { x: 170, y: 80, w: 50, h: 50 })).toBe(true);
+    expect(g.moved(field, 5, -5)).toMatchObject({ x: 105, y: 45, w: 80, h: 40 });
+  });
+  it('Ecke ziehen: die gegenüberliegende bleibt, nie kleiner als das Minimum, auch über sie hinweg', () => {
+    expect(g.resizedBox(field, 2, 200, 120)).toMatchObject({ x: 100, y: 50, w: 100, h: 70 });
+    expect(g.resizedBox(field, 0, 90, 40)).toMatchObject({ x: 90, y: 40, w: 90, h: 50 });
+    expect(g.resizedBox(field, 2, 101, 51)).toMatchObject({ x: 100, y: 50, w: 8, h: 8 });
+    expect(g.corners(field)).toEqual([[100, 50], [180, 50], [180, 90], [100, 90]]);
+  });
+});

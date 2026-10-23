@@ -88,8 +88,12 @@ export function hitsStroke(item, x, y, radius) {
   return false;
 }
 
-/** Umgebendes Rechteck eines Elements (Strich oder Textfeld). */
+/** Rechteckige Elemente: Textfeld und Feld (Abdeckung mit Karo, Linien oder leer). */
+export const isBox = (item) => item.type === 'text' || item.type === 'field';
+
+/** Umgebendes Rechteck eines Elements (Strich, Textfeld oder Feld). */
 export function bounds(item) {
+  if (item.type === 'field') return { x: item.x, y: item.y, w: item.w, h: item.h };
   if (item.type === 'text') return { x: item.x, y: item.y, w: item.w || 160, h: item.h || (item.size || 14) * 1.4 };
   const pts = item.points || [];
   if (!pts.length) return { x: 0, y: 0, w: 0, h: 0 };
@@ -123,7 +127,7 @@ export function inSelection(item, rect) {
   const x1 = Math.max(rect.x, rect.x + rect.w);
   const y0 = Math.min(rect.y, rect.y + rect.h);
   const y1 = Math.max(rect.y, rect.y + rect.h);
-  if (item.type === 'text') {
+  if (isBox(item)) {
     const b = bounds(item);
     return b.x < x1 && b.x + b.w > x0 && b.y < y1 && b.y + b.h > y0;
   }
@@ -137,13 +141,30 @@ export function inSelection(item, rect) {
 export function itemAt(items, x, y, radius) {
   for (let i = items.length - 1; i >= 0; i--) {
     const it = items[i];
-    if (it.type === 'text') {
+    if (isBox(it)) {
       const b = bounds(it);
       if (x >= b.x - radius && x <= b.x + b.w + radius && y >= b.y - radius && y <= b.y + b.h + radius) return it;
     } else if (hitsStroke(it, x, y, radius)) return it;
   }
   return null;
 }
+
+/**
+ * Feld an einer Ecke größer oder kleiner ziehen (0 links oben, 1 rechts oben,
+ * 2 rechts unten, 3 links unten); die gegenüberliegende Ecke bleibt. Mindestens `min`.
+ */
+export function resizedBox(item, corner, x, y, min = 8) {
+  const left = corner === 0 || corner === 3;
+  const top = corner === 0 || corner === 1;
+  const fx = left ? item.x + item.w : item.x;
+  const fy = top ? item.y + item.h : item.y;
+  const nx = left ? Math.min(x, fx - min) : Math.max(x, fx + min);
+  const ny = top ? Math.min(y, fy - min) : Math.max(y, fy + min);
+  return { ...item, x: Math.min(fx, nx), y: Math.min(fy, ny), w: Math.abs(nx - fx), h: Math.abs(ny - fy) };
+}
+
+/** Ecken eines Rechtecks in der Reihenfolge von resizedBox. */
+export const corners = (b) => [[b.x, b.y], [b.x + b.w, b.y], [b.x + b.w, b.y + b.h], [b.x, b.y + b.h]];
 
 /** Die beiden äußersten Punkte eines Strichs entlang der Richtung a → b. */
 export function extremesAlong(points, a, b) {
@@ -158,7 +179,7 @@ export function extremesAlong(points, a, b) {
 
 /** Element verschieben (neue Kopie). */
 export function moved(item, dx, dy) {
-  if (item.type === 'text') return { ...item, x: item.x + dx, y: item.y + dy };
+  if (isBox(item)) return { ...item, x: item.x + dx, y: item.y + dy };
   return { ...item, points: item.points.map(([x, y, p]) => [x + dx, y + dy, p]) };
 }
 

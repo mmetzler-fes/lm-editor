@@ -1,6 +1,7 @@
 import {
   A4, CM, strokeOutline, polyline, hitsStroke, bounds, inSelection, moved, ruling,
   pageToRuler, inRuler, nearEdge, projectOnSegment, snapAngle, itemAt, extremesAlong,
+  isBox, resizedBox, corners, MM,
 } from './ink-geometry.js';
 import { rulerSvg, rulerHandles } from './ink-ruler.js';
 import { showContextMenu } from '../util/dom.js';
@@ -55,7 +56,10 @@ const ICON_PATHS = {
   trash: 'M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3',
   pin: 'M14.5 3.5l6 6M17.5 6.5l-4.3 4.3-4.4-.9-2.3 2.3 7.3 7.3 2.3-2.3-.9-4.4 4.3-4.3M9.5 14.5L4 20',
   pointer: 'M6 3l13 8-6 1.5L9.5 19z',
+  field: 'M4 5h16v14H4zM4 9.7h16M4 14.3h16M9.3 5v14M14.7 5v14',
 };
+// Feld (Abdeckung): Raster wie im Dokument – Karo 5 mm, Linien 10 mm.
+const FIELD_PATTERNS = { karo: '▦ Karo', linien: '☰ Linien', leer: '▢ Leer (weiß)' };
 const icon = (name) => `<svg class="ink-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="${ICON_PATHS[name]}"/></svg>`;
 const MAX_PIXELS = 12e6;    // Obergrenze je Hintergrund-Leinwand (iPad Safari: ~16 Mio.)
 const RULER_REACH = 12;     // So nah (Bildschirmpunkte) muss der Stift an die Kante des Geodreiecks
@@ -156,7 +160,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
   if (doc.bg === 'paper') doc.pages = [{ items: [] }];
 
   const state = {
-    tool: 'pen', color: COLORS[0], marker: MARKERS[0], widthIdx: 1, textSizeIdx: 1,
+    tool: 'pen', color: COLORS[0], marker: MARKERS[0], widthIdx: 1, textSizeIdx: 1, fieldPattern: 'karo',
     zoom: 1, fingerDraws: false, pinned: false, variant: 'blatt',
     selection: null,          // { page, ids: Set }
     undo: [], redo: [],
@@ -186,6 +190,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
         ${tool('marker', 'marker', 'Textmarker')}
         ${tool('eraser', 'eraser', 'Radierer – löscht ganze Striche')}
         ${tool('text', 'text', 'Textfeld: auf die Seite tippen und schreiben')}
+        ${tool('field', 'field', 'Feld: ein Rechteck aufziehen – deckt ab, was darunter liegt, mit Karo, Linien oder weiß')}
         <span class="ink-sep"></span>
         ${btn('ink-ruler-toggle', 'ruler', 'Geodreieck ein- und ausblenden – drehen am ⟳ (Umschalt: 5°), mit zwei Fingern oder dem Mausrad; vergrößern am ⤢')}
       </span>
@@ -222,6 +227,9 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
         <span class="ink-group ink-sizes">
           ${[0, 1, 2].map((i) => `<button type="button" class="ink-btn ink-size" data-size="${i}" title="Schrift ${['klein', 'mittel', 'groß'][i]}" style="font-size:${[12, 16, 21][i]}px">A</button>`).join('')}
         </span>
+        <span class="ink-group ink-patterns">
+          ${Object.entries(FIELD_PATTERNS).map(([p, label]) => `<button type="button" class="ink-btn ink-pattern" data-pattern="${p}" title="${label.slice(2)}" aria-label="${label.slice(2)}">${label.slice(0, 1)}</button>`).join('')}
+        </span>
         <span class="ink-sep ink-sub-sep"></span>
         <span class="ink-group ink-colors"></span>
         <span class="ink-subhint"></span>
@@ -248,6 +256,11 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     $('.ink-widths').hidden = !drawing;
     $('.ink-sizes').hidden = state.tool !== 'text';
     $('.ink-sub-sep').hidden = $('.ink-colors').hidden;
+    // Muster: fürs neue Feld – oder, beim Auswählen, für die gewählten Felder.
+    const fields = selectedItems().filter((it) => it.type === 'field');
+    $('.ink-patterns').hidden = state.tool !== 'field' && !(state.tool === 'select' && fields.length);
+    const pattern = state.tool === 'select' && fields.length ? (fields.every((f) => f.pattern === fields[0].pattern) ? fields[0].pattern : null) : state.fieldPattern;
+    overlay.querySelectorAll('.ink-pattern').forEach((b) => b.classList.toggle('active', b.dataset.pattern === pattern));
     overlay.querySelectorAll('.ink-width').forEach((b) => {
       b.classList.toggle('active', Number(b.dataset.width) === state.widthIdx);
       b.querySelector('i').style.background = state.tool === 'marker' ? state.marker : state.color;
@@ -255,6 +268,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     overlay.querySelectorAll('.ink-size').forEach((b) => b.classList.toggle('active', Number(b.dataset.size) === state.textSizeIdx));
     $('.ink-subhint').textContent = {
       interact: 'Quizze im Blatt ausfüllen – zum Schreiben wieder den Stift wählen.',
+      field: 'Rechteck aufziehen – das Feld deckt ab, was darunter liegt.',
       eraser: 'Über einen Strich wischen – er wird ganz gelöscht.',
       select: state.selection?.ids.size
         ? `${state.selection.ids.size} gewählt${groupOfSelection() ? ' (Gruppe)' : ''} – ziehen zum Verschieben`
@@ -292,6 +306,20 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     const b = e.target.closest('[data-color]');
     if (!b) return;
     if (state.tool === 'marker') state.marker = b.dataset.color; else state.color = b.dataset.color;
+    paintToolbar();
+  });
+  $('.ink-patterns').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-pattern]');
+    if (!b) return;
+    const fields = state.tool === 'select' ? selectedItems().filter((it) => it.type === 'field') : [];
+    if (fields.length) {
+      snapshot();
+      const ids = new Set(fields.map((f) => f.id));
+      const sel = state.selection;
+      doc.pages[sel.page].items = doc.pages[sel.page].items.map((it) => (ids.has(it.id) ? { ...it, pattern: b.dataset.pattern } : it));
+      changed();
+      drawItems(sel.page);
+    } else state.fieldPattern = b.dataset.pattern;
     paintToolbar();
   });
   $('.ink-widths').addEventListener('click', (e) => {
@@ -495,7 +523,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     el.dataset.i = i;
     el.innerHTML = `<canvas class="ink-bg"></canvas>
       <svg class="ink-svg" viewBox="0 0 ${w} ${h}" xmlns="http://www.w3.org/2000/svg">
-        <g class="ink-marker"></g><g class="ink-pen"></g><g class="ink-live"></g>
+        <g class="ink-fields"></g><g class="ink-marker"></g><g class="ink-pen"></g><g class="ink-live"></g>
         <rect class="ink-sel-rect" display="none"></rect><rect class="ink-sel-box" display="none"></rect>
       </svg>
       <div class="ink-texts"></div>
@@ -523,7 +551,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
   const karoOf = (l) => Object.fromEntries(Object.entries(l?.blocks || {})
     .filter(([, e]) => e.karoLines || e.karoWidth || e.karoPattern)
     .map(([bid, e]) => [bid, { lines: e.karoLines, width: e.karoWidth, pattern: e.karoPattern }]));
-  const anchorY = (it) => (it.type === 'text' ? it.y : it.points[0][1]);
+  const anchorY = (it) => (isBox(it) ? it.y : it.points[0][1]);
 
   function leavePaper() {
     paperView?.observer?.disconnect();
@@ -540,7 +568,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     el.dataset.i = 0;
     el.innerHTML = `<div class="ink-paper-host"><div class="lm-paper${paper.landscape ? ' lm-landscape' : ''}"></div></div>
       <svg class="ink-svg" xmlns="http://www.w3.org/2000/svg">
-        <g class="ink-marker"></g><g class="ink-pen"></g><g class="ink-live"></g>
+        <g class="ink-fields"></g><g class="ink-marker"></g><g class="ink-pen"></g><g class="ink-live"></g>
         <rect class="ink-sel-rect" display="none"></rect><rect class="ink-sel-box" display="none"></rect>
       </svg>
       <div class="ink-texts"></div>
@@ -656,7 +684,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     return out;
   }
 
-  const FIELD_PATTERNS = { karo: '▦ Karo', linien: '☰ Linien', leer: '▢ Leer' };
+  const BLOCK_PATTERNS = { karo: '▦ Karo', linien: '☰ Linien', leer: '▢ Leer' };
   const FIELD_MIN_CM = 2;
   const FIELD_MAX_CM = 16.5;
 
@@ -766,7 +794,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
       drag(handle('ink-karo-c', 'Feld größer oder kleiner ziehen'), { x: true, y: true });
       const tools = document.createElement('div');
       tools.className = 'ink-karo-tools';
-      tools.innerHTML = Object.entries(FIELD_PATTERNS).map(([p, label]) => `<button type="button" data-pattern="${p}" title="${label.slice(2)}">${label.slice(0, 1)}</button>`).join('');
+      tools.innerHTML = Object.entries(BLOCK_PATTERNS).map(([p, label]) => `<button type="button" data-pattern="${p}" title="${label.slice(2)}">${label.slice(0, 1)}</button>`).join('');
       tools.addEventListener('pointerdown', (e) => e.stopPropagation());
       tools.addEventListener('click', (e) => {
         const b = e.target.closest('[data-pattern]');
@@ -934,18 +962,37 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     return svgEl('path', { d: strokeOutline(item.points, item.width), fill: item.color, 'data-id': item.id });
   }
 
+  /** Feld: weiße Fläche, darauf Karo (5 mm) oder Linien (10 mm) – oder nur weiß. */
+  function fieldSvg(item) {
+    const g = svgEl('g', { 'data-id': item.id, class: 'ink-field' });
+    g.appendChild(svgEl('rect', { x: item.x, y: item.y, width: item.w, height: item.h, fill: '#fff' }));
+    let d = '';
+    if (item.pattern === 'karo') {
+      for (let x = item.x + 5 * MM; x < item.x + item.w - 0.5; x += 5 * MM) d += `M${x.toFixed(2)},${item.y}V${item.y + item.h}`;
+      for (let y = item.y + 5 * MM; y < item.y + item.h - 0.5; y += 5 * MM) d += `M${item.x},${y.toFixed(2)}H${item.x + item.w}`;
+    } else if (item.pattern === 'linien') {
+      for (let y = item.y + 10 * MM; y < item.y + item.h + 0.5; y += 10 * MM) d += `M${item.x},${y.toFixed(2)}H${item.x + item.w}`;
+    }
+    if (d) g.appendChild(svgEl('path', { d, stroke: item.pattern === 'karo' ? '#c7d2e0' : '#94a3b8', 'stroke-width': 0.6, fill: 'none' }));
+    if (item.pattern === 'karo') g.appendChild(svgEl('rect', { x: item.x, y: item.y, width: item.w, height: item.h, fill: 'none', stroke: '#94a3b8', 'stroke-width': 0.6 }));
+    return g;
+  }
+
   function drawItems(i) {
     const p = pages[i];
     if (!p) return;
     const items = doc.pages[i]?.items || [];
+    const fields = p.svg.querySelector('.ink-fields');
     const marker = p.svg.querySelector('.ink-marker');
     const pen = p.svg.querySelector('.ink-pen');
+    fields.innerHTML = '';
     marker.innerHTML = '';
     pen.innerHTML = '';
     p.texts.innerHTML = '';
     for (const item of items) {
       if (item.type === 'stroke') (item.tool === 'marker' ? marker : pen).appendChild(itemSvg(item));
       else if (item.type === 'text') p.texts.appendChild(textBox(p, item));
+      else if (item.type === 'field') fields.appendChild(fieldSvg(item));
     }
     paintSelection();
   }
@@ -1009,6 +1056,8 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
       for (const it of selectedLines(p.i)) {
         for (const [x, y] of it.points) handles.appendChild(svgEl('circle', { cx: x, cy: y, r: HANDLE / state.zoom, class: 'ink-handle' }));
       }
+      const f = selectedField(p.i);
+      if (f) for (const [x, y] of corners(f)) handles.appendChild(svgEl('circle', { cx: x, cy: y, r: HANDLE / state.zoom, class: 'ink-handle' }));
     }
   }
 
@@ -1019,9 +1068,22 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     return (doc.pages[page]?.items || []).filter((it) => it.line && sel.ids.has(it.id));
   }
 
-  /** Anfasser unter dem Punkt: { id, idx } oder null. */
+  /** Das Feld, wenn genau ein Feld gewählt ist (dann mit Anfassern an den Ecken). */
+  function selectedField(page) {
+    const sel = state.selection;
+    if (!sel || sel.page !== page || sel.ids.size !== 1) return null;
+    const it = (doc.pages[page]?.items || []).find((x) => sel.ids.has(x.id));
+    return it?.type === 'field' ? it : null;
+  }
+
+  /** Anfasser unter dem Punkt: { id, idx } (Linie) bzw. { id, corner } (Feld) oder null. */
   function handleAt(page, x, y) {
     const reach = (HANDLE * 1.6) / state.zoom;
+    const f = selectedField(page);
+    if (f) {
+      const corner = corners(f).findIndex(([cx, cy]) => Math.hypot(x - cx, y - cy) <= reach);
+      if (corner >= 0) return { id: f.id, corner };
+    }
     for (const it of selectedLines(page)) {
       for (let idx = 0; idx < it.points.length; idx++) {
         if (Math.hypot(x - it.points[idx][0], y - it.points[idx][1]) <= reach) return { id: it.id, idx };
@@ -1054,10 +1116,10 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
   }
 
   // ---------- Kopieren, Einfügen, Gruppieren ----------
-  const selectedItems = () => {
+  function selectedItems() {
     const sel = state.selection;
     return sel?.ids.size ? (doc.pages[sel.page]?.items || []).filter((x) => sel.ids.has(x.id)) : [];
-  };
+  }
 
   /** Dazu alle Elemente der Gruppen, zu denen die gewählten gehören. */
   function withGroups(page, ids) {
@@ -1279,7 +1341,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
         const b = state.selection?.page === p.i ? selectionBounds() : null;
         const hit = itemAt(doc.pages[p.i].items, x, y, 6 / state.zoom);
         if (handle) {
-          gesture = { kind: 'handle', id: e.pointerId, item: handle.id, idx: handle.idx, base: base() };
+          gesture = { kind: 'handle', id: e.pointerId, item: handle.id, idx: handle.idx, corner: handle.corner, base: base() };
         } else if (b && x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) {
           gesture = { kind: 'move', id: e.pointerId, from: [x, y], base: base() };
           pressForMenu(e);
@@ -1294,6 +1356,9 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
           clearSelection();
           gesture = { kind: 'rect', id: e.pointerId, from: [x, y] };
         }
+      } else if (tool === 'field') {
+        clearSelection();
+        gesture = { kind: 'rect', id: e.pointerId, from: [x, y], field: true };
       } else if (tool === 'text') {
         snapshot();
         const size = TEXT_SIZES[state.textSizeIdx];
@@ -1357,6 +1422,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
         if (edge) [x, y] = projectOnSegment(x, y, edge[0], edge[1]);
         doc.pages[p.i].items = gesture.base.map((it) => {
           if (it.id !== gesture.item) return it;
+          if (gesture.corner !== undefined) return resizedBox(it, gesture.corner, x, y);
           const points = it.points.map((q) => q.slice());
           points[gesture.idx] = [x, y, points[gesture.idx][2]];
           return { ...it, points };
@@ -1400,6 +1466,20 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
         drawItems(p.i);
       } else if (g.kind === 'erase') {
         if (g.removed) changed();
+      } else if (g.kind === 'rect' && g.field) {
+        showSvg(p.svg.querySelector('.ink-sel-rect'), false);
+        const [fx, fy] = g.from;
+        const [tx, ty] = g.to || g.from;
+        if (Math.abs(tx - fx) >= 6 && Math.abs(ty - fy) >= 6) {
+          const item = { id: uid(), type: 'field', x: Math.min(fx, tx), y: Math.min(fy, ty), w: Math.abs(tx - fx), h: Math.abs(ty - fy), pattern: state.fieldPattern };
+          snapshot();
+          doc.pages[p.i].items.push(item);
+          // Gleich gewählt: Ecken zum Nachziehen, Muster änderbar.
+          state.tool = 'select';
+          state.selection = { page: p.i, ids: new Set([item.id]) };
+          changed();
+          drawItems(p.i);
+        }
       } else if (g.kind === 'rect') {
         showSvg(p.svg.querySelector('.ink-sel-rect'), false);
         if (g.to) {

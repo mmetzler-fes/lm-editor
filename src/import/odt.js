@@ -131,6 +131,9 @@ class Styles {
                 info.position = 'super';
             if (/^(sub|-)/.test(pos))
                 info.position = 'sub';
+            const display = tp.attrs['text:display'];
+            if (display)
+                info.hidden = display === 'none';
         }
         const gp = elements(n).find((c) => c.name === 'style:graphic-properties');
         if (gp) {
@@ -946,13 +949,19 @@ export function odtToHtml(buffer, fileName = '') {
         for (const c of elements(n)) {
             if (SKIP.has(c.name))
                 continue;
-            if (c.name === 'text:p') {
-                const tag = styles.inherits(c.attrs['text:style-name'], /^Title$/i) ? 'h2'
-                    : styles.inherits(c.attrs['text:style-name'], /^Subtitle$/i) ? 'h3' : 'p';
-                parts.push(paragraph(c, tag));
+            if (c.name === 'text:p' || c.name === 'text:h') {
+                const tag = c.name === 'text:h' ? headingTag(c)
+                    : styles.inherits(c.attrs['text:style-name'], /^Title$/i) ? 'h2'
+                        : styles.inherits(c.attrs['text:style-name'], /^Subtitle$/i) ? 'h3' : 'p';
+                const html = paragraph(c, tag);
+                // Ausgeblendet (Lösung im Arbeitsblatt): bleibt verborgen – als Lösung, nicht als Text.
+                if (styles.prop(c.attrs['text:style-name'], 'hidden')) {
+                    if (!/^<p data-empty="1">/.test(html))
+                        parts.push(`<div data-solution="1">${html}</div>`);
+                }
+                else
+                    parts.push(html);
             }
-            else if (c.name === 'text:h')
-                parts.push(paragraph(c, headingTag(c)));
             else if (c.name === 'text:list')
                 parts.push(list(c, undefined, 1));
             else if (c.name === 'table:table')
@@ -971,8 +980,10 @@ export function odtToHtml(buffer, fileName = '') {
             }
         }
         // Mehrere Leerabsätze hintereinander: einer genügt; am Anfang und Ende keiner.
+        // Aufeinanderfolgende ausgeblendete Absätze sind eine Lösung.
         return parts
             .join('')
+            .replace(/<\/div><div data-solution="1">/g, '')
             .replace(/(<p data-empty="1"><br><\/p>)+/g, '<p><br></p>')
             .replace(/^(<p><br><\/p>)+|(<p><br><\/p>)+$/g, '');
     }

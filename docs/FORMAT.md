@@ -89,6 +89,9 @@ Eine Ebene mit Handschrift und Textfeldern, nach Bausteinen geordnet:
   Bausteins, bei fester Satzbreite. Ein Strich gehört zum Baustein, in dem er
   beginnt, und darf über ihn hinausragen.
 - `points`: `[x, y, Druck 0–1]`. Gerade Linien tragen zusätzlich `"line": true`.
+- `type: "field"` – ein Feld, das abdeckt, was darunter liegt:
+  `{ "type": "field", "x": 300, "y": 120, "w": 160, "h": 90, "pattern": "karo" }`
+  (`karo` 5 mm, `linien` 10 mm, `leer` = weiß). Es liegt unter den Strichen.
 - `group` (optional): Elemente mit derselben Kennung bilden eine Gruppe. Eine
   Gruppe gehört als Ganzes zum Baustein, in dem ihr erstes Element beginnt.
 - `karoLines`, `karoWidth`, `karoPattern`: In dieser Ebene ist das Schreibfeld

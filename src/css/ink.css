@@ -142,3 +142,29 @@ body.ink-open { overflow: hidden; }
 .ink-tool-interact .ink-karo-handle { display: none; }
 .ink-action { color: var(--accent); white-space: nowrap; flex: 0 0 auto; margin-right: 4px; }
 .ink-title { flex: 0 1 auto; min-width: 6ch; }
+
+/* ===== Drucken (printPaper): nur die Kopie des Blatts, Ränder über @page ===== */
+.ink-print-sheet { display: none; }
+.ink-print-sheet .ds-b { position: relative; }
+.ink-print-sheet .lm-paper { position: relative; }
+.ink-print-layer { position: absolute; top: 0; overflow: visible; pointer-events: none; }
+.ink-print-free { left: 0; } /* Beschriftung ohne Baustein: Ursprung am Satzspiegel, links um den Rand verschoben (inkSvgFor) */
+.ink-print-marker { mix-blend-mode: multiply; opacity: 0.55; }
+@media print {
+  body.ink-printing > *:not(.ink-print-sheet) { display: none !important; }
+  body.ink-printing { background: #fff !important; margin: 0; overflow: visible !important; }
+  body.ink-printing .ink-print-sheet { display: block; }
+  /* Oben, unten und links setzt @page die Ränder (auf jeder Seite); rechts ist es
+     Innenabstand – dort darf die Beschriftung bis zur Papierkante reichen. */
+  .ink-print-sheet .lm-paper { width: auto; min-height: 0; padding: 0 2cm 0 0; box-shadow: none; }
+  .ink-print-layer { overflow: hidden; }
+  .ink-print-sheet * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  /* Nicht zerreißen: Felder, Bilder, Formeln, Tabellen, Code, Quizze; Überschrift bleibt beim Folgenden. */
+  .ink-print-sheet [data-btype="karo"], .ink-print-sheet [data-btype="image"], .ink-print-sheet [data-btype="formula"],
+  .ink-print-sheet [data-btype="table"], .ink-print-sheet [data-btype="code"], .ink-print-sheet [data-btype="quiz"],
+  .ink-print-sheet [data-btype="spacer"] { break-inside: avoid; }
+  .ink-print-sheet h2, .ink-print-sheet h3, .ink-print-sheet h4 { break-after: avoid; }
+  .ink-print-sheet .ds-pagebreak-mark { break-after: page; }
+  /* Im Quiz nichts zum Klicken; die Fragen bleiben. */
+  .ink-print-sheet .ds-quiz button.btn-sm, .ink-print-sheet .ds-actions, .ink-print-sheet .ds-solutions-toggle { display: none !important; }
+}

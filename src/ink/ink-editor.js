@@ -57,6 +57,7 @@ const ICON_PATHS = {
   pin: 'M14.5 3.5l6 6M17.5 6.5l-4.3 4.3-4.4-.9-2.3 2.3 7.3 7.3 2.3-2.3-.9-4.4 4.3-4.3M9.5 14.5L4 20',
   pointer: 'M6 3l13 8-6 1.5L9.5 19z',
   field: 'M4 5h16v14H4zM4 9.7h16M4 14.3h16M9.3 5v14M14.7 5v14',
+  print: 'M7 9V3h10v6M7 17H4v-7h16v7h-3M7 14h10v7H7z',
 };
 // Feld (Abdeckung): Raster wie im Dokument – Karo 5 mm, Linien 10 mm.
 const FIELD_PATTERNS = { karo: '▦ Karo', linien: '☰ Linien', leer: '▢ Leer (weiß)' };
@@ -211,6 +212,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
         </select>
         ${solutions && (loadPdf || paper) ? btn('ink-solution', 'bulb', 'Lösungen ein- und ausblenden') : ''}
         ${btn('ink-add-page', 'page', 'Seite anfügen')}
+        ${paper ? btn('ink-print', 'print', 'Drucken oder als PDF speichern – Arbeitsblatt oder Lösungsblatt, mit oder ohne Beschriftung') : ''}
       </span>
       <span class="ink-group ink-zoom">
         ${btn('ink-zoom-out', 'zoomOut', 'Verkleinern')}
@@ -292,6 +294,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     $('.ink-solution')?.classList.toggle('active', state.variant === 'loesung');
     if ($('.ink-solution')) $('.ink-solution').hidden = !(doc.bg === 'pdf' && loadPdf) && doc.bg !== 'paper';
     $('.ink-add-page').hidden = !['karo', 'linien', 'leer'].includes(doc.bg);
+    if ($('.ink-print')) $('.ink-print').hidden = doc.bg !== 'paper';
     $('.ink-ruler-toggle').classList.toggle('active', !!doc.ruler?.visible);
   };
 
@@ -383,6 +386,18 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     void layout();
   });
   $('.ink-close').addEventListener('click', () => close());
+  $('.ink-print')?.addEventListener('click', (e) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    const entries = [
+      { label: '🖨 Arbeitsblatt', onClick: () => printPaper({ solutions: false, ink: false }) },
+      { label: '🖨 Arbeitsblatt mit Beschriftung', onClick: () => printPaper({ solutions: false, ink: true }) },
+    ];
+    if (solutions) {
+      entries.push({ label: '🖨 Lösungsblatt', onClick: () => printPaper({ solutions: true, ink: false }) });
+      entries.push({ label: '🖨 Lösungsblatt mit Beschriftung', onClick: () => printPaper({ solutions: true, ink: true }) });
+    }
+    showContextMenu(r.left, r.bottom + 4, entries);
+  });
   $('.ink-ruler-toggle').addEventListener('click', () => {
     if (doc.ruler?.visible) doc.ruler.visible = false;
     else {
@@ -614,11 +629,12 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     for (const svg of [page.svg, page.top]) svg.setAttribute('viewBox', `0 0 ${page.w} ${page.h}`);
     const r = v.el.getBoundingClientRect();
     const k = r.width ? page.w / r.width : 1;
-    v.blocks = [...v.el.querySelectorAll('[data-bid]')].map((el) => {
+    // Ausgeblendete Bausteine (z. B. Lösungen) haben keine Lage – an ihnen hängt nichts.
+    v.blocks = [...v.el.querySelectorAll('[data-bid]')].filter((el) => el.getClientRects().length).map((el) => {
       const b = el.getBoundingClientRect();
       let depth = 0;
       for (let n = el.parentElement; n && n !== v.el; n = n.parentElement) if (n.dataset?.bid) depth++;
-      return { bid: el.dataset.bid, path: el.dataset.bpath, el, top: (b.top - r.top) * k, bottom: (b.bottom - r.top) * k, depth };
+      return { bid: el.dataset.bid, path: el.dataset.bpath, el, top: (b.top - r.top) * k, bottom: (b.bottom - r.top) * k, left: (b.left - r.left) * k, depth };
     });
   }
 
@@ -1512,6 +1528,95 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
       }
       selectionMenu(e.clientX, e.clientY);
     });
+  }
+
+  // ---------- Drucken (PDF über den Druckdialog des Browsers) ----------
+  //
+  // Gedruckt wird eine Kopie des Blatts: Seitenränder wie die Schulvorlage
+  // auf jeder Seite (@page), die Beschriftung je Baustein als eigene
+  // Vektorgrafik in ihm – so wandert sie beim Seitenumbruch mit ihm.
+
+  /**
+   * Beschriftung eines Bausteins als SVG (Ursprung: linker Blattrand, Oberkante
+   * des Bausteins), bis zur rechten Papierkante. Der rechte Rand ist im Druck
+   * Innenabstand des Blatts, nicht Seitenrand (@page) – sonst verkleinerte der
+   * Browser die ganze Seite, sobald etwas in den Rand reicht.
+   */
+  function inkSvgFor(items, left, width) {
+    const h = Math.max(1, ...items.map((it) => { const b = bounds(it); return b.y + b.h; })) + 4;
+    const svg = svgEl('svg', { viewBox: `0 0 ${width} ${h}`, class: 'ink-print-layer' });
+    svg.style.left = `${-left}pt`;
+    svg.style.width = `${width}pt`;
+    svg.style.height = `${h}pt`;
+    const groups = ['fields', 'marker', 'pen', 'texts'].map((name) => svgEl('g', { class: `ink-print-${name}` }));
+    for (const it of items) {
+      if (it.type === 'field') groups[0].appendChild(fieldSvg(it));
+      else if (it.type === 'stroke') groups[it.tool === 'marker' ? 1 : 2].appendChild(itemSvg(it));
+      else if (it.type === 'text' && it.text) {
+        const size = it.size || TEXT_SIZE;
+        const t = svgEl('text', { x: it.x + 3, y: it.y + 1 + size, fill: it.color || '#1e293b', 'font-size': size, 'font-family': 'LM Sans, Liberation Sans, Arial, sans-serif' });
+        it.text.split('\n').forEach((line, i) => {
+          const span = svgEl('tspan', { x: it.x + 3, dy: i ? size * 1.3 : 0 });
+          span.textContent = line || ' ';
+          t.appendChild(span);
+        });
+        groups[3].appendChild(t);
+      }
+    }
+    groups.forEach((g) => svg.appendChild(g));
+    return svg;
+  }
+
+  async function printPaper({ solutions: withSolutions, ink }) {
+    if (!paperView) return;
+    // Eine Kopie vom letzten Mal (falls der Browser kein afterprint meldete) zuerst weg.
+    document.querySelectorAll('.ink-print-sheet, style[data-ink-print]').forEach((el) => el.remove());
+    await persist();
+    const layerNow = toLayer();
+    measurePaper();
+    const page = pages[0];
+    const css = getComputedStyle(paperView.el);
+    const padLeft = parseFloat(css.paddingLeft) * PX_PT;
+    const copy = paperView.el.cloneNode(true);
+    copy.querySelectorAll('.ink-karo-handle, .ink-karo-tools').forEach((el) => el.remove());
+    copy.querySelector('.docspec')?.classList.toggle('ds-hide-solutions', !withSolutions);
+    if (ink) {
+      for (const [bid, entry] of Object.entries(layerNow.blocks || {})) {
+        const items = entry.items || [];
+        if (!items.length) continue;
+        const geo = bid === '_' ? null : findBlock(bid);
+        const host = geo ? copy.querySelector(`[data-bid="${CSS.escape(geo.bid)}"]`) : null;
+        if (host) host.appendChild(inkSvgFor(items, geo.left, page.w));
+        else {
+          // Ohne Baustein: am Blatt selbst, wo die Striche zuletzt waren.
+          const at = bid === '_' ? 0 : entry.at || 0;
+          const svg = inkSvgFor(items.map((it) => moved(it, 0, at)), padLeft, page.w);
+          svg.classList.add('ink-print-free');
+          copy.prepend(svg);
+        }
+      }
+    }
+    const box = document.createElement('div');
+    box.className = 'ink-print-sheet';
+    box.appendChild(copy);
+    // Seitenformat und Ränder wie das Blatt (paper.css); quer bei landscape.
+    const style = document.createElement('style');
+    style.dataset.inkPrint = '1';
+    style.textContent = `@page { size: A4 ${paper.landscape ? 'landscape' : 'portrait'}; margin: 1.27cm 0 1cm 2.5cm; }`;
+    document.head.appendChild(style);
+    document.body.appendChild(box);
+    document.body.classList.add('ink-printing');
+    const done = () => {
+      window.removeEventListener('afterprint', done);
+      box.remove();
+      style.remove();
+      document.body.classList.remove('ink-printing');
+    };
+    window.addEventListener('afterprint', done);
+    // Bilder und Schriften fertig, dann drucken (der Dialog blockiert bis zum Schließen).
+    await Promise.all([...box.querySelectorAll('img')].map((img) => (img.complete ? null : new Promise((r) => { img.onload = r; img.onerror = r; }))));
+    try { await document.fonts?.ready; } catch (_) { /* ohne */ }
+    window.print();
   }
 
   /** Höchstens ein Klick auf dem Blatt, gleich nach dem Strich – nie einer auf die Leiste. */

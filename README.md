@@ -35,6 +35,8 @@ eine Datei (oder sie auf die Seite ziehen): eine `.zlm`, ein Writer-Dokument
 Übernommenes speichert der Editor als neue `.zlm`. Im Editor schreibt der Stift, der
 Finger scrollt und bedient die Quizze; **💾 Speichern** schreibt die `.zlm`.
 Jede Änderung bleibt außerdem als Entwurf im Browser (**Zuletzt geöffnet**).
+**🖨** druckt das Blatt oder speichert es als PDF – Arbeits- oder Lösungsblatt,
+mit oder ohne Beschriftung.
 
 Das Dokument selbst bearbeiten (Text, Bausteine) geht noch nicht – das kommt
 mit dem Dokument-Editor aus LearningModules.

@@ -87,6 +87,8 @@ nie, sie ist nur das Datenmodell darunter.
 - [ ] Images auch für `linux/amd64` (Windows-PCs, Intel-Macs) – auch für den worksheet-renderer
 
 ### 5 Druck und Export
+- [x] Drucken/PDF im Browser (🖨): Arbeits- oder Lösungsblatt, mit oder ohne Beschriftung; Ränder wie die Schulvorlage auf jeder Seite, Seitenumbrüche aus dem Dokument, Felder/Bilder/Formeln werden nicht zerrissen, Beschriftung je Baustein als Vektorgrafik
+- [ ] Druckfassung je Quiztyp (bisher: das Quiz, wie es gerade aussieht – bei Richtig/Falsch nur die erste Frage)
 - [ ] `.zlm` → Renderer-Auftrag (Spec, Bilder, Stift-Ebene als SVG)
 - [ ] eingebettete Quizze: Druckfassung je Typ (Multiple Choice, Lückentext, Zuordnen, Wahr/Falsch …), sonst Bild der Vorschau – statt QR-Code
 - [ ] Renderer über LearningModules-Konto (Anmelden aus dem Editor, Weiterleitung durch den App-Server, Grenzen je Konto)

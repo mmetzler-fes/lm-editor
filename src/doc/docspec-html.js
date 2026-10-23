@@ -145,19 +145,44 @@ const tableRows = (el) => [...el.children].flatMap((c) => (c.tagName === 'TR' ? 
 const tableCells = (tr) => [...tr.children].filter((c) => c.tagName === 'TD' || c.tagName === 'TH');
 
 /**
+ * Lösungs-Baustein aus Bausteinen; „Lösung:“ als eigener erster Absatz wird
+ * seine Überschrift. null, wenn nichts übrig bleibt.
+ */
+function solutionOf(blocks) {
+  const inner = blocks.filter((b) => !['solution', 'quiz'].includes(b.type));
+  const solution = { type: 'solution', blocks: inner };
+  const first = inner[0];
+  const head = first?.type === 'text' ? first.text.split('\n\n')[0].trim() : '';
+  if (/^\**\s*(Lösung|Musterlösung|Lösungsvorschlag)\s*:?\s*\**$/i.test(head)) {
+    solution.title = head.replace(/\*/g, '').trim().replace(/:?$/, ':');
+    const rest = first.text.split('\n\n').slice(1).join('\n\n');
+    if (rest) first.text = rest; else inner.shift();
+  }
+  return inner.length ? solution : null;
+}
+
+const cellEmpty = (td) => !td.textContent.trim() && !td.querySelector('img, table, div');
+
+/**
  * Tabelle aus lauter leeren Zellen (ab 8 Spalten) – so schreibt der Renderer
  * ein Karo in die .odt (Zellen à 0,5 cm). Wird wieder ein Schreibfeld.
+ * Im Lösungsblatt liegt in der ersten Zelle ein Rahmen mit der Lösung
+ * darüber – dann Schreibfeld und dahinter die Lösung. Liefert eine Liste.
  */
-function karoOfTable(el) {
+function karoOfTable(el, warnings) {
   const rows = tableRows(el);
   if (!rows.length || rows.length > 60) return null;
   const cols = Math.max(...rows.map((tr) => tableCells(tr).reduce((n, td) => n + (Number(td.getAttribute('colspan')) || 1), 0)));
   if (cols < 8) return null;
-  const empty = rows.every((tr) => tableCells(tr).every((td) => !td.textContent.trim() && !td.querySelector('img, table')));
-  if (!empty) return null;
+  const cells = rows.flatMap((tr) => tableCells(tr));
+  const [first, ...rest] = cells;
+  if (!rest.every(cellEmpty)) return null;
+  const overlay = cellEmpty(first) ? null : [...first.children].find((c) => c.tagName === 'DIV' && /\bws-box\b/.test(c.getAttribute('class') || ''));
+  if (!cellEmpty(first) && (!overlay || [...first.children].some((c) => c !== overlay && c.textContent.trim()))) return null;
   const block = { type: 'karo', lines: rows.length };
   if (cols < 33) block.width = `${cols * 0.5}cm`;
-  return block;
+  const solution = overlay ? solutionOf(blocksOf(overlay, warnings)) : null;
+  return solution ? [block, solution] : [block];
 }
 
 /**
@@ -204,16 +229,8 @@ function blocksOf(parent, warnings) {
     const ds = el.getAttribute('data-ds');
     if (tag === 'DIV' && el.hasAttribute('data-solution')) {
       // Ausgeblendeter Text aus der .odt (Lösung im Arbeitsblatt): bleibt verborgen.
-      const inner = blocksOf(el, warnings).filter((b) => !['solution', 'quiz'].includes(b.type));
-      const solution = { type: 'solution', blocks: inner };
-      const first = inner[0];
-      // „Lösung:“ als eigener erster Absatz ist die Überschrift der Lösung.
-      if (first?.type === 'text' && /^\**\s*(Lösung|Musterlösung|Lösungsvorschlag)\s*:?\s*\**$/i.test(first.text.split('\n\n')[0].trim())) {
-        const rest = first.text.split('\n\n').slice(1).join('\n\n');
-        solution.title = `${first.text.split('\n\n')[0].replace(/\*/g, '').trim().replace(/:?$/, ':')}`;
-        if (rest) first.text = rest; else inner.shift();
-      }
-      if (inner.length) { close(); out.push(solution); close(); }
+      const solution = solutionOf(blocksOf(el, warnings));
+      if (solution) { close(); out.push(solution); close(); }
     } else if (tag === 'DIV' && el.hasAttribute('data-block')) {
       try {
         out.push(JSON.parse(decodeURIComponent(el.getAttribute('data-block'))));
@@ -245,7 +262,10 @@ function blocksOf(parent, warnings) {
       const images = [];
       out.push(listBlock(el, images, warnings));
       if (images.length) warnings.push(`${images.length} Bild${images.length === 1 ? '' : 'er'} in Listen weggelassen.`);
-    } else if (tag === 'TABLE') out.push(karoOfTable(el) || boxOfTable(el, warnings) || tableBlock(el, warnings));
+    } else if (tag === 'TABLE') {
+      const karo = karoOfTable(el, warnings);
+      if (karo) { close(); out.push(...karo); close(); } else out.push(boxOfTable(el, warnings) || tableBlock(el, warnings));
+    }
     else if (tag === 'DIV' && /\bws-box\b/.test(el.getAttribute('class') || '')) {
       const inner = blocksOf(el, warnings);
       const box = { type: 'box' };

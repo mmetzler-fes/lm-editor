@@ -62,6 +62,7 @@ nie, sie ist nur das Datenmodell darunter.
 - [ ] worksheet-renderer: Querformat (Seitenvorlage quer, Kopfzeile breiter)
 - [ ] Seitenumbrüche im Blatt anzeigen (wo der Druck umbricht)
 - [x] Schreibfeld (Block `karo`): Breite (`width`) und Muster (`pattern`: Karo, Linien, leer) – im Renderer, in der Anzeige, im Dokument-Editor von LearningModules und im Stift-Editor (Anfasser rechts/Ecke, Umschalter beim Auswählen)
+- [x] Auswahl: Kopieren, Ausschneiden, Einfügen, Duplizieren, Gruppieren/Aufheben – Tastenkürzel, Kontextmenü (Rechtsklick, langes Drücken, Knopf ⋯)
 - [x] Übernehmen: leere Tabellen (so schreibt der Renderer Karos in die .odt) werden wieder Schreibfelder, Tabellen mit einer Zelle wieder Kästen
 
 ### 3 Standalone-Webapp

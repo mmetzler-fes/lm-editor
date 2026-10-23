@@ -3,6 +3,7 @@ import {
   pageToRuler, inRuler, nearEdge, projectOnSegment, snapAngle, itemAt, extremesAlong,
 } from './ink-geometry.js';
 import { rulerSvg, rulerHandles } from './ink-ruler.js';
+import { showContextMenu } from '../util/dom.js';
 
 // ==================== STIFT-EDITOR ====================
 //
@@ -63,6 +64,9 @@ const HOLD_MS = 550;        // So lange still halten, dann wird der Strich zur L
 const HOLD_SLACK = 4;       // … und so wenig (Bildschirmpunkte) darf er sich dabei bewegen
 const HANDLE = 9;           // Anfasser einer Linie (Bildschirmpunkte, Radius)
 const RULER_MAX = 32 * CM;
+// Kopierte Elemente – bleiben beim Wechsel in ein anderes Dokument erhalten.
+let clipboard = null;         // { items, pasted }
+const PRESS_MS = 550;         // so lange drücken (Finger/Stift), dann das Menü der Auswahl
 const PX_PT = 0.75;         // 1 CSS-Pixel = 0,75 pt (96 dpi gegen 72 dpi)
 const KARO_MAX = 60;        // Zeilen à 0,5 cm, wie in docspec
 
@@ -221,6 +225,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
         <span class="ink-sep ink-sub-sep"></span>
         <span class="ink-group ink-colors"></span>
         <span class="ink-subhint"></span>
+        <button type="button" class="ink-btn ink-more" title="Mehr: Kopieren, Einfügen, Gruppieren … (auch Rechtsklick oder lange drücken)" aria-label="Mehr" hidden>⋯</button>
         <button type="button" class="ink-btn ink-delete ink-labeled" title="Auswahl löschen (Entf)" hidden>${icon('trash')}<span>Löschen</span></button>
       </div>
       <div class="ink-scroll"><div class="ink-pages"></div></div>
@@ -251,11 +256,14 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     $('.ink-subhint').textContent = {
       interact: 'Quizze im Blatt ausfüllen – zum Schreiben wieder den Stift wählen.',
       eraser: 'Über einen Strich wischen – er wird ganz gelöscht.',
-      select: state.selection?.ids.size ? `${state.selection.ids.size} gewählt – ziehen zum Verschieben` : 'Strich antippen oder Rechteck aufziehen',
+      select: state.selection?.ids.size
+        ? `${state.selection.ids.size} gewählt${groupOfSelection() ? ' (Gruppe)' : ''} – ziehen zum Verschieben`
+        : 'Strich antippen oder Rechteck aufziehen',
     }[state.tool] || '';
     $('.ink-undo').disabled = !state.undo.length;
     $('.ink-redo').disabled = !state.redo.length;
     $('.ink-delete').hidden = !state.selection?.ids.size;
+    $('.ink-more').hidden = !state.selection?.ids.size && !(state.tool === 'select' && clipboard);
     $('.ink-finger').classList.toggle('active', state.fingerDraws);
     overlay.classList.toggle('ink-finger-off', !state.fingerDraws);
     $('.ink-pin').classList.toggle('active', state.pinned);
@@ -297,6 +305,10 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
   $('.ink-undo').addEventListener('click', () => history(state.undo, state.redo));
   $('.ink-redo').addEventListener('click', () => history(state.redo, state.undo));
   $('.ink-delete').addEventListener('click', () => deleteSelection());
+  $('.ink-more').addEventListener('click', (e) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    selectionMenu(r.left, r.bottom + 4);
+  });
   $('.ink-finger').addEventListener('click', () => { state.fingerDraws = !state.fingerDraws; paintToolbar(); });
   $('.ink-pin').addEventListener('click', () => { state.pinned = !state.pinned; paintToolbar(); });
   // Apple Pencil: Safari scrollt mit dem Stift wie mit dem Finger. Berührungen
@@ -616,8 +628,11 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     if (!paperView) return layer;
     const blocks = {};
     const slot = (bid, at) => (blocks[bid] = blocks[bid] || { items: [], at });
+    // Eine Gruppe hängt als Ganzes am Baustein ihres ersten Elements – sie fällt nicht auseinander.
+    const groupY = new Map();
+    for (const it of items) if (it.group && !groupY.has(it.group)) groupY.set(it.group, anchorY(it));
     for (const it of items) {
-      const b = blockAt(anchorY(it));
+      const b = blockAt(it.group ? groupY.get(it.group) : anchorY(it));
       if (b) slot(b.bid, b.top).items.push(moved(it, 0, -b.top));
       else slot('_', 0).items.push(it);
     }
@@ -1038,6 +1053,148 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     drawItems(sel.page);
   }
 
+  // ---------- Kopieren, Einfügen, Gruppieren ----------
+  const selectedItems = () => {
+    const sel = state.selection;
+    return sel?.ids.size ? (doc.pages[sel.page]?.items || []).filter((x) => sel.ids.has(x.id)) : [];
+  };
+
+  /** Dazu alle Elemente der Gruppen, zu denen die gewählten gehören. */
+  function withGroups(page, ids) {
+    const items = doc.pages[page]?.items || [];
+    const groups = new Set(items.filter((it) => ids.has(it.id) && it.group).map((it) => it.group));
+    return groups.size ? new Set(items.filter((it) => ids.has(it.id) || groups.has(it.group)).map((it) => it.id)) : ids;
+  }
+
+  /** Die Gruppe, wenn die Auswahl genau eine ganze Gruppe ist. */
+  function groupOfSelection() {
+    const items = selectedItems();
+    const g = items[0]?.group;
+    return g && items.every((it) => it.group === g) ? g : null;
+  }
+
+  function boundsOfItems(items) {
+    let x0 = Infinity; let y0 = Infinity; let x1 = -Infinity; let y1 = -Infinity;
+    for (const it of items) { const b = bounds(it); x0 = Math.min(x0, b.x); y0 = Math.min(y0, b.y); x1 = Math.max(x1, b.x + b.w); y1 = Math.max(y1, b.y + b.h); }
+    return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+  }
+
+  /** Seite fürs Einfügen: die der Auswahl, sonst die, die gerade zu sehen ist. */
+  function targetPage() {
+    if (state.selection && pages[state.selection.page]) return state.selection.page;
+    const mid = scroller.getBoundingClientRect().top + scroller.clientHeight / 2;
+    return (pages.find((pg) => pg.el.getBoundingClientRect().bottom > mid) || pages[0])?.i ?? 0;
+  }
+
+  /** Sichtbarer Teil einer Seite in ihren Koordinaten. */
+  function visibleRect(page) {
+    const p = pages[page];
+    const r = p.el.getBoundingClientRect();
+    const v = scroller.getBoundingClientRect();
+    const k = p.w / r.width;
+    const x0 = Math.max(r.left, v.left); const y0 = Math.max(r.top, v.top);
+    const x1 = Math.min(r.right, v.right); const y1 = Math.min(r.bottom, v.bottom);
+    return { x: (x0 - r.left) * k, y: (y0 - r.top) * k, w: Math.max(0, x1 - x0) * k, h: Math.max(0, y1 - y0) * k };
+  }
+
+  function copySelection() {
+    const items = selectedItems();
+    if (!items.length) return false;
+    clipboard = { items: structuredClone(items), pasted: 0 };
+    status(`📋 ${items.length} kopiert`);
+    paintToolbar();
+    return true;
+  }
+
+  function cutSelection() {
+    if (copySelection()) deleteSelection();
+  }
+
+  /**
+   * Einfügen, leicht versetzt (bei jedem weiteren Mal ein Stück mehr) – oder
+   * mitten ins Sichtfeld, wenn das Original gerade nicht zu sehen ist.
+   * Gruppen bleiben Gruppen, mit neuer Kennung.
+   */
+  function paste(source = clipboard) {
+    if (!source?.items.length || !pages.length) return;
+    const page = targetPage();
+    source.pasted = (source.pasted || 0) + 1;
+    const b = boundsOfItems(source.items);
+    const view = visibleRect(page);
+    let dx = 14 * source.pasted;
+    let dy = 14 * source.pasted;
+    const visible = b.x + dx < view.x + view.w && b.x + b.w + dx > view.x && b.y + dy < view.y + view.h && b.y + b.h + dy > view.y;
+    if (!visible) {
+      dx = view.x + view.w / 2 - (b.x + b.w / 2);
+      dy = view.y + view.h / 2 - (b.y + b.h / 2);
+    }
+    const groups = new Map();
+    const fresh = source.items.map((it) => {
+      const c = moved(structuredClone(it), dx, dy);
+      c.id = uid();
+      if (it.group) {
+        if (!groups.has(it.group)) groups.set(it.group, uid());
+        c.group = groups.get(it.group);
+      }
+      return c;
+    });
+    snapshot();
+    doc.pages[page].items.push(...fresh);
+    state.tool = 'select';
+    state.selection = { page, ids: new Set(fresh.map((x) => x.id)) };
+    changed();
+    drawItems(page);
+  }
+
+  function duplicateSelection() {
+    const items = selectedItems();
+    if (items.length) paste({ items: structuredClone(items), pasted: 0 });
+  }
+
+  function groupSelection() {
+    const sel = state.selection;
+    if (selectedItems().length < 2 || groupOfSelection()) return;
+    snapshot();
+    const g = uid();
+    doc.pages[sel.page].items = doc.pages[sel.page].items.map((it) => (sel.ids.has(it.id) ? { ...it, group: g } : it));
+    changed();
+    drawItems(sel.page);
+    status('🔗 Gruppiert');
+  }
+
+  function ungroupSelection() {
+    const sel = state.selection;
+    if (!selectedItems().some((it) => it.group)) return;
+    snapshot();
+    doc.pages[sel.page].items = doc.pages[sel.page].items.map((it) => {
+      if (!sel.ids.has(it.id) || !it.group) return it;
+      const { group, ...rest } = it;
+      return rest;
+    });
+    changed();
+    drawItems(sel.page);
+    status('Gruppe aufgehoben');
+  }
+
+  /** Menü der Auswahl – nur, was gerade geht. */
+  function selectionMenu(x, y) {
+    const items = selectedItems();
+    const key = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Strg+';
+    const entries = [];
+    if (items.length) {
+      entries.push({ label: `Kopieren (${key}C)`, onClick: () => copySelection() });
+      entries.push({ label: `Ausschneiden (${key}X)`, onClick: () => cutSelection() });
+    }
+    if (clipboard) entries.push({ label: `Einfügen (${key}V)`, onClick: () => paste() });
+    if (items.length) {
+      entries.push({ label: `Duplizieren (${key}D)`, onClick: () => duplicateSelection() });
+      if (items.length > 1 && !groupOfSelection()) entries.push({ label: `Gruppieren (${key}G)`, onClick: () => groupSelection() });
+      if (items.some((it) => it.group)) entries.push({ label: `Gruppierung aufheben (${key}⇧G)`, onClick: () => ungroupSelection() });
+      entries.push({ label: 'Löschen (Entf)', danger: true, onClick: () => deleteSelection() });
+    }
+    if (entries.length) showContextMenu(x, y, entries);
+  }
+
   // ---------- Eingabe ----------
   let penDown = false;
 
@@ -1047,6 +1204,17 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
       return [((e.clientX - r.left) / r.width) * p.w, ((e.clientY - r.top) / r.height) * p.h];
     };
     let gesture = null;
+    // Finger oder Stift ruht auf der Auswahl: ihr Menü (iPad kennt keinen Rechtsklick).
+    const pressForMenu = (e) => {
+      if (e.pointerType === 'mouse') return;
+      const g = gesture;
+      g.press = setTimeout(() => {
+        if (gesture !== g || g.moved) return;
+        gesture = null;
+        p.busy = false;
+        selectionMenu(e.clientX, e.clientY);
+      }, PRESS_MS);
+    };
 
     p.el.addEventListener('pointerdown', (e) => {
       // Im Dokument: Karo-Anfasser, „Bedienen“ und Textfelder (mit dem Text-
@@ -1114,12 +1282,14 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
           gesture = { kind: 'handle', id: e.pointerId, item: handle.id, idx: handle.idx, base: base() };
         } else if (b && x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) {
           gesture = { kind: 'move', id: e.pointerId, from: [x, y], base: base() };
+          pressForMenu(e);
         } else if (hit) {
           // Antippen wählt das Element (eine Linie zeigt ihre Anfasser) – gleich weiterziehen verschiebt es.
-          state.selection = { page: p.i, ids: new Set([hit.id]) };
+          state.selection = { page: p.i, ids: withGroups(p.i, new Set([hit.id])) };
           paintSelection();
           paintToolbar();
           gesture = { kind: 'move', id: e.pointerId, from: [x, y], base: base() };
+          pressForMenu(e);
         } else {
           clearSelection();
           gesture = { kind: 'rect', id: e.pointerId, from: [x, y] };
@@ -1197,6 +1367,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
         const [x, y] = toPage(e);
         const dx = x - gesture.from[0];
         const dy = y - gesture.from[1];
+        if (Math.hypot(dx, dy) * state.zoom > HOLD_SLACK) clearTimeout(gesture.press);
         doc.pages[p.i].items = gesture.base.map((it) => (state.selection.ids.has(it.id) ? moved(it, dx, dy) : it));
         gesture.moved = true;
         drawItems(p.i);
@@ -1210,6 +1381,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
       const g = gesture;
       gesture = null;
       p.busy = false;
+      clearTimeout(g.press);
       if (g.raf) cancelAnimationFrame(g.raf);
       // Den Klick, den der Browser nach dem Strich schickt, bekommt kein Quiz.
       if (p.paper) swallowClick(p.el);
@@ -1232,7 +1404,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
         showSvg(p.svg.querySelector('.ink-sel-rect'), false);
         if (g.to) {
           const rect = { x: g.from[0], y: g.from[1], w: g.to[0] - g.from[0], h: g.to[1] - g.from[1] };
-          const ids = new Set(doc.pages[p.i].items.filter((it) => inSelection(it, rect)).map((it) => it.id));
+          const ids = withGroups(p.i, new Set(doc.pages[p.i].items.filter((it) => inSelection(it, rect)).map((it) => it.id)));
           state.selection = ids.size ? { page: p.i, ids } : null;
           paintSelection();
           paintToolbar();
@@ -1247,6 +1419,19 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     p.el.addEventListener('pointermove', move);
     p.el.addEventListener('pointerup', up);
     p.el.addEventListener('pointercancel', up);
+    // Rechtsklick beim Auswählen: Menü der Auswahl (ein Element darunter wird zuerst gewählt).
+    p.el.addEventListener('contextmenu', (e) => {
+      if (state.tool !== 'select') return;
+      e.preventDefault();
+      const [x, y] = toPage(e);
+      const hit = itemAt(doc.pages[p.i].items, x, y, 6 / state.zoom);
+      if (hit && !(state.selection?.page === p.i && state.selection.ids.has(hit.id))) {
+        state.selection = { page: p.i, ids: withGroups(p.i, new Set([hit.id])) };
+        paintSelection();
+        paintToolbar();
+      }
+      selectionMenu(e.clientX, e.clientY);
+    });
   }
 
   /** Höchstens ein Klick auf dem Blatt, gleich nach dem Strich – nie einer auf die Leiste. */
@@ -1288,10 +1473,20 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
 
   // ---------- Tastatur und Schließen ----------
   const onKey = (e) => {
-    if (e.target.closest?.('.ink-text')) return;
-    if ((e.key === 'Delete' || e.key === 'Backspace') && state.selection) { e.preventDefault(); deleteSelection(); }
+    // Tippen in Textfeldern und Quizzen (Dokument) bleibt Tippen.
+    const t = e.target;
+    if (t.closest?.('.ink-text') || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) || t.isContentEditable) return;
+    const mod = e.ctrlKey || e.metaKey;
+    const k = e.key.toLowerCase();
+    const sel = !!state.selection?.ids.size;
+    if ((e.key === 'Delete' || e.key === 'Backspace') && sel) { e.preventDefault(); deleteSelection(); }
     else if (e.key === 'Escape') clearSelection();
-    else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); history(e.shiftKey ? state.redo : state.undo, e.shiftKey ? state.undo : state.redo); }
+    else if (mod && k === 'z') { e.preventDefault(); history(e.shiftKey ? state.redo : state.undo, e.shiftKey ? state.undo : state.redo); }
+    else if (mod && k === 'c' && sel) { e.preventDefault(); copySelection(); }
+    else if (mod && k === 'x' && sel) { e.preventDefault(); cutSelection(); }
+    else if (mod && k === 'v' && clipboard) { e.preventDefault(); paste(); }
+    else if (mod && k === 'd' && sel) { e.preventDefault(); duplicateSelection(); }
+    else if (mod && k === 'g' && sel) { e.preventDefault(); if (e.shiftKey) ungroupSelection(); else groupSelection(); }
   };
   document.addEventListener('keydown', onKey);
   // Die Leiste bleibt oben: Der Browser darf die Seite nicht zoomen (iPad:

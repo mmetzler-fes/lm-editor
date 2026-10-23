@@ -46,7 +46,6 @@ nie, sie ist nur das Datenmodell darunter.
 - [x] Modul-Anzeige (`h5p-renderer.js` und 7 Hilfsdateien) und die gemeinsamen Hilfsfunktionen (`src/util/dom.js`) übernehmen, mit Tests für Formeln und Rätsel
 - [x] Gastgeber-Schnittstelle für die Anzeige ([docs/HOST.md](docs/HOST.md)): Weiter-Knopf, Knöpfe am Dokument, Abgabe von Aufnahmen
 - [x] Einbindung in LearningModules: git submodule unter `src/renderer/lm-editor`, Docker-Build holt ihn mit; `js/lm-host.js` ist der Gastgeber
-- [ ] Styles der Modul-Anzeige aus `styles.css` von LearningModules herauslösen (`src/css/`), App bindet sie ein
 - [ ] Gastgeber-Schnittstelle erweitern: Speichern/Laden, Medien, Module, Renderer, Rechte (Lehrkraft/Schüler)
 - [ ] Block-IDs auch in LearningModules: beim Speichern vergeben; prüfen, dass der worksheet-renderer das Feld `id` übergeht
 
@@ -61,6 +60,7 @@ nie, sie ist nur das Datenmodell darunter.
 - [ ] in LearningModules: Notizbuch-Vorschau und Schüleransicht nutzen die neue Ebene; der PDF-Weg bleibt, bis alles läuft
 
 ### 3 Standalone-Webapp
+- [ ] Styles der Modul-Anzeige aus `styles.css` von LearningModules herauslösen (`src/css/`). Damit die Kaskade gleich bleibt, ganze Abschnitte in ihrer Reihenfolge; vorher/nachher per berechneter Styles vergleichen
 - [ ] Startseite: neues Dokument, `.zlm` öffnen, zuletzt geöffnet (IndexedDB)
 - [ ] Bearbeiten: Dokument-Editor aus LearningModules (`docspec-editor.js`, YAML-Ansicht) übernehmen
 - [ ] Speichern: File System Access (Chrome/Edge), sonst Download; automatisches Zwischenspeichern

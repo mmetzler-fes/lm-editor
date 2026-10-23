@@ -21,13 +21,14 @@ nie, sie ist nur das Datenmodell darunter.
 | Zielgruppe | zuerst die Lehrkraft; Schüler nutzen die Einheit über LearningModules |
 | Stift | direkt auf der HTML-Ansicht, kein PDF als Hintergrund |
 | Lage der Striche | an Bausteinen verankert (feste Block-IDs), Koordinaten in Punkten relativ zum Baustein |
-| Satzbreite | fest (A4-Satzspiegel); auf schmalen Geräten wird verkleinert, nicht umbrochen – so liegen die Striche überall gleich |
+| Satzbreite | fest (A4-Satzspiegel, hoch oder quer umstellbar); auf schmalen Geräten wird verkleinert, nicht umbrochen – so liegen die Striche überall gleich |
 | Karos | in der Höhe ziehbar, für Lehrkraft **und** Schüler |
 | Code | reine ES-Module ohne Build-Schritt (wie der Renderer von LearningModules) |
 | Betrieb | Webapp (offline), Docker (Webapp + worksheet-renderer), später Tauri mit Dateiverknüpfung |
 | Druck (.odt/PDF) | über den worksheet-renderer, wenn erreichbar; sonst Browser-Druck |
 | Renderer auf öffentlichem Server | nur über ein LearningModules-Konto; der App-Server leitet weiter und behält den Token |
 | Dokumente auf dem Server | keine – die Dateien bleiben bei der Lehrkraft |
+| Schriften | Liberation Sans, Serif, Mono (SIL OFL) – maßgleich mit Arial, Times New Roman, Courier New der Schulvorlage; mitgeliefert |
 | Lizenz | AGPL-3.0-or-later (wie LearningModules, von dort wird Code übernommen) |
 
 ## Phasen
@@ -40,8 +41,8 @@ nie, sie ist nur das Datenmodell darunter.
 - [x] Testlauf in GitHub Actions
 
 ### 1 Herauslösen aus LearningModules
-- [ ] `docspec.js` (Prüfen, Anzeige, StarMath → MathML) übernehmen; LearningModules nutzt danach die Fassung von hier
-- [ ] Stift-Geometrie und Geodreieck übernehmen (`ink-geometry.js`, `ink-ruler.js`, mit Tests)
+- [x] `docspec.js` (Prüfen, Anzeige, StarMath → MathML) und `doc-quiz.js` übernehmen, mit Tests; LearningModules nutzt die Fassung von hier
+- [x] Stift-Geometrie und Geodreieck übernehmen (`ink-geometry.js`, `ink-ruler.js`, mit Tests)
 - [ ] Modul-Anzeige (`h5p-renderer.js` und Hilfsdateien) übernehmen; Server-Aufrufe (Audio, Diktat, PDF) laufen über die **Gastgeber-Schnittstelle**
 - [ ] Gastgeber-Schnittstelle festlegen: Speichern/Laden, Medien, Module, Renderer, Rechte (Lehrkraft/Schüler)
 - [ ] Einbindung in LearningModules (Vorschlag: git submodule unter `src/renderer/lm-editor`, Docker-Build holt ihn mit)
@@ -49,6 +50,8 @@ nie, sie ist nur das Datenmodell darunter.
 
 ### 2 Stift auf der HTML-Ansicht
 - [ ] Ansicht mit fester Satzbreite, Verkleinern statt Umbruch, eingebettete Schriften (gleiche Zeilenumbrüche auf allen Geräten)
+- [ ] A4 hoch/quer umstellbar (`spec.orientation`); beim Umstellen behalten Striche auf Karos ihre Lage, auf Text nur ungefähr
+- [ ] worksheet-renderer: Querformat (Seitenvorlage quer, Kopfzeile breiter)
 - [ ] Stift-Ebene je Baustein (Werkzeuge aus dem bisherigen Stift-Editor: Stift, Textmarker, Radierer, Auswahl, Textfelder, gerade Linie, Geodreieck)
 - [ ] Striche über Bausteingrenzen (gehören zum Baustein, in dem sie beginnen)
 - [ ] Karos ziehbar (Anfasser unten); Schüler-Verlängerung liegt in ihrer Ebene, nicht im Dokument
@@ -88,5 +91,4 @@ nie, sie ist nur das Datenmodell darunter.
 
 ## Offene Fragen
 
-- Schriften: welche frei lizenzierten Schriften passen zur Schulvorlage (Arial → Liberation Sans)?
 - Abgabe von Schülern außerhalb der App (Datei zurückgeben) – gewünscht oder nur über LearningModules?

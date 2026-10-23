@@ -42,11 +42,13 @@ mit dem Hinweis, das Programm zu aktualisieren.
 ```
 
 `spec` folgt dem Spec-Format der Arbeitsblätter
-(`worksheet-renderer/SPEC.md` in LearningModules), mit zwei Ergänzungen:
+(`worksheet-renderer/SPEC.md` in LearningModules), mit drei Ergänzungen:
 
 - **`id`** an jedem Baustein: kurz, eindeutig im Dokument, bleibt beim
   Verschieben und Bearbeiten gleich. Daran hängen die Stift-Striche. Fehlt sie,
   vergibt der Editor eine (`ensureBlockIds`).
+- **`orientation`** auf oberster Ebene: `portrait` (A4 hoch, Vorgabe) oder
+  `landscape` (A4 quer). Die Satzbreite ist dann 17 cm bzw. 25,7 cm.
 - **Verweise ins Archiv**: `image.src: "media/schaltung.png"`,
   `quiz.module: "<id>"` → `modules/<id>.json`.
 

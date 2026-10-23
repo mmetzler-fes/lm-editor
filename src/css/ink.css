@@ -117,12 +117,28 @@ body.ink-open { overflow: hidden; }
 .ink-paper-mode .ink-svg, .ink-paper-mode .ink-texts { pointer-events: none; }
 .ink-tool-interact .ink-page { touch-action: pan-x pan-y; }
 .ink-overlay .ink-paper-host input, .ink-overlay .ink-paper-host textarea { -webkit-user-select: text; user-select: text; }
+/* Schreibfeld: unten die Höhe (immer), mit „Auswählen“ rechts die Breite, an der Ecke beides, oben das Muster. */
 .ink-karo-handle {
-  position: absolute; left: 50%; bottom: -10px; transform: translateX(-50%); z-index: 2;
-  width: 56px; height: 20px; display: flex; align-items: center; justify-content: center;
-  cursor: ns-resize; touch-action: none;
+  position: absolute; z-index: 2; display: flex; align-items: center; justify-content: center; touch-action: none;
 }
-.ink-karo-handle span { width: 36px; height: 6px; border-radius: 3px; background: #3b82f6; opacity: 0.75; box-shadow: 0 0 0 2px #fff; }
+.ink-karo-handle span { border-radius: 3px; background: #3b82f6; opacity: 0.75; box-shadow: 0 0 0 2px #fff; }
+.ink-karo-h { left: 50%; bottom: -10px; transform: translateX(-50%); width: 56px; height: 20px; cursor: ns-resize; }
+.ink-karo-h span { width: 36px; height: 6px; }
+.ink-karo-w { right: -10px; top: 50%; transform: translateY(-50%); width: 20px; height: 56px; cursor: ew-resize; }
+.ink-karo-w span { width: 6px; height: 36px; }
+.ink-karo-c { right: -11px; bottom: -11px; width: 22px; height: 22px; cursor: nwse-resize; }
+.ink-karo-c span { width: 12px; height: 12px; border-radius: 3px; }
+.ink-karo-tools {
+  position: absolute; right: 4px; top: 4px; z-index: 2; display: flex; gap: 2px; padding: 2px;
+  border-radius: 8px; background: #fff; box-shadow: 0 1px 4px rgba(15, 23, 42, 0.25);
+}
+.ink-karo-tools button {
+  min-width: 28px; height: 26px; border: none; border-radius: 6px; background: transparent;
+  color: #1e293b; font-size: 15px; cursor: pointer; touch-action: manipulation;
+}
+.ink-karo-tools button.active { background: #dbeafe; color: #2563eb; }
+.ink-karo-w, .ink-karo-c, .ink-karo-tools { display: none; }
+.ink-tool-select .ink-karo-w, .ink-tool-select .ink-karo-c, .ink-tool-select .ink-karo-tools { display: flex; }
 .ink-tool-interact .ink-karo-handle { display: none; }
 .ink-action { color: var(--accent); white-space: nowrap; flex: 0 0 auto; margin-right: 4px; }
 .ink-title { flex: 0 1 auto; min-width: 6ch; }

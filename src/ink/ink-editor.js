@@ -262,6 +262,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     overlay.classList.toggle('ink-pinned', state.pinned);
     overlay.classList.toggle('ink-tool-text', state.tool === 'text');
     overlay.classList.toggle('ink-tool-interact', state.tool === 'interact');
+    overlay.classList.toggle('ink-tool-select', state.tool === 'select');
     overlay.classList.toggle('ink-paper-mode', doc.bg === 'paper');
     const interact = overlay.querySelector('[data-tool="interact"]');
     if (interact) interact.hidden = doc.bg !== 'paper';
@@ -503,9 +504,13 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
   }
 
   // ---------- Dokument als Hintergrund ----------
-  let karoMap = {};           // bid → Zeilen, wo ein Karo länger gezogen ist
+  // bid → { lines, width, pattern }, wo ein Schreibfeld anders ist als im Dokument
+  // (in der Ebene: karoLines, karoWidth in cm, karoPattern).
+  let karoMap = {};
 
-  const karoOf = (l) => Object.fromEntries(Object.entries(l?.blocks || {}).filter(([, e]) => e.karoLines).map(([bid, e]) => [bid, e.karoLines]));
+  const karoOf = (l) => Object.fromEntries(Object.entries(l?.blocks || {})
+    .filter(([, e]) => e.karoLines || e.karoWidth || e.karoPattern)
+    .map(([bid, e]) => [bid, { lines: e.karoLines, width: e.karoWidth, pattern: e.karoPattern }]));
   const anchorY = (it) => (it.type === 'text' ? it.y : it.points[0][1]);
 
   function leavePaper() {
@@ -616,9 +621,12 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
       if (b) slot(b.bid, b.top).items.push(moved(it, 0, -b.top));
       else slot('_', 0).items.push(it);
     }
-    for (const [bid, lines] of Object.entries(karoMap)) {
+    for (const [bid, k] of Object.entries(karoMap)) {
       const b = findBlock(bid);
-      slot(b ? b.bid : bid, b ? b.top : 0).karoLines = lines;
+      const entry = slot(b ? b.bid : bid, b ? b.top : 0);
+      if (k.lines) entry.karoLines = k.lines;
+      if (k.width) entry.karoWidth = k.width;
+      if (k.pattern) entry.karoPattern = k.pattern;
     }
     return { blocks };
   }
@@ -633,60 +641,124 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     return out;
   }
 
-  /** Karos auf ihre Länge bringen: mindestens wie im Dokument, länger, wenn gezogen. */
+  const FIELD_PATTERNS = { karo: '▦ Karo', linien: '☰ Linien', leer: '▢ Leer' };
+  const FIELD_MIN_CM = 2;
+  const FIELD_MAX_CM = 16.5;
+
+  /** Maße eines Schreibfelds im Dokument (beim ersten Mal am Element abgelegt). */
+  function fieldBase(karo) {
+    if (!karo.dataset.base) {
+      karo.dataset.base = String(Math.round(parseFloat(karo.style.height) / 0.5) || 4);
+      karo.dataset.baseWidth = String(parseFloat(karo.style.width) || '');
+      karo.dataset.basePattern = karo.classList.contains('ds-karo-linien') ? 'linien' : karo.classList.contains('ds-karo-leer') ? 'leer' : 'karo';
+    }
+    return { lines: Number(karo.dataset.base), width: Number(karo.dataset.baseWidth) || null, pattern: karo.dataset.basePattern };
+  }
+
+  const fieldOf = (el) => karoMap[el.dataset.bid] || karoMap[`p:${el.dataset.bpath}`] || {};
+
+  /** Ein Schreibfeld zeichnen: Höhe mindestens wie im Dokument, Breite und Muster wie gewählt. */
+  function paintField(karo, { lines, width, pattern }) {
+    karo.style.height = `${lines * 0.5}cm`;
+    if (width && width < FIELD_MAX_CM) karo.style.width = `${width}cm`; else karo.style.removeProperty('width');
+    karo.classList.toggle('ds-karo-linien', pattern === 'linien');
+    karo.classList.toggle('ds-karo-leer', pattern === 'leer');
+    karo.querySelectorAll('.ink-karo-tools [data-pattern]').forEach((b) => b.classList.toggle('active', b.dataset.pattern === pattern));
+  }
+
+  /** Aktuelle Maße: Dokument, überschrieben von der Ebene. */
+  function fieldNow(el, karo) {
+    const base = fieldBase(karo);
+    const own = fieldOf(el);
+    return {
+      lines: Math.max(base.lines, Math.min(KARO_MAX, own.lines || base.lines)),
+      width: own.width || base.width,
+      pattern: own.pattern || base.pattern,
+    };
+  }
+
   function applyKaro() {
     for (const el of paperView.el.querySelectorAll('[data-btype="karo"]')) {
       const karo = el.querySelector('.ds-karo');
-      if (!karo) continue;
-      if (!karo.dataset.base) karo.dataset.base = String(Math.round(parseFloat(karo.style.height) / 0.5) || 4);
-      const base = Number(karo.dataset.base);
-      const want = karoMap[el.dataset.bid] ?? karoMap[`p:${el.dataset.bpath}`] ?? base;
-      karo.style.height = `${Math.max(base, Math.min(KARO_MAX, want)) * 0.5}cm`;
+      if (karo) paintField(karo, fieldNow(el, karo));
     }
   }
 
-  /** Anfasser unten am Karo: länger (und wieder kürzer, bis zur Länge im Dokument) ziehen. */
+  /** Änderung eines Felds übernehmen – nur, was vom Dokument abweicht, steht in der Ebene. */
+  function setField(el, karo, next, before) {
+    const base = fieldBase(karo);
+    const entry = {};
+    if (next.lines !== base.lines) entry.lines = next.lines;
+    // Breite: null = Satzbreite; 16,5 in der Ebene heißt „volle Breite“ (bei schmalerem Feld im Dokument).
+    const norm = (w) => (w && w < FIELD_MAX_CM ? w : null);
+    if (norm(next.width) !== norm(base.width)) entry.width = norm(next.width) || FIELD_MAX_CM;
+    if (next.pattern !== base.pattern) entry.pattern = next.pattern;
+    const old = JSON.stringify(fieldOf(el));
+    if (old === JSON.stringify(entry)) return;
+    state.undo.push(before);
+    state.redo = [];
+    delete karoMap[`p:${el.dataset.bpath}`];
+    if (Object.keys(entry).length) karoMap[el.dataset.bid] = entry; else delete karoMap[el.dataset.bid];
+    paintField(karo, fieldNow(el, karo));
+    reflowPaper();
+    changed();
+  }
+
+  /**
+   * Anfasser am Schreibfeld: unten die Höhe (immer – auch beim Schreiben),
+   * mit „Auswählen“ dazu rechts die Breite, an der Ecke beides, oben das Muster.
+   */
   function addKaroHandles() {
     if (paper.karoResize === false) return;
     for (const el of paperView.el.querySelectorAll('[data-btype="karo"]')) {
       const karo = el.querySelector('.ds-karo');
       if (!karo || karo.querySelector('.ink-karo-handle')) continue;
-      const h = document.createElement('div');
-      h.className = 'ink-karo-handle';
-      h.title = 'Karo länger oder kürzer ziehen';
-      h.innerHTML = '<span></span>';
-      karo.appendChild(h);
-      h.addEventListener('pointerdown', (e) => {
+      const handle = (cls, title) => {
+        const h = document.createElement('div');
+        h.className = `ink-karo-handle ${cls}`;
+        h.title = title;
+        h.innerHTML = '<span></span>';
+        karo.appendChild(h);
+        return h;
+      };
+      const drag = (h, { x, y }) => h.addEventListener('pointerdown', (e) => {
         e.preventDefault();
         e.stopPropagation();
         h.setPointerCapture?.(e.pointerId);
         const before = stateJson();
-        const base = Number(karo.dataset.base);
+        const base = fieldBase(karo);
+        const start = fieldNow(el, karo);
         const r0 = karo.getBoundingClientRect();
-        const step = r0.height / (parseFloat(karo.style.height) / 0.5); // Bildschirmpixel je Zeile
-        let lines = Math.round(r0.height / step);
+        const pxPerCm = r0.height / (start.lines * 0.5); // Bildschirmpixel je cm
+        const next = { ...start };
         const move = (ev) => {
-          const n = Math.max(base, Math.min(KARO_MAX, Math.round((ev.clientY - r0.top) / step)));
-          if (n === lines) return;
-          lines = n;
-          karo.style.height = `${n * 0.5}cm`;
+          if (y) next.lines = Math.max(base.lines, Math.min(KARO_MAX, Math.round((ev.clientY - r0.top) / (pxPerCm / 2))));
+          if (x) next.width = Math.max(FIELD_MIN_CM, Math.min(FIELD_MAX_CM, Math.round(((ev.clientX - r0.left) / pxPerCm) * 2) / 2));
+          paintField(karo, next);
         };
         const up = () => {
           h.removeEventListener('pointermove', move);
           h.removeEventListener('pointerup', up);
           h.removeEventListener('pointercancel', up);
-          const bid = el.dataset.bid;
-          if ((karoMap[bid] ?? base) === lines) return;
-          state.undo.push(before);
-          state.redo = [];
-          if (lines === base) delete karoMap[bid]; else karoMap[bid] = lines;
-          reflowPaper();
-          changed();
+          setField(el, karo, next, before);
         };
         h.addEventListener('pointermove', move);
         h.addEventListener('pointerup', up);
         h.addEventListener('pointercancel', up);
       });
+      drag(handle('ink-karo-h', 'Feld länger oder kürzer ziehen'), { y: true });
+      drag(handle('ink-karo-w', 'Feld breiter oder schmaler ziehen'), { x: true });
+      drag(handle('ink-karo-c', 'Feld größer oder kleiner ziehen'), { x: true, y: true });
+      const tools = document.createElement('div');
+      tools.className = 'ink-karo-tools';
+      tools.innerHTML = Object.entries(FIELD_PATTERNS).map(([p, label]) => `<button type="button" data-pattern="${p}" title="${label.slice(2)}">${label.slice(0, 1)}</button>`).join('');
+      tools.addEventListener('pointerdown', (e) => e.stopPropagation());
+      tools.addEventListener('click', (e) => {
+        const b = e.target.closest('[data-pattern]');
+        if (b) setField(el, karo, { ...fieldNow(el, karo), pattern: b.dataset.pattern }, stateJson());
+      });
+      karo.appendChild(tools);
+      paintField(karo, fieldNow(el, karo));
     }
   }
 
@@ -979,7 +1051,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     p.el.addEventListener('pointerdown', (e) => {
       // Im Dokument: Karo-Anfasser, „Bedienen“ und Textfelder (mit dem Text-
       // Werkzeug) gehen an das Blatt; alles andere fängt der Editor vorher ab.
-      if (p.paper && (e.target.closest?.('.ink-karo-handle') || state.tool === 'interact'
+      if (p.paper && (e.target.closest?.('.ink-karo-handle, .ink-karo-tools') || state.tool === 'interact'
         || (state.tool === 'text' && e.target.closest?.('.ink-text')))) return;
       if (e.pointerType === 'pen') penDown = true;
       // Handballen: Solange der Stift schreibt, zählt kein Finger.

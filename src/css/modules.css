@@ -826,6 +826,12 @@ body {
   background-size: 0.5cm 0.5cm;
   max-width: 16.5cm;
 }
+.docspec .ds-karo-linien {
+  border: none;
+  background-image: linear-gradient(to bottom, transparent calc(1cm - 1px), var(--text-secondary) calc(1cm - 1px));
+  background-size: 100% 1cm;
+}
+.docspec .ds-karo-leer { background-image: none; }
 .docspec .ds-solution {
   color: var(--danger);
   border-left: 3px solid var(--danger);
@@ -863,6 +869,9 @@ body {
 }
 .ds-solutions-toggle { margin-bottom: 12px; }
 .ds-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+.ds-widget { position: relative; margin: 6px 0; padding: 4px 8px 4px 8px; border: 1px dashed var(--text-secondary); border-radius: var(--radius-sm); background: var(--bg-primary); cursor: pointer; user-select: none; }
+.ds-widget .ds-solution { margin: 0; }
+.ds-widget-label { position: absolute; top: -0.7em; right: 8px; font-size: 0.7em; background: var(--bg-secondary); padding: 0 4px; color: var(--text-secondary); }
 .dict-player { padding: 20px; background: var(--bg-primary); border-radius: var(--radius-md); }
 .dict-instructions { margin: 0 0 16px; font-weight: 600; }
 .dict-row { margin-bottom: 16px; }

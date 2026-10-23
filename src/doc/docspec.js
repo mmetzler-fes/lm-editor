@@ -21,6 +21,18 @@ const FLOATS = ['left', 'right', 'center'];
 // gibt es nur im Kurs-Projekt des Generators.
 const IMAGE_SRC_RE = /^(data:image\/(png|jpeg|gif|webp|svg\+xml);base64,|https:\/\/|\/api\/)/i;
 const CSS_LENGTH_RE = /^\d+(\.\d+)?(cm|mm|px|%)$/;
+// Schreibfeld (Block `karo`): Muster und Breite in cm, wie im Renderer.
+export const KARO_PATTERNS = ['karo', 'linien', 'leer'];
+export const KARO_MAX_WIDTH_CM = 16.5;
+const KARO_WIDTH_RE = /^(\d+(?:\.\d+)?)\s*cm$/;
+
+/** Breite eines Schreibfelds in cm (auf 0,5 cm gerundet, 1–16,5), null = Satzbreite. */
+export function karoWidthCm(block) {
+  const m = KARO_WIDTH_RE.exec(String(block?.width ?? '').trim());
+  if (!m) return null;
+  const cm = Math.round(Number(m[1]) * 2) / 2;
+  return cm >= KARO_MAX_WIDTH_CM ? null : Math.max(1, cm);
+}
 
 function esc(s) {
   return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -139,6 +151,9 @@ function checkBlock(block, path, errors, inSolution) {
       if (block.title !== undefined) need(isText(block.title), 'title muss ein Text sein.');
       break;
     case 'karo':
+      if (block.width !== undefined) need(KARO_WIDTH_RE.test(String(block.width).trim()), 'width: Breite in cm, z. B. "8cm".');
+      if (block.pattern !== undefined) need(KARO_PATTERNS.includes(block.pattern), `pattern: ${KARO_PATTERNS.join(', ')}.`);
+    // fall through
     case 'spacer':
       if (block.lines !== undefined) {
         need(Number.isInteger(block.lines) && block.lines >= 1 && block.lines <= 60, 'lines: ganze Zahl von 1 bis 60.');
@@ -667,7 +682,10 @@ function renderBlockHtml(block, ctx) {
     }
     case 'karo': {
       const lines = Number.isInteger(block.lines) ? block.lines : 4;
-      return `<div class="ds-karo" style="height:${lines * 0.5}cm" aria-hidden="true"></div>`;
+      const width = karoWidthCm(block);
+      // Klassen ds-karo-linien, ds-karo-leer (ausgeschrieben, damit tools/extract-css.mjs sie findet)
+      const pattern = KARO_PATTERNS.includes(block.pattern) && block.pattern !== 'karo' ? ` ds-karo-${block.pattern}` : '';
+      return `<div class="ds-karo${pattern}" style="height:${lines * 0.5}cm${width ? `;width:${width}cm` : ''}" aria-hidden="true"></div>`;
     }
     case 'spacer': {
       const lines = Number.isInteger(block.lines) ? block.lines : 3;

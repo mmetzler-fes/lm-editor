@@ -141,6 +141,47 @@ function tableBlock(el, warnings) {
   return block;
 }
 
+const tableRows = (el) => [...el.children].flatMap((c) => (c.tagName === 'TR' ? [c] : ['THEAD', 'TBODY', 'TFOOT'].includes(c.tagName) ? [...c.children].filter((r) => r.tagName === 'TR') : []));
+const tableCells = (tr) => [...tr.children].filter((c) => c.tagName === 'TD' || c.tagName === 'TH');
+
+/**
+ * Tabelle aus lauter leeren Zellen (ab 8 Spalten) – so schreibt der Renderer
+ * ein Karo in die .odt (Zellen à 0,5 cm). Wird wieder ein Schreibfeld.
+ */
+function karoOfTable(el) {
+  const rows = tableRows(el);
+  if (!rows.length || rows.length > 60) return null;
+  const cols = Math.max(...rows.map((tr) => tableCells(tr).reduce((n, td) => n + (Number(td.getAttribute('colspan')) || 1), 0)));
+  if (cols < 8) return null;
+  const empty = rows.every((tr) => tableCells(tr).every((td) => !td.textContent.trim() && !td.querySelector('img, table')));
+  if (!empty) return null;
+  const block = { type: 'karo', lines: rows.length };
+  if (cols < 33) block.width = `${cols * 0.5}cm`;
+  return block;
+}
+
+/**
+ * Tabelle mit nur einer Zelle, die Absätze, Listen oder Tabellen enthält – so
+ * schreibt der Renderer einen Kasten. Wird wieder ein Kasten; ein erster Absatz
+ * nur in Fett ist sein Titel.
+ */
+function boxOfTable(el, warnings) {
+  const rows = tableRows(el);
+  if (rows.length !== 1) return null;
+  const cells = tableCells(rows[0]);
+  if (cells.length !== 1 || ![...cells[0].children].some((c) => BLOCK_TAGS.has(c.tagName))) return null;
+  const td = cells[0];
+  const box = { type: 'box' };
+  const first = td.firstElementChild;
+  if (first?.tagName === 'P' && first.children.length === 1 && /^(STRONG|B)$/.test(first.firstElementChild.tagName)
+    && first.textContent.trim() === first.firstElementChild.textContent.trim() && first.textContent.trim()) {
+    box.title = first.textContent.trim();
+    first.remove();
+  }
+  box.blocks = blocksOf(td, warnings);
+  return box;
+}
+
 /** Blöcke aus den Kindern eines Elements. */
 function blocksOf(parent, warnings) {
   const out = [];
@@ -192,7 +233,7 @@ function blocksOf(parent, warnings) {
       const images = [];
       out.push(listBlock(el, images, warnings));
       if (images.length) warnings.push(`${images.length} Bild${images.length === 1 ? '' : 'er'} in Listen weggelassen.`);
-    } else if (tag === 'TABLE') out.push(tableBlock(el, warnings));
+    } else if (tag === 'TABLE') out.push(karoOfTable(el) || boxOfTable(el, warnings) || tableBlock(el, warnings));
     else if (tag === 'DIV' && /\bws-box\b/.test(el.getAttribute('class') || '')) {
       const inner = blocksOf(el, warnings);
       const box = { type: 'box' };

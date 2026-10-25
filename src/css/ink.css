@@ -168,3 +168,18 @@ body.ink-open { overflow: hidden; }
   /* Im Quiz nichts zum Klicken; die Fragen bleiben. */
   .ink-print-sheet .ds-quiz button.btn-sm, .ink-print-sheet .ds-actions, .ink-print-sheet .ds-solutions-toggle { display: none !important; }
 }
+
+/* ⊕ zum Einfügen zwischen den Bausteinen: groß genug für den Finger, sichtbar nur ein kleiner Punkt. */
+.ink-paper-host .lm-paper { position: relative; }
+.ink-insert-mark {
+  position: absolute; left: 0.55cm; width: 30px; height: 30px; margin-top: -15px; padding: 0;
+  display: flex; align-items: center; justify-content: center; z-index: 3;
+  border: none; background: transparent; cursor: pointer; touch-action: manipulation;
+}
+.ink-insert-mark span {
+  display: flex; align-items: center; justify-content: center; width: 14px; height: 14px; border-radius: 50%;
+  background: #e0ecff; color: #3b82f6; font: 700 12px/1 Arial, sans-serif; opacity: 0.55;
+  box-shadow: 0 0 0 1px #bfd4f6;
+}
+.ink-insert-mark:hover span, .ink-insert-mark:focus-visible span { opacity: 1; background: #3b82f6; color: #fff; }
+@media print { .ink-insert-mark { display: none; } }

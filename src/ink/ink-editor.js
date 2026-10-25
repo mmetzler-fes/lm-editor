@@ -142,6 +142,13 @@ const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<
  *   `mount` schreibt das Dokument mit Block-Hüllen (data-bid) in `el`.
  *   `capture(el)` → Eingaben im Blatt (z. B. eingebettete Quizze), gespeichert
  *   als `forms` im Stand; `restore(el, forms)` setzt sie nach dem Aufbau wieder.
+ *   Einfügen (⊕ am Rand zwischen den Bausteinen): ohne weitere Angaben landen
+ *   neue Schreibfelder in der Ebene (nur für diese Person). Mit
+ *   `insertBlock(afterBid | null, block)` (Lehrkraft) fügt der Gastgeber den
+ *   Baustein ins Dokument ein und speichert es; mit `setField(bid, { lines,
+ *   width, pattern })` gehen Größe und Muster eines Schreibfelds ins Dokument
+ *   statt in die Ebene. `insertItems()` → weitere Einträge im Menü:
+ *   [{ label, run(afterBid) }] (z. B. Quiz, PDF).
  * - `store`: woanders speichern als auf diesem Gerät – { load() → Stand | null,
  *   save(stand) → true/false, label }; der Stand ist { v, bg, pages, layer, ruler }.
  * - `actions`: weitere Knöpfe in der Leiste – [{ label, title, onClick }].
@@ -159,6 +166,8 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
   // getrennt gespeichert; doc.pages ist immer, was gerade zu sehen ist.
   let sheetPages = doc.pages || [{ items: [] }];
   let layer = doc.layer || { blocks: {} };
+  // Selbst eingefügte Schreibfelder (nur für diese Person): [{ id, after, pattern }].
+  let inserts = Array.isArray(layer.inserts) ? layer.inserts : [];
   delete doc.layer;
   if (doc.bg === 'paper') doc.pages = [{ items: [] }];
 
@@ -610,6 +619,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     // Erst mit den richtigen Schriften stimmen die Zeilenumbrüche.
     try { await document.fonts?.ready; } catch (_) { /* ohne */ }
     paperView = { el: sheet, host, blocks: [], pending: false };
+    placeInserts(sheet);
     karoMap = karoOf(layer);
     applyKaro();
     const page = { i: 0, w: 0, h: 0, el, svg: el.querySelector('.ink-svg'), top: el.querySelector('.ink-top'), texts: el.querySelector('.ink-texts'), paper: true };
@@ -620,6 +630,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     doc.pages = [{ items: fromLayer() }];
     bindInput(page);
     addKaroHandles();
+    addInsertMarks();
     drawItems(0);
     renderRuler();
     // Bilder laden nach, Quizze klappen auf: Lage neu messen, Striche wandern mit.
@@ -661,6 +672,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     doc.pages = [{ items: fromLayer(keep) }];
     sizePage(pages[0]);
     drawItems(0);
+    positionInsertMarks();
   }
 
   /** Baustein an der Höhe y: der innerste, der sie überdeckt – sonst der letzte darüber. */
@@ -677,7 +689,12 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
   /** Baustein zu einem Schlüssel der Ebene; „p:…“ findet ihn auch, wenn er inzwischen eine feste ID hat. */
   function findBlock(bid) {
     const list = paperView?.blocks || [];
-    return list.find((b) => b.bid === bid) || (bid.startsWith('p:') ? list.find((b) => b.path === bid.slice(2)) : null) || null;
+    if (!bid.startsWith('p:')) return list.find((b) => b.bid === bid) || null;
+    // Am Pfad gespeichert: Hat der Baustein inzwischen seine alte Position als ID
+    // (pos3, nach dem Einfügen davor), zählt die – sonst der Pfad.
+    const path = bid.slice(2);
+    const fixed = `pos${path.replace(/\./g, 'x')}`;
+    return list.find((b) => b.bid === bid || b.bid === fixed) || list.find((b) => b.path === path && !b.bid.startsWith('pos')) || null;
   }
 
   /** Striche des Blatts → Ebene (je Baustein, y relativ zu seiner Oberkante). */
@@ -700,7 +717,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
       if (k.width) entry.karoWidth = k.width;
       if (k.pattern) entry.karoPattern = k.pattern;
     }
-    return { blocks };
+    return inserts.length ? { blocks, inserts } : { blocks };
   }
 
   /** Ebene → Striche des Blatts. Fehlt ein Baustein, bleiben seine Striche, wo sie zuletzt waren. */
@@ -742,8 +759,9 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
   function fieldNow(el, karo) {
     const base = fieldBase(karo);
     const own = fieldOf(el);
+    const min = el.dataset.inserted ? 1 : base.lines;
     return {
-      lines: Math.max(base.lines, Math.min(KARO_MAX, own.lines || base.lines)),
+      lines: Math.max(min, Math.min(KARO_MAX, own.lines || base.lines)),
       width: own.width || base.width,
       pattern: own.pattern || base.pattern,
     };
@@ -758,6 +776,16 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
 
   /** Änderung eines Felds übernehmen – nur, was vom Dokument abweicht, steht in der Ebene. */
   function setField(el, karo, next, before) {
+    // Lehrkraft: Größe und Muster gehören ins Dokument (der Gastgeber speichert es).
+    if (paper.setField && !el.dataset.inserted) {
+      const bid = el.dataset.bid;
+      status('…');
+      Promise.resolve(paper.setField(bid, { lines: next.lines, width: next.width && next.width < FIELD_MAX_CM ? next.width : null, pattern: next.pattern }))
+        .then(() => { delete karoMap[bid]; delete karoMap[`p:${el.dataset.bpath}`]; return layoutPaper(); })
+        .then(() => status('💾 Im Dokument gespeichert'))
+        .catch((err) => status(`⚠️ ${err?.message || err}`));
+      return;
+    }
     const base = fieldBase(karo);
     const entry = {};
     if (next.lines !== base.lines) entry.lines = next.lines;
@@ -799,12 +827,14 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
         h.setPointerCapture?.(e.pointerId);
         const before = stateJson();
         const base = fieldBase(karo);
+        // Ins Dokument (Lehrkraft) bzw. selbst eingefügt: bis auf eine Zeile verkleinerbar.
+        const minLines = paper.setField || el.dataset.inserted ? 1 : base.lines;
         const start = fieldNow(el, karo);
         const r0 = karo.getBoundingClientRect();
         const pxPerCm = r0.height / (start.lines * 0.5); // Bildschirmpixel je cm
         const next = { ...start };
         const move = (ev) => {
-          if (y) next.lines = Math.max(base.lines, Math.min(KARO_MAX, Math.round((ev.clientY - r0.top) / (pxPerCm / 2))));
+          if (y) next.lines = Math.max(minLines, Math.min(KARO_MAX, Math.round((ev.clientY - r0.top) / (pxPerCm / 2))));
           if (x) next.width = Math.max(FIELD_MIN_CM, Math.min(FIELD_MAX_CM, Math.round(((ev.clientX - r0.left) / pxPerCm) * 2) / 2));
           paintField(karo, next);
         };
@@ -823,15 +853,124 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
       drag(handle('ink-karo-c', 'Feld größer oder kleiner ziehen'), { x: true, y: true });
       const tools = document.createElement('div');
       tools.className = 'ink-karo-tools';
-      tools.innerHTML = Object.entries(BLOCK_PATTERNS).map(([p, label]) => `<button type="button" data-pattern="${p}" title="${label.slice(2)}">${label.slice(0, 1)}</button>`).join('');
+      tools.innerHTML = Object.entries(BLOCK_PATTERNS).map(([p, label]) => `<button type="button" data-pattern="${p}" title="${label.slice(2)}">${label.slice(0, 1)}</button>`).join('')
+        + (el.dataset.inserted ? '<button type="button" data-remove="1" title="Eingefügtes Feld entfernen">✕</button>' : '');
       tools.addEventListener('pointerdown', (e) => e.stopPropagation());
       tools.addEventListener('click', (e) => {
+        if (e.target.closest('[data-remove]')) { removeInsert(el.dataset.bid); return; }
         const b = e.target.closest('[data-pattern]');
         if (b) setField(el, karo, { ...fieldNow(el, karo), pattern: b.dataset.pattern }, stateJson());
       });
       karo.appendChild(tools);
       paintField(karo, fieldNow(el, karo));
     }
+  }
+
+  // ---------- Einfügen zwischen Bausteinen (⊕ am Rand) ----------
+
+  /** Selbst eingefügte Schreibfelder ins Blatt setzen – hinter ihren Baustein, sonst ans Ende. */
+  function placeInserts(sheet) {
+    const root = sheet.querySelector('.docspec') || sheet;
+    for (const ins of inserts) {
+      const box = document.createElement('div');
+      box.className = 'ds-b';
+      box.dataset.bid = ins.id;
+      box.dataset.btype = 'karo';
+      box.dataset.inserted = '1';
+      const pattern = ['linien', 'leer'].includes(ins.pattern) ? ` ds-karo-${ins.pattern}` : '';
+      box.innerHTML = `<div class="ds-karo${pattern}" style="height:0.5cm" aria-hidden="true"></div>`;
+      const after = ins.after ? sheet.querySelector(`[data-bid="${CSS.escape(ins.after)}"]`) : null;
+      if (after) after.after(box);
+      else if (ins.after === null) root.prepend(box);
+      else root.appendChild(box);
+    }
+  }
+
+  /** Bausteine der obersten Ebene (nicht in einem Kasten oder einer Lösung), von oben nach unten. */
+  const topBlocks = () => (paperView?.blocks || []).filter((b) => b.depth === 0).sort((a, b) => a.top - b.top);
+
+  /** Kleine ⊕ am linken Rand: vor dem ersten Baustein und hinter jedem. */
+  function addInsertMarks() {
+    if (paper.insert === false) return;
+    paperView.el.querySelectorAll('.ink-insert-mark').forEach((m) => m.remove());
+    const make = (after) => {
+      const m = document.createElement('button');
+      m.type = 'button';
+      m.className = 'ink-insert-mark';
+      m.title = 'Hier einfügen: Schreibfeld' + (paper.insertItems ? ', Quiz, PDF …' : '');
+      m.setAttribute('aria-label', 'Hier einfügen');
+      m.dataset.after = after ?? '';
+      m.innerHTML = '<span>+</span>';
+      m.addEventListener('pointerdown', (e) => { e.stopPropagation(); });
+      m.addEventListener('click', (e) => { e.stopPropagation(); openInsertMenu(m, after); });
+      paperView.el.appendChild(m);
+      return m;
+    };
+    make(null);
+    for (const b of topBlocks()) make(b.bid);
+    positionInsertMarks();
+  }
+
+  /** Lage der ⊕ zwischen den Bausteinen (CSS-Pixel des Blatts). */
+  function positionInsertMarks() {
+    if (!paperView) return;
+    const blocks = topBlocks();
+    const byBid = new Map(blocks.map((b, i) => [b.bid, i]));
+    paperView.el.querySelectorAll('.ink-insert-mark').forEach((m) => {
+      const after = m.dataset.after;
+      let y;
+      if (!after) y = blocks.length ? blocks[0].top - 4 : 40;
+      else {
+        const i = byBid.get(after);
+        if (i === undefined) { m.hidden = true; return; }
+        const next = blocks[i + 1];
+        y = next ? (blocks[i].bottom + next.top) / 2 : blocks[i].bottom + 6;
+      }
+      m.hidden = false;
+      m.style.top = `${y / PX_PT}px`;
+    });
+  }
+
+  function openInsertMenu(mark, after) {
+    const r = mark.getBoundingClientRect();
+    const field = (pattern, label) => ({ label, onClick: () => insertField(after, pattern) });
+    const entries = [
+      field('leer', '▢ Schreibfeld (unsichtbar, eine Zeile – ziehbar)'),
+      field('karo', '▦ Karo'),
+      field('linien', '☰ Linien'),
+    ];
+    for (const item of paper.insertItems?.() || []) {
+      entries.push({ label: item.label, onClick: () => runInsert(() => item.run(after)) });
+    }
+    showContextMenu(r.right + 4, r.top, entries);
+  }
+
+  async function runInsert(fn) {
+    try {
+      status('Wird eingefügt …');
+      const done = await fn();
+      if (done === false) { status(''); return; }
+      await layoutPaper();
+      status(paper.insertBlock ? '💾 Im Dokument gespeichert' : '');
+    } catch (err) {
+      status(`⚠️ ${err?.message || err}`);
+    }
+  }
+
+  /** Schreibfeld einfügen: Lehrkraft ins Dokument (Gastgeber), sonst nur in die eigene Ebene. */
+  function insertField(after, pattern) {
+    if (paper.insertBlock) {
+      runInsert(() => paper.insertBlock(after, { type: 'karo', lines: 1, ...(pattern !== 'karo' ? { pattern } : {}) }));
+      return;
+    }
+    inserts = [...inserts, { id: `ins${uid()}`, after, pattern }];
+    runInsert(async () => { changed(); });
+  }
+
+  function removeInsert(bid) {
+    inserts = inserts.filter((i) => i.id !== bid);
+    delete karoMap[bid];
+    runInsert(async () => { changed(); });
   }
 
   async function drawBackground(p, bg) {
@@ -1310,7 +1449,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     p.el.addEventListener('pointerdown', (e) => {
       // Im Dokument: Karo-Anfasser, „Bedienen“ und Textfelder (mit dem Text-
       // Werkzeug) gehen an das Blatt; alles andere fängt der Editor vorher ab.
-      if (p.paper && (e.target.closest?.('.ink-karo-handle, .ink-karo-tools') || state.tool === 'interact'
+      if (p.paper && (e.target.closest?.('.ink-karo-handle, .ink-karo-tools, .ink-insert-mark') || state.tool === 'interact'
         || (state.tool === 'text' && e.target.closest?.('.ink-text')))) return;
       if (e.pointerType === 'pen') penDown = true;
       // Handballen: Solange der Stift schreibt, zählt kein Finger.
@@ -1591,7 +1730,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     const css = getComputedStyle(paperView.el);
     const padLeft = parseFloat(css.paddingLeft) * PX_PT;
     const copy = paperView.el.cloneNode(true);
-    copy.querySelectorAll('.ink-karo-handle, .ink-karo-tools').forEach((el) => el.remove());
+    copy.querySelectorAll('.ink-karo-handle, .ink-karo-tools, .ink-insert-mark').forEach((el) => el.remove());
     copy.querySelector('.docspec')?.classList.toggle('ds-hide-solutions', !withSolutions);
     if (ink) {
       for (const [bid, entry] of Object.entries(layerNow.blocks || {})) {

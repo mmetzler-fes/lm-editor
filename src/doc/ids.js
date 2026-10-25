@@ -54,3 +54,30 @@ export function blockIndex(spec) {
   walk(spec?.content, (b) => { if (b.id) map.set(b.id, b); });
   return map;
 }
+
+/**
+ * Bausteine ohne feste ID bekommen ihre jetzige Position als ID: `pos3`
+ * (content[3]), `pos2x0` (content[2].blocks[0]). Vor dem Einfügen eines
+ * Bausteins nötig – Striche, die am Pfad hängen („p:3“), findet der
+ * Stift-Editor über diese ID wieder, auch wenn sich die Positionen
+ * verschieben. Liefert die Zahl der vergebenen IDs.
+ */
+export function assignPathIds(spec) {
+  let n = 0;
+  const go = (blocks, prefix) => {
+    if (!Array.isArray(blocks)) return;
+    blocks.forEach((b, i) => {
+      if (!b || typeof b !== 'object') return;
+      const path = prefix ? `${prefix}x${i}` : String(i);
+      if (!(typeof b.id === 'string' && ID_RE.test(b.id))) { b.id = `pos${path}`; n++; }
+      go(b.blocks, path);
+    });
+  };
+  go(spec?.content, '');
+  return n;
+}
+
+/** ID, unter der ein Baustein mit dem Pfad „2.0“ nach assignPathIds steht. */
+export function pathId(path) {
+  return `pos${String(path).replace(/\./g, 'x')}`;
+}

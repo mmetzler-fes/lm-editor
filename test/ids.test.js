@@ -20,3 +20,13 @@ test('vorhandene IDs bleiben, die zweite von zwei gleichen wird neu', () => {
   assert.notEqual(spec.content[1].id, 'abcd2345');
   assert.equal(new Set(spec.content.map((b) => b.id)).size, 3);
 });
+
+test('Pfad-IDs: fehlende IDs nach dem Pfad, vorhandene bleiben', async () => {
+  const { assignPathIds, pathId } = await import('../src/doc/ids.js');
+  const spec = { content: [{ type: 'text', id: 'abcd2345' }, { type: 'task', blocks: [{ type: 'karo' }] }] };
+  assert.equal(assignPathIds(spec), 2);
+  assert.equal(spec.content[0].id, 'abcd2345');
+  assert.equal(spec.content[1].id, 'pos1');
+  assert.equal(spec.content[1].blocks[0].id, pathId('1.0'));
+  assert.equal(pathId('1.0'), 'pos1x0');
+});

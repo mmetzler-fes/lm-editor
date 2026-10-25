@@ -30,7 +30,7 @@ ihn bei „Weiter“ im Zuordnen an.
 ## documentActions(ctx)
 
 ```js
-documentActions: ({ moduleId, title, content, options }) => Array<{
+documentActions: ({ moduleId, title, content, options, el }) => Array<{
   label: string,         // Beschriftung, z. B. '⬇ Als PDF'
   title?: string,        // Tooltip
   className?: string,    // zusätzliche Klasse
@@ -39,7 +39,8 @@ documentActions: ({ moduleId, title, content, options }) => Array<{
 }>
 ```
 
-Knöpfe über einem Dokument. Wirft `onClick` einen Fehler, zeigt der Knopf
+Knöpfe über einem Dokument; `el` ist die Ansicht des Dokuments (etwa, um
+Eingaben in eingebetteten Quizzen zu übernehmen). Wirft `onClick` einen Fehler, zeigt der Knopf
 „⚠️ Meldung“. `onClick` läuft bis zum ersten `await` noch im Klick und darf
 dort ein Fenster öffnen (Popup-Sperre, iPad).
 

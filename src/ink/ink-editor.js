@@ -138,8 +138,10 @@ const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<
  * - `loadPdf(variant)`: 'blatt' | 'loesung' → ArrayBuffer des PDFs; ohne gibt es kein PDF als Hintergrund.
  * - `solutions`: Lösungsblatt einblenden erlaubt (nur Lehrkräfte).
  * - `paper`: das Dokument als Hintergrund –
- *   { mount(el, { solutions }), landscape?, karoResize? (Vorgabe: ja) }.
+ *   { mount(el, { solutions }), landscape?, karoResize? (Vorgabe: ja), capture?, restore? }.
  *   `mount` schreibt das Dokument mit Block-Hüllen (data-bid) in `el`.
+ *   `capture(el)` → Eingaben im Blatt (z. B. eingebettete Quizze), gespeichert
+ *   als `forms` im Stand; `restore(el, forms)` setzt sie nach dem Aufbau wieder.
  * - `store`: woanders speichern als auf diesem Gerät – { load() → Stand | null,
  *   save(stand) → true/false, label }; der Stand ist { v, bg, pages, layer, ruler }.
  * - `actions`: weitere Knöpfe in der Leiste – [{ label, title, onClick }].
@@ -465,9 +467,14 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     clearTimeout(saveTimer);
     saveTimer = setTimeout(persist, 700);
   }
+  function captureForms() {
+    if (!paperView || !paper?.capture) return;
+    try { doc.forms = paper.capture(paperView.el); } catch (_) { /* Stand ohne Eingaben */ }
+  }
   async function persist() {
     clearTimeout(saveTimer);
     doc.updatedAt = new Date().toISOString();
+    captureForms();
     const paperNow = doc.bg === 'paper';
     if (!paperNow) sheetPages = doc.pages;
     else layer = toLayer();
@@ -574,7 +581,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
   }
 
   async function layoutPaper() {
-    if (paperView) layer = toLayer();
+    if (paperView) { layer = toLayer(); captureForms(); }
     leavePaper();
     status('Wird geladen …');
     pagesEl.innerHTML = '';
@@ -593,6 +600,12 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     const sheet = host.firstElementChild;
     try { await paper.mount(sheet, { solutions: state.variant === 'loesung' }); } catch (err) {
       sheet.innerHTML = `<p>⚠️ Das Dokument lässt sich nicht anzeigen: ${esc(err.message || err)}</p>`;
+    }
+    // Eingaben im Blatt (Quizze) gehören zum Stand: wiederherstellen, Änderungen speichern.
+    if (paper.capture) {
+      try { paper.restore?.(sheet, doc.forms || null); } catch (_) { /* dann eben leer */ }
+      sheet.addEventListener('input', changed);
+      sheet.addEventListener('change', changed);
     }
     // Erst mit den richtigen Schriften stimmen die Zeilenumbrüche.
     try { await document.fonts?.ready; } catch (_) { /* ohne */ }

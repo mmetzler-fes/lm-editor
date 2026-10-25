@@ -1568,7 +1568,7 @@ export class H5pRenderer {
           return bar;
         };
         // Knöpfe des Gastgebers, etwa ✍️ Stift und ⬇ Als PDF. Primäre stehen vorne.
-        const actions = this.host.documentActions?.({ moduleId: options.moduleId, title: options.title, content, options }) || [];
+        const actions = this.host.documentActions?.({ moduleId: options.moduleId, title: options.title, content, options, el: div }) || [];
         actions.forEach((a) => {
           const btn = document.createElement('button');
           btn.type = 'button';

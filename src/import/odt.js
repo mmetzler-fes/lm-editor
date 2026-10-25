@@ -605,6 +605,16 @@ class DrawingSvg {
         return `<img src="data:image/svg+xml;base64,${b64(new TextEncoder().encode(svg))}" alt="Zeichnung" width="${w}">`;
     }
 }
+/**
+ * Titel aus den Metadaten nur, wenn er nach einem Titel aussieht: Vorlagen
+ * tragen oft „1“, „Unbenannt“ oder den Namen der Vorlage – dann zählen die
+ * erste Überschrift bzw. der Dateiname.
+ */
+export function usableTitle(t) {
+  const s = String(t || '').trim();
+  return (s.match(/\p{L}/gu) || []).length >= 3 && !/^(unbenannt|untitled|ohne titel|titel|dokument|document|vorlage)\s*\d*$/i.test(s);
+}
+
 export function odtToHtml(buffer, fileName = '') {
     let files;
     try {
@@ -992,7 +1002,7 @@ export function odtToHtml(buffer, fileName = '') {
     const metaTitle = meta ? textOf(find(parseXml(meta), 'dc:title') || '').trim() : '';
     const firstHeading = /<h[2-4][^>]*>([\s\S]*?)<\/h[2-4]>/.exec(html)?.[1].replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').trim();
     const fromFile = basename(fileName || '', extname(fileName || '')).replace(/[_-]+/g, ' ').trim();
-    const title = metaTitle || (firstHeading ? decodeHtml(firstHeading) : '') || fromFile || 'Arbeitsblatt';
+    const title = (usableTitle(metaTitle) ? metaTitle : '') || (firstHeading ? decodeHtml(firstHeading) : '') || fromFile || 'Arbeitsblatt';
     const warnings = [];
     if (stats.drawings) {
         warnings.push(`${stats.drawings} Zeichnung${stats.drawings === 1 ? '' : 'en'} als Bild übernommen – bitte kurz prüfen: Komplexe Formen werden vereinfacht, Schriften durch Arial ersetzt.`);

@@ -1892,6 +1892,32 @@ export class H5pRenderer {
         break;
       }
 
+      case 'attachment': {
+        // Anhänge: PDF öffnen oder herunterladen, alles andere herunterladen.
+        const files = (Array.isArray(content.files) ? content.files : [])
+          .map((f) => ({ ...f, href: safeHttpUrl(f && f.url) }))
+          .filter((f) => f.href);
+        if (!files.length) { div.innerHTML = '<p class="hint">Diesem Anhang ist noch keine Datei beigefügt.</p>'; break; }
+        const size = (n) => {
+          const b = Number(n) || 0;
+          if (!b) return '';
+          return b < 1024 * 1024 ? `${Math.max(1, Math.round(b / 1024))} KB` : `${(b / (1024 * 1024)).toFixed(1).replace('.', ',')} MB`;
+        };
+        div.innerHTML = `<ul class="attachment-list">${files.map((f) => {
+          const name = String(f.name || 'Datei');
+          const isPdf = f.type === 'application/pdf' || /\.pdf$/i.test(name);
+          return `<li class="attachment-item">
+            <span class="attachment-icon">${isPdf ? '📕' : '📄'}</span>
+            <span class="attachment-name">${escapeHtml(name)}<small>${escapeHtml(size(f.size))}</small></span>
+            <span class="attachment-actions">
+              ${isPdf ? `<a class="btn btn-secondary btn-sm" href="${escapeAttr(f.href)}" target="_blank" rel="noopener noreferrer">Öffnen</a>` : ''}
+              <a class="btn btn-primary btn-sm" href="${escapeAttr(f.href)}" download="${escapeAttr(name)}">⬇ Herunterladen</a>
+            </span>
+          </li>`;
+        }).join('')}</ul>`;
+        break;
+      }
+
       case 'h5p_native': {
         const H5P_LIB_NAMES = {
           'H5P.MultiChoice':{ name: 'Multiple Choice', icon: '🔘' },'H5P.Blanks':{ name: 'Fill in the Blanks', icon: '✏️' },

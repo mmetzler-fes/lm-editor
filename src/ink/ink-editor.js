@@ -58,6 +58,7 @@ const ICON_PATHS = {
   pointer: 'M6 3l13 8-6 1.5L9.5 19z',
   field: 'M4 5h16v14H4zM4 9.7h16M4 14.3h16M9.3 5v14M14.7 5v14',
   print: 'M7 9V3h10v6M7 17H4v-7h16v7h-3M7 14h10v7H7z',
+  save: 'M5 4h11l3 3v13H5zM8 4v5h7V4M8 20v-6h8v6',
 };
 // Feld (Abdeckung): Raster wie im Dokument – Karo 5 mm, Linien 10 mm.
 const FIELD_PATTERNS = { karo: '▦ Karo', linien: '☰ Linien', leer: '▢ Leer (weiß)' };
@@ -193,6 +194,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
   overlay.innerHTML = `
     <div class="ink-toolbar" role="toolbar">
       ${btn('ink-close', 'close', store ? 'Schließen' : 'Schließen – die Beschriftung bleibt auf diesem Gerät gespeichert')}
+      ${btn('ink-save', 'save', 'Speichern – geschieht auch automatisch kurz nach jeder Änderung')}
       <span class="ink-title">${esc(title)}</span>
       ${actions.map((a, i) => `<button type="button" class="ink-btn ink-labeled ink-action" data-action="${i}" title="${esc(a.title || a.label)}">${esc(a.label)}</button>`).join('')}
       <span class="ink-group ink-tools">
@@ -397,6 +399,16 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     void layout();
   });
   $('.ink-close').addEventListener('click', () => close());
+  $('.ink-save').addEventListener('click', async () => {
+    const b = $('.ink-save');
+    b.disabled = true;
+    try { await persist(); } finally { b.disabled = false; }
+    b.classList.add('ink-saved');
+    setTimeout(() => b.classList.remove('ink-saved'), 1200);
+  });
+  // iPad: Wechsel zu einer anderen App oder Tab zu – Ungespeichertes gleich sichern.
+  const onHide = () => { if (document.visibilityState === 'hidden' && saveTimer) void persist(); };
+  document.addEventListener('visibilitychange', onHide);
   $('.ink-print')?.addEventListener('click', (e) => {
     const r = e.currentTarget.getBoundingClientRect();
     const entries = [
@@ -473,6 +485,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
   function changed() {
     paintToolbar();
     status('…');
+    $('.ink-save').classList.add('ink-dirty');
     clearTimeout(saveTimer);
     saveTimer = setTimeout(persist, 700);
   }
@@ -482,6 +495,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
   }
   async function persist() {
     clearTimeout(saveTimer);
+    saveTimer = null;
     doc.updatedAt = new Date().toISOString();
     captureForms();
     const paperNow = doc.bg === 'paper';
@@ -489,6 +503,8 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     else layer = toLayer();
     const record = { ...doc, pages: sheetPages, layer };
     const ok = store ? await store.save(record) : await dbPut(storeKey, record);
+    // Erst „sauber“, wenn seither nichts Neues dazukam (sonst läuft schon der nächste Timer).
+    if (ok && !saveTimer) $('.ink-save').classList.remove('ink-dirty');
     const where = store?.label || 'auf diesem Gerät';
     status(ok ? `💾 ${where[0].toUpperCase()}${where.slice(1)} gespeichert` : `⚠️ Speichern ${where} nicht möglich`);
   }
@@ -1849,6 +1865,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     await persist();
     leavePaper();
     document.removeEventListener('keydown', onKey);
+    document.removeEventListener('visibilitychange', onHide);
     document.removeEventListener('gesturestart', noZoom);
     document.removeEventListener('gesturechange', noZoom);
     for (const v of Object.values(pdfs)) Promise.resolve(v).then((d) => d?.destroy?.()).catch(() => {});

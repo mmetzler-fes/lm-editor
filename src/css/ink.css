@@ -31,6 +31,10 @@ body.ink-open { overflow: hidden; }
 .ink-btn:hover { background: var(--bg-primary); }
 .ink-btn:disabled { opacity: 0.35; cursor: default; background: transparent; }
 .ink-btn.active { background: var(--accent-light); color: var(--accent); }
+/* Speichern: Punkt = noch nicht gespeichert, grün = eben gespeichert. */
+.ink-save { position: relative; }
+.ink-save.ink-dirty::after { content: ''; position: absolute; top: 6px; right: 6px; width: 7px; height: 7px; border-radius: 50%; background: #ea580c; }
+.ink-save.ink-saved { color: #16a34a; background: #dcfce7; }
 .ink-icon { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
 .ink-sep { width: 1px; height: 24px; background: var(--border); margin: 0 6px; flex: 0 0 auto; }
 .ink-bg-select { height: 36px; border-radius: 10px; border: 1px solid var(--border); background: var(--bg-primary); color: var(--text-primary); padding: 0 6px; margin: 0 2px; }

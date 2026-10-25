@@ -67,7 +67,9 @@ function inline(node, images, warnings) {
 }
 
 function cleanText(text) {
-  return text.replace(/[ \t]+\\\n/g, '\\\n').replace(/(\\\n)+$/g, '').replace(/^\s+|\s+$/g, '');
+  return text.replace(/[ \t]+\\\n/g, '\\\n').replace(/(\\\n)+$/g, '').replace(/^\s+|\s+$/g, '')
+    // Aneinanderstoßende gleiche Auszeichnung („**Z****uordnung**“ aus einzeln fett gesetzten Buchstaben) zusammenfassen.
+    .replace(/(\S)(\*\*|\+\+|~~)\2(?=\S)/g, '$1');
 }
 
 function imageBlock(img, warnings) {
@@ -207,6 +209,38 @@ function boxOfTable(el, warnings) {
   return box;
 }
 
+/**
+ * Tabelle mit Bildern in den Zellen – in Arbeitsblättern fast immer eine
+ * Tabelle nur zum Anordnen (Baustein links, Zeitdiagramm rechts; Tabelle
+ * neben einer Grafik). Tabellenzellen können im Dokument nur Text, die
+ * Bilder fielen also weg. Stattdessen Zeile für Zeile, Zelle für Zelle als
+ * Bausteine; steht in einer Zeile ein einzelnes Bild neben Text, umfließt
+ * der Text das Bild wie im Original. null ohne Bilder.
+ */
+function layoutOfTable(el, warnings) {
+  if (!el.querySelector('img')) return null;
+  const rows = tableRows(el);
+  const cols = Math.max(...rows.map((tr) => tableCells(tr).length));
+  // Viele Zeilen oder Spalten: eine echte Tabelle (z. B. Deklarationstabelle
+  // mit dem Baustein als Bild daneben) – sie bleibt, die Bilder folgen ihr.
+  if (rows.length > 6 || cols > 3) {
+    const images = [...el.querySelectorAll('img')].map((img) => imageBlock(img, warnings)).filter(Boolean);
+    for (const img of el.querySelectorAll('img')) img.remove();
+    return [boxOfTable(el, warnings) || tableBlock(el, warnings), ...images];
+  }
+  const out = [];
+  for (const tr of rows) {
+    const cells = tableCells(tr).map((td) => blocksOf(td, warnings)).filter((b) => b.length);
+    const [a, b] = cells;
+    const lone = (blocks) => blocks.length === 1 && blocks[0].type === 'image' && !blocks[0].float;
+    const texty = (blocks) => blocks.every((x) => ['text', 'list', 'note'].includes(x.type));
+    if (cells.length === 2 && lone(a) && texty(b)) out.push({ ...a[0], float: 'left' }, ...b);
+    else if (cells.length === 2 && texty(a) && lone(b)) out.push({ ...b[0], float: 'right' }, ...a);
+    else for (const blocks of cells) out.push(...blocks);
+  }
+  return out.length ? out : null;
+}
+
 /** Blöcke aus den Kindern eines Elements. */
 function blocksOf(parent, warnings) {
   const out = [];
@@ -264,7 +298,9 @@ function blocksOf(parent, warnings) {
       if (images.length) warnings.push(`${images.length} Bild${images.length === 1 ? '' : 'er'} in Listen weggelassen.`);
     } else if (tag === 'TABLE') {
       const karo = karoOfTable(el, warnings);
-      if (karo) { close(); out.push(...karo); close(); } else out.push(boxOfTable(el, warnings) || tableBlock(el, warnings));
+      const layout = karo ? null : layoutOfTable(el, warnings);
+      if (karo) { close(); out.push(...karo); close(); } else if (layout) { close(); out.push(...layout); close(); }
+      else out.push(boxOfTable(el, warnings) || tableBlock(el, warnings));
     }
     else if (tag === 'DIV' && /\bws-box\b/.test(el.getAttribute('class') || '')) {
       const inner = blocksOf(el, warnings);

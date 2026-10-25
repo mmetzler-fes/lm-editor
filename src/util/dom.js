@@ -256,9 +256,18 @@ export function effectiveZoom(el) {
 
 export function attachPointerDrag(el, { onHover, onDrop, onLongPress, canLongPress, canDrag, scrollContainer } = {}) {
   el.draggable = false;
+  // Liegt das Element in markiertem Text, zöge der Browser sonst die
+  // Markierung (dragstart) und bräche unser Ziehen ab (pointercancel) – das
+  // Wort käme nie an, stattdessen wanderte der markierte Text mit.
+  el.addEventListener('dragstart', (e) => e.preventDefault());
   el.addEventListener('pointerdown', (e) => {
     if (!e.isPrimary || (e.pointerType === 'mouse' && e.button !== 0)) return;
     if (canDrag && !canDrag()) return;
+    const sel = window.getSelection?.();
+    if (sel && !sel.isCollapsed) sel.removeAllRanges();
+    // Maus und Stift: keine neue Markierung und kein Ziehen des Browsers
+    // beginnen. Beim Finger bleibt es, wie es ist (touch-action regelt das).
+    if (e.pointerType !== 'touch') e.preventDefault();
     const id = e.pointerId;
     const x0 = e.clientX, y0 = e.clientY;
     let ghost = null, offX = 0, offY = 0, zoom = 1;

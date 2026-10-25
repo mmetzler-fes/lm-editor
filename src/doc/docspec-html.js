@@ -94,6 +94,9 @@ function imageBlock(img, warnings) {
   if (alt && alt !== 'Zeichnung') block.alt = alt;
   const caption = img.getAttribute('data-caption');
   if (caption) block.caption = caption;
+  // Zeichnung mit Quelle (.odg in der Nextcloud, bearbeitbar in LibreOffice Draw).
+  const source = img.getAttribute('data-source');
+  if (source && /^(https:\/\/|\/api\/)/i.test(source)) block.source = source;
   return block;
 }
 
@@ -394,7 +397,7 @@ export function specToEditorHtml(spec) {
         if (typeof b.src !== 'string') return widgetHtml(b);
         const cls = [b.float === 'left' ? 'ws-float-left' : b.float === 'right' ? 'ws-float-right' : b.float === 'center' ? 'ws-img-center' : '', b.border ? 'ws-img-border' : ''].filter(Boolean).join(' ');
         const px = cssPx(b.width);
-        return `<p><img src="${esc(b.src)}"${cls ? ` class="${cls}"` : ''}${px ? ` width="${Math.round(px)}" data-width="${esc(b.width)}"` : ''}${b.alt ? ` alt="${esc(b.alt)}"` : ''}${b.caption ? ` data-caption="${esc(b.caption)}"` : ''}></p>`;
+        return `<p><img src="${esc(b.src)}"${cls ? ` class="${cls}"` : ''}${px ? ` width="${Math.round(px)}" data-width="${esc(b.width)}"` : ''}${b.alt ? ` alt="${esc(b.alt)}"` : ''}${b.caption ? ` data-caption="${esc(b.caption)}"` : ''}${b.source ? ` data-source="${esc(b.source)}"` : ''}></p>`;
       }
       case 'box':
         return `<div class="ws-box"${b.title ? ` data-title="${esc(b.title)}"` : ''}${b.shaded ? ' data-shaded="1"' : ''}>${b.text ? paragraphsHtml(b.text) : ''}${blocks(b.blocks) || '<p><br></p>'}</div>`;

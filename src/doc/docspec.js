@@ -22,7 +22,7 @@ const FLOATS = ['left', 'right', 'center'];
 const IMAGE_SRC_RE = /^(data:image\/(png|jpeg|gif|webp|svg\+xml);base64,|https:\/\/|\/api\/)/i;
 const CSS_LENGTH_RE = /^\d+(\.\d+)?(cm|mm|px|%)$/;
 // Schreibfeld (Block `karo`): Muster und Breite in cm, wie im Renderer.
-export const KARO_PATTERNS = ['karo', 'linien', 'leer'];
+export const KARO_PATTERNS = ['karo', 'linien', 'leer', 'frei'];
 export const KARO_MAX_WIDTH_CM = 16.5;
 const KARO_WIDTH_RE = /^(\d+(?:\.\d+)?)\s*cm$/;
 
@@ -694,7 +694,7 @@ function renderBlockHtml(block, ctx) {
     case 'karo': {
       const lines = Number.isInteger(block.lines) ? block.lines : 4;
       const width = karoWidthCm(block);
-      // Klassen ds-karo-linien, ds-karo-leer (ausgeschrieben, damit tools/extract-css.mjs sie findet)
+      // Klassen ds-karo-linien, ds-karo-leer, ds-karo-frei (ausgeschrieben, damit tools/extract-css.mjs sie findet)
       const pattern = KARO_PATTERNS.includes(block.pattern) && block.pattern !== 'karo' ? ` ds-karo-${block.pattern}` : '';
       return `<div class="ds-karo${pattern}" style="height:${lines * 0.5}cm${width ? `;width:${width}cm` : ''}" aria-hidden="true"></div>`;
     }

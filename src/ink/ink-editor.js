@@ -730,7 +730,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     return out;
   }
 
-  const BLOCK_PATTERNS = { karo: '▦ Karo', linien: '☰ Linien', leer: '▢ Leer' };
+  const BLOCK_PATTERNS = { karo: '▦ Karo', linien: '☰ Linien', leer: '▢ Leer', frei: '◌ Unsichtbar' };
   const FIELD_MIN_CM = 2;
   const FIELD_MAX_CM = 16.5;
 
@@ -739,7 +739,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     if (!karo.dataset.base) {
       karo.dataset.base = String(Math.round(parseFloat(karo.style.height) / 0.5) || 4);
       karo.dataset.baseWidth = String(parseFloat(karo.style.width) || '');
-      karo.dataset.basePattern = karo.classList.contains('ds-karo-linien') ? 'linien' : karo.classList.contains('ds-karo-leer') ? 'leer' : 'karo';
+      karo.dataset.basePattern = ['linien', 'leer', 'frei'].find((p) => karo.classList.contains(`ds-karo-${p}`)) || 'karo';
     }
     return { lines: Number(karo.dataset.base), width: Number(karo.dataset.baseWidth) || null, pattern: karo.dataset.basePattern };
   }
@@ -752,6 +752,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     if (width && width < FIELD_MAX_CM) karo.style.width = `${width}cm`; else karo.style.removeProperty('width');
     karo.classList.toggle('ds-karo-linien', pattern === 'linien');
     karo.classList.toggle('ds-karo-leer', pattern === 'leer');
+    karo.classList.toggle('ds-karo-frei', pattern === 'frei');
     karo.querySelectorAll('.ink-karo-tools [data-pattern]').forEach((b) => b.classList.toggle('active', b.dataset.pattern === pattern));
   }
 
@@ -877,7 +878,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
       box.dataset.bid = ins.id;
       box.dataset.btype = 'karo';
       box.dataset.inserted = '1';
-      const pattern = ['linien', 'leer'].includes(ins.pattern) ? ` ds-karo-${ins.pattern}` : '';
+      const pattern = ['linien', 'leer', 'frei'].includes(ins.pattern) ? ` ds-karo-${ins.pattern}` : '';
       box.innerHTML = `<div class="ds-karo${pattern}" style="height:0.5cm" aria-hidden="true"></div>`;
       const after = ins.after ? sheet.querySelector(`[data-bid="${CSS.escape(ins.after)}"]`) : null;
       if (after) after.after(box);
@@ -935,7 +936,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     const r = mark.getBoundingClientRect();
     const field = (pattern, label) => ({ label, onClick: () => insertField(after, pattern) });
     const entries = [
-      field('leer', '▢ Schreibfeld (unsichtbar, eine Zeile – ziehbar)'),
+      field('frei', '◌ Schreibfeld (unsichtbar, eine Zeile – ziehbar)'),
       field('karo', '▦ Karo'),
       field('linien', '☰ Linien'),
     ];

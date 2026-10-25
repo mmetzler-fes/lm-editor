@@ -169,6 +169,9 @@ body.ink-open { overflow: hidden; }
   .ink-print-sheet .ds-quiz button.btn-sm, .ink-print-sheet .ds-actions, .ink-print-sheet .ds-solutions-toggle { display: none !important; }
 }
 
+/* Unsichtbares Schreibfeld: beim Beschriften gestrichelt angedeutet, im Druck nicht. */
+.ink-paper-host .ds-karo-frei { outline: 1px dashed rgba(100, 116, 139, 0.35); outline-offset: -1px; }
+
 /* ⊕ zum Einfügen zwischen den Bausteinen: groß genug für den Finger, sichtbar nur ein kleiner Punkt. */
 .ink-paper-host .lm-paper { position: relative; }
 .ink-insert-mark {

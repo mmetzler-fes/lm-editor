@@ -33,15 +33,17 @@ test('Schreibfeld: Breite und Muster', async () => {
     { type: 'karo', lines: 4 },
     { type: 'karo', lines: 6, width: '8cm', pattern: 'linien' },
     { type: 'karo', lines: 2, width: '30cm', pattern: 'leer' },
+    { type: 'karo', lines: 1, pattern: 'frei' },
   ] });
   assert.match(html, /<div class="ds-karo" style="height:2cm"/);
   assert.match(html, /<div class="ds-karo ds-karo-linien" style="height:3cm;width:8cm"/);
   assert.match(html, /<div class="ds-karo ds-karo-leer" style="height:1cm"/); // breiter als die Satzbreite: volle Breite
+  assert.match(html, /<div class="ds-karo ds-karo-frei" style="height:0.5cm"/);
   assert.equal(karoWidthCm({ width: '7.3cm' }), 7.5);
   assert.equal(karoWidthCm({}), null);
   assert.deepEqual(validateDocSpec({ content: [{ type: 'karo', width: '8 Zoll', pattern: 'punkte' }] }), [
     'content[0] (karo): width: Breite in cm, z. B. "8cm".',
-    'content[0] (karo): pattern: karo, linien, leer.',
+    'content[0] (karo): pattern: karo, linien, leer, frei.',
   ]);
   assert.deepEqual(validateDocSpec({ content: [{ type: 'karo', lines: 4, width: '8cm', pattern: 'leer' }] }), []);
 });

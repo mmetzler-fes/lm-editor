@@ -96,8 +96,12 @@ Eine Ebene mit Handschrift und Textfeldern, nach Bausteinen geordnet:
   Gruppe gehört als Ganzes zum Baustein, in dem ihr erstes Element beginnt.
 - `karoLines`, `karoWidth`, `karoPattern`: In dieser Ebene ist das Schreibfeld
   anders als im Dokument – länger (nie kürzer), breiter oder schmaler (cm; 16,5
-  = volle Breite), mit anderem Muster (`karo`, `linien`, `leer`). So kann ein
+  = volle Breite), mit anderem Muster (`karo`, `linien`, `leer`, `frei` = unsichtbar). So kann ein
   Schüler sein Feld anpassen, ohne das Dokument der Lehrkraft zu ändern.
+- `inserts` (optional, neben `blocks` in der Ebene): selbst eingefügte
+  Schreibfelder (⊕) – `[{ "id": "ins…", "after": "<Baustein> | null", "pattern": "frei" }]`.
+  `after: null` = vor dem ersten Baustein. Das Feld ist ein Baustein der Ebene
+  mit seiner `id`; Höhe, Breite und Muster stehen wie oben unter `blocks[id]`.
 - `editor` (optional): Stand des Stift-Editors – Hintergrund (`bg`: `paper`
   = das Dokument, sonst `karo`, `linien`, `leer`, `file`), Geodreieck
   (`ruler`) und die Seiten der übrigen Hintergründe (`pages`, Koordinaten der

@@ -1154,3 +1154,6 @@ body {
 .cw-clue-num { font-weight: 700; min-width: 1.6em; }
 .cw-clue-len { color: var(--text-secondary); font-size: 0.85em; }
 .cw-clue-img { max-width: 80px; max-height: 60px; object-fit: contain; margin-left: auto; border-radius: 4px; }
+
+/* Bilder in Tabellenzellen eines Dokuments (docspec.js) */
+.ds-cell-image { display: block; max-width: 100%; height: auto; margin: 4px 0; }

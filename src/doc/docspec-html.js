@@ -125,13 +125,17 @@ function listBlock(el, images, warnings) {
 }
 
 function tableBlock(el, warnings) {
-  const lost = [];
   const cell = (td) => {
+    const found = [];
     // Führende Leerzeichen bleiben: Sie richten z. B. Programmausgaben aus.
-    const text = cleanText(inline(td, lost, warnings)).replace(/^/, (/^ +/.exec(td.textContent) || [''])[0]);
+    const text = cleanText(inline(td, found, warnings)).replace(/^/, (/^ +/.exec(td.textContent) || [''])[0]);
     const cs = Number(td.getAttribute('colspan')) || 1;
     const rs = Number(td.getAttribute('rowspan')) || 1;
-    return cs > 1 || rs > 1 ? { text, ...(cs > 1 ? { colspan: Math.min(cs, 20) } : {}), ...(rs > 1 ? { rowspan: Math.min(rs, 20) } : {}) } : text;
+    // Bilder bleiben in ihrer Zelle (z. B. Baustein links, Zeitdiagramm rechts).
+    const images = found.map((img) => imageBlock(img, warnings)).filter(Boolean)
+      .map(({ type: _t, float: _f, caption: _c, border: _b, ...img }) => img);
+    if (cs === 1 && rs === 1 && !images.length) return text;
+    return { text, ...(cs > 1 ? { colspan: Math.min(cs, 20) } : {}), ...(rs > 1 ? { rowspan: Math.min(rs, 20) } : {}), ...(images.length ? { images } : {}) };
   };
   const rowsOf = (section) => [...(section?.children || [])].filter((r) => r.tagName === 'TR')
     .map((tr) => [...tr.children].filter((c) => c.tagName === 'TD' || c.tagName === 'TH').map(cell));
@@ -139,7 +143,6 @@ function tableBlock(el, warnings) {
   const bodies = [...el.children].filter((c) => c.tagName === 'TBODY');
   const rows = bodies.length ? bodies.flatMap(rowsOf) : rowsOf(el);
   const header = thead ? rowsOf(thead)[0] : null;
-  if (lost.length) warnings.push(`${lost.length} Bild${lost.length === 1 ? '' : 'er'} in Tabellenzellen weggelassen.`);
   const block = { type: 'table', rows: rows.length ? rows : [['']] };
   if (header) block.header = header;
   if (el.getAttribute('data-caption')) block.caption = el.getAttribute('data-caption');
@@ -213,35 +216,19 @@ function boxOfTable(el, warnings) {
 }
 
 /**
- * Tabelle mit Bildern in den Zellen – in Arbeitsblättern fast immer eine
- * Tabelle nur zum Anordnen (Baustein links, Zeitdiagramm rechts; Tabelle
- * neben einer Grafik). Tabellenzellen können im Dokument nur Text, die
- * Bilder fielen also weg. Stattdessen Zeile für Zeile, Zelle für Zelle als
- * Bausteine; steht in einer Zeile ein einzelnes Bild neben Text, umfließt
- * der Text das Bild wie im Original. null ohne Bilder.
+ * Bilder einer großen Tabelle (über 6 Zeilen oder 3 Spalten): Dort hängt ein
+ * Bild meist nur an einer Zelle und steht in Wahrheit neben der Tabelle (z. B.
+ * der Baustein neben der Deklarationstabelle) – es folgt der Tabelle. In
+ * kleinen Tabellen zum Anordnen bleiben Bilder in ihrer Zelle.
  */
-function layoutOfTable(el, warnings) {
-  if (!el.querySelector('img')) return null;
+function imagesBesideTable(el, warnings) {
   const rows = tableRows(el);
-  const cols = Math.max(...rows.map((tr) => tableCells(tr).length));
-  // Viele Zeilen oder Spalten: eine echte Tabelle (z. B. Deklarationstabelle
-  // mit dem Baustein als Bild daneben) – sie bleibt, die Bilder folgen ihr.
-  if (rows.length > 6 || cols > 3) {
-    const images = [...el.querySelectorAll('img')].map((img) => imageBlock(img, warnings)).filter(Boolean);
-    for (const img of el.querySelectorAll('img')) img.remove();
-    return [boxOfTable(el, warnings) || tableBlock(el, warnings), ...images];
-  }
-  const out = [];
-  for (const tr of rows) {
-    const cells = tableCells(tr).map((td) => blocksOf(td, warnings)).filter((b) => b.length);
-    const [a, b] = cells;
-    const lone = (blocks) => blocks.length === 1 && blocks[0].type === 'image' && !blocks[0].float;
-    const texty = (blocks) => blocks.every((x) => ['text', 'list', 'note'].includes(x.type));
-    if (cells.length === 2 && lone(a) && texty(b)) out.push({ ...a[0], float: 'left' }, ...b);
-    else if (cells.length === 2 && texty(a) && lone(b)) out.push({ ...b[0], float: 'right' }, ...a);
-    else for (const blocks of cells) out.push(...blocks);
-  }
-  return out.length ? out : null;
+  const cols = Math.max(0, ...rows.map((tr) => tableCells(tr).length));
+  if (rows.length <= 6 && cols <= 3) return [];
+  const imgs = [...el.querySelectorAll('img')];
+  const blocks = imgs.map((img) => imageBlock(img, warnings)).filter(Boolean);
+  imgs.forEach((img) => img.remove());
+  return blocks;
 }
 
 /** Blöcke aus den Kindern eines Elements. */
@@ -301,9 +288,10 @@ function blocksOf(parent, warnings) {
       if (images.length) warnings.push(`${images.length} Bild${images.length === 1 ? '' : 'er'} in Listen weggelassen.`);
     } else if (tag === 'TABLE') {
       const karo = karoOfTable(el, warnings);
-      const layout = karo ? null : layoutOfTable(el, warnings);
-      if (karo) { close(); out.push(...karo); close(); } else if (layout) { close(); out.push(...layout); close(); }
-      else out.push(boxOfTable(el, warnings) || tableBlock(el, warnings));
+      if (karo) { close(); out.push(...karo); close(); } else {
+        const beside = imagesBesideTable(el, warnings);
+        out.push(boxOfTable(el, warnings) || tableBlock(el, warnings), ...beside);
+      }
     }
     else if (tag === 'DIV' && /\bws-box\b/.test(el.getAttribute('class') || '')) {
       const inner = blocksOf(el, warnings);
@@ -362,7 +350,11 @@ function cellsHtml(tag, row) {
   return row.map((c) => {
     if (c && typeof c === 'object') {
       const span = (n, v) => (Number.isInteger(v) && v > 1 ? ` ${n}="${v}"` : '');
-      return `<${tag}${span('colspan', c.colspan)}${span('rowspan', c.rowspan)}>${richText(c.text ?? '')}</${tag}>`;
+      const images = (Array.isArray(c.images) ? c.images : []).map((b) => {
+        const px = cssPx(b.width);
+        return `<img src="${esc(b.src)}"${px ? ` width="${Math.round(px)}" data-width="${esc(b.width)}"` : ''}${b.alt ? ` alt="${esc(b.alt)}"` : ''}${b.source ? ` data-source="${esc(b.source)}"` : ''}>`;
+      }).join('');
+      return `<${tag}${span('colspan', c.colspan)}${span('rowspan', c.rowspan)}>${richText(c.text ?? '')}${images}</${tag}>`;
     }
     return `<${tag}>${richText(c ?? '')}</${tag}>`;
   }).join('');

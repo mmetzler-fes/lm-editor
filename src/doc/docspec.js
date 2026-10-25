@@ -64,11 +64,18 @@ function listItemsOk(items, depth) {
     || (it && typeof it === 'object' && isText(it.text) && (it.items === undefined || (Array.isArray(it.items) && listItemsOk(it.items, depth + 1)))));
 }
 
+/** Bild in einer Tabellenzelle: { src, width?, alt?, source? } (wie ein Bild-Baustein, ohne Lage). */
+function cellImageOk(i) {
+  return !!i && typeof i === 'object' && isText(i.src) && IMAGE_SRC_RE.test(String(i.src))
+    && (i.width === undefined || CSS_LENGTH_RE.test(String(i.width)));
+}
+
 function cellOk(c) {
   if (isText(c)) return true;
   if (!c || typeof c !== 'object' || Array.isArray(c)) return false;
   const span = (v) => v === undefined || (Number.isInteger(v) && v >= 1 && v <= 20);
-  return (c.text === undefined || isText(c.text)) && span(c.colspan) && span(c.rowspan);
+  const images = c.images === undefined || (Array.isArray(c.images) && c.images.every(cellImageOk));
+  return (c.text === undefined || isText(c.text)) && span(c.colspan) && span(c.rowspan) && images;
 }
 
 function checkBlocks(blocks, path, errors, inSolution) {
@@ -600,7 +607,11 @@ function listHtml(items, ordered) {
 function cellHtml(tag, c) {
   if (isText(c)) return `<${tag}>${richText(c)}</${tag}>`;
   const span = (name, v) => (Number.isInteger(v) && v > 1 && v <= 20 ? ` ${name}="${v}"` : '');
-  return `<${tag}${span('colspan', c?.colspan)}${span('rowspan', c?.rowspan)}>${richText(c?.text ?? '')}</${tag}>`;
+  const images = (Array.isArray(c?.images) ? c.images : []).filter(cellImageOk).map((i) => {
+    const width = CSS_LENGTH_RE.test(String(i.width ?? '')) ? ` style="width:${i.width}"` : '';
+    return `<img class="ds-cell-image" src="${esc(i.src)}" alt="${esc(i.alt ?? '')}"${width}>`;
+  }).join('');
+  return `<${tag}${span('colspan', c?.colspan)}${span('rowspan', c?.rowspan)}>${richText(c?.text ?? '')}${images}</${tag}>`;
 }
 
 function headingNumber(type, c) {

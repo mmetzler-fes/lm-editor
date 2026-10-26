@@ -49,7 +49,7 @@ nie, sie ist nur das Datenmodell darunter.
 - [ ] Gastgeber-Schnittstelle erweitern: Speichern/Laden, Medien, Module, Renderer, Rechte (Lehrkraft/Schüler)
 - [x] Stift-Editor (`src/ink/ink-editor.js`), pdf.js und seine Styles (`src/css/ink.css`) übernommen
 - [x] geprüft: der worksheet-renderer übergeht `id` und `orientation` (.odt bis auf Bildnamen gleich)
-- [ ] Block-IDs auch in LearningModules beim Speichern vergeben – der Dokument-Editor muss sie dafür durch seine HTML-Ansicht tragen; bis dahin gilt der Pfad (`p:2.0`)
+- [x] Block-IDs auch in LearningModules: der Dokument-Editor vergibt sie beim Öffnen (nach der Position) und trägt sie als `data-id` durch seine HTML-Ansicht; der Server ergänzt fehlende beim Speichern
 
 ### 2 Stift auf der HTML-Ansicht
 - [x] Hintergrund „Dokument“: A4-Blatt mit Satzspiegel der Schulvorlage (`src/css/paper.css`), feste Breite, Verkleinern statt Umbruch, Liberation-Schriften mitgeliefert (`src/fonts/`, OFL)

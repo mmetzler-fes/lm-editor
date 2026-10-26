@@ -49,7 +49,9 @@ mit dem Hinweis, das Programm zu aktualisieren.
 
 - **`id`** an jedem Baustein: kurz, eindeutig im Dokument, bleibt beim
   Verschieben und Bearbeiten gleich. Daran hängen die Stift-Striche. Fehlt sie,
-  vergibt der Editor eine (`ensureBlockIds`).
+  vergibt der Editor eine (`stampBlockIds`): zuerst die Position (`pos3`,
+  `pos2x0` für `content[2].blocks[0]`), unter der ältere Striche als `p:3`
+  bzw. `p:2.0` gespeichert sind, sonst eine neue zufällige.
 - **`orientation`** auf oberster Ebene: `portrait` (A4 hoch, Vorgabe) oder
   `landscape` (A4 quer). Die Satzbreite ist dann 17 cm bzw. 25,7 cm.
 - **Verweise ins Archiv**: `image.src: "media/schaltung.png"`,

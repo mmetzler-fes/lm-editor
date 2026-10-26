@@ -6,7 +6,7 @@
 // „💾 Speichern“ schreibt die .zlm-Datei.
 
 import { createZlm, readZlm, writeZlm, editorStateOf, layerOf, ZlmError } from '../zlm/zlm.js';
-import { ensureBlockIds } from '../doc/ids.js';
+import { stampBlockIds } from '../doc/ids.js';
 import { openInkEditor } from '../ink/ink-editor.js';
 import { H5pRenderer } from '../modules/h5p-renderer.js';
 import { sniff, importOdt, importPdfPages } from '../import/import.js';
@@ -159,8 +159,9 @@ function specForView(doc) {
 }
 
 async function openSession(doc, { fileName = null, handle = null } = {}) {
-  // Feste IDs, damit die Striche auch nach Änderungen beim richtigen Baustein bleiben.
-  ensureBlockIds(doc.spec);
+  // Feste IDs, damit die Striche auch nach Änderungen beim richtigen Baustein bleiben
+  // (fehlende nach der Position, wie die Striche sie bisher kennen).
+  stampBlockIds(doc.spec);
   const session = { doc, fileName, handle };
   const renderer = new H5pRenderer();
   const embedModule = (id) => doc.modules[id] || null;

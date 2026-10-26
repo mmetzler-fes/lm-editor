@@ -13,8 +13,11 @@
  * die sich als Text bearbeiten lassen, werden HTML (Überschriften tragen
  * data-ds="section|task|subtask|heading"); Karo, Lösung, Formel, Code usw.
  * werden feste Bausteine (div.ds-widget mit dem Block als data-block).
+ * Feste Block-IDs (ids.js) reisen als data-id mit – an ihnen hängen die
+ * Striche der Schüler.
  */
 import { richText, renderDocSpecHtml } from './docspec.js';
+import { isBlockId } from './ids.js';
 
 const MARKUP_CHARS = /[\\*`[\]]/g;
 
@@ -100,6 +103,23 @@ function imageBlock(img, warnings) {
   return block;
 }
 
+/**
+ * Feste ID eines Elements (data-id), wenn sie noch frei ist. Die zweite von
+ * zwei gleichen (Kopie, Absatz mit Enter geteilt) bleibt ohne – sie bekommt
+ * im Editor eine neue.
+ */
+function takeId(el, used) {
+  const id = el?.getAttribute?.('data-id');
+  if (!used || !isBlockId(id) || used.has(id)) return null;
+  used.add(id);
+  return id;
+}
+
+const withId = (block, id) => {
+  if (block && id) block.id = id;
+  return block;
+};
+
 /** CSS-Länge in Pixel (96 dpi), wie der Browser sie für width nimmt. */
 function cssPx(len) {
   const m = /^(\d+(?:\.\d+)?)(cm|mm|px|%)$/.exec(String(len || ''));
@@ -177,7 +197,7 @@ const cellEmpty = (td) => !td.textContent.trim() && !td.querySelector('img, tabl
  * Im Lösungsblatt liegt in der ersten Zelle ein Rahmen mit der Lösung
  * darüber – dann Schreibfeld und dahinter die Lösung. Liefert eine Liste.
  */
-function karoOfTable(el, warnings) {
+function karoOfTable(el, warnings, used) {
   const rows = tableRows(el);
   if (!rows.length || rows.length > 60) return null;
   const cols = Math.max(...rows.map((tr) => tableCells(tr).reduce((n, td) => n + (Number(td.getAttribute('colspan')) || 1), 0)));
@@ -189,7 +209,7 @@ function karoOfTable(el, warnings) {
   if (!cellEmpty(first) && (!overlay || [...first.children].some((c) => c !== overlay && c.textContent.trim()))) return null;
   const block = { type: 'karo', lines: rows.length };
   if (cols < 33) block.width = `${cols * 0.5}cm`;
-  const solution = overlay ? solutionOf(blocksOf(overlay, warnings)) : null;
+  const solution = overlay ? solutionOf(blocksOf(overlay, warnings, used)) : null;
   return solution ? [block, solution] : [block];
 }
 
@@ -198,7 +218,7 @@ function karoOfTable(el, warnings) {
  * schreibt der Renderer einen Kasten. Wird wieder ein Kasten; ein erster Absatz
  * nur in Fett ist sein Titel.
  */
-function boxOfTable(el, warnings) {
+function boxOfTable(el, warnings, used) {
   const rows = tableRows(el);
   if (rows.length !== 1) return null;
   const cells = tableCells(rows[0]);
@@ -211,7 +231,7 @@ function boxOfTable(el, warnings) {
     box.title = first.textContent.trim();
     first.remove();
   }
-  box.blocks = blocksOf(td, warnings);
+  box.blocks = blocksOf(td, warnings, used);
   return box;
 }
 
@@ -232,14 +252,18 @@ function imagesBesideTable(el, warnings) {
 }
 
 /** Blöcke aus den Kindern eines Elements. */
-function blocksOf(parent, warnings) {
+function blocksOf(parent, warnings, used = new Set()) {
   const out = [];
-  const pushText = (text, align) => {
+  const pushText = (text, align, el = null) => {
     if (!text) return;
     const prev = out[out.length - 1];
-    // Aufeinanderfolgende einfache Absätze werden ein Textblock (Leerzeile trennt).
-    if (!align && prev && prev.type === 'text' && !prev.align && !prev._closed) prev.text += `\n\n${text}`;
-    else out.push(align ? { type: 'text', align, text } : { type: 'text', text });
+    const mergeable = !align && prev && prev.type === 'text' && !prev.align && !prev._closed;
+    // Aufeinanderfolgende einfache Absätze werden ein Textblock (Leerzeile trennt) –
+    // außer der Absatz gehört zu einem anderen Block (eigene data-id). Mit Enter
+    // geteilte Absätze tragen dieselbe ID wie ihr Block.
+    const raw = el?.getAttribute?.('data-id');
+    if (mergeable && (!raw || raw === prev.id)) { prev.text += `\n\n${text}`; return; }
+    out.push(withId(align ? { type: 'text', align, text } : { type: 'text', text }, takeId(el, used)));
   };
   const close = () => { const prev = out[out.length - 1]; if (prev) prev._closed = true; };
   const spacer = () => {
@@ -253,58 +277,66 @@ function blocksOf(parent, warnings) {
     const ds = el.getAttribute('data-ds');
     if (tag === 'DIV' && el.hasAttribute('data-solution')) {
       // Ausgeblendeter Text aus der .odt (Lösung im Arbeitsblatt): bleibt verborgen.
-      const solution = solutionOf(blocksOf(el, warnings));
+      const solution = solutionOf(blocksOf(el, warnings, used));
       if (solution) { close(); out.push(solution); close(); }
     } else if (tag === 'DIV' && el.hasAttribute('data-block')) {
       try {
-        out.push(JSON.parse(decodeURIComponent(el.getAttribute('data-block'))));
+        const block = JSON.parse(decodeURIComponent(el.getAttribute('data-block')));
+        // Kopierter Baustein: dieselbe ID gilt nur einmal.
+        if (block && typeof block === 'object' && block.id !== undefined) {
+          if (isBlockId(block.id) && !used.has(block.id)) used.add(block.id); else delete block.id;
+        }
+        out.push(block);
       } catch (_) {
         warnings.push('Ein Baustein ließ sich nicht lesen und fehlt.');
       }
     } else if (/^H[1-6]$/.test(tag)) {
       const level = Math.min(3, Math.max(1, Number(tag[1]) - 1));
       const text = cleanText(inline(el, [], warnings));
-      if (!text) { /* leere Überschrift */ } else if (ds === 'section') out.push({ type: 'section', text });
-      else if (ds === 'task' || ds === 'subtask') out.push({ type: ds, title: text });
-      else out.push({ type: 'heading', level, text });
+      const id = text ? takeId(el, used) : null;
+      if (!text) { /* leere Überschrift */ } else if (ds === 'section') out.push(withId({ type: 'section', text }, id));
+      else if (ds === 'task' || ds === 'subtask') out.push(withId({ type: ds, title: text }, id));
+      else out.push(withId({ type: 'heading', level, text }, id));
     } else if (tag === 'P' && ds === 'note') {
       const text = cleanText(inline(el, [], warnings)).replace(/^\*([\s\S]*)\*$/, '$1');
-      if (text) out.push({ type: 'note', text });
+      if (text) out.push(withId({ type: 'note', text }, takeId(el, used)));
     } else if (tag === 'P' || tag === 'FIGURE' || tag === 'BLOCKQUOTE') {
       const images = [];
       const text = cleanText(inline(el, images, warnings));
       const align = /text-align:\s*(center|right|justify)/.exec(el.getAttribute('style') || '')?.[1];
       for (const img of images) {
         const b = imageBlock(img, warnings);
-        if (b) { close(); out.push(b); }
+        if (b) { close(); out.push(withId(b, takeId(img, used))); }
       }
       if (text) {
         if (images.length) close();
-        pushText(text, align);
+        pushText(text, align, el);
       } else if (!images.length) spacer();
     } else if (tag === 'UL' || tag === 'OL') {
       const images = [];
-      out.push(listBlock(el, images, warnings));
+      out.push(withId(listBlock(el, images, warnings), takeId(el, used)));
       if (images.length) warnings.push(`${images.length} Bild${images.length === 1 ? '' : 'er'} in Listen weggelassen.`);
     } else if (tag === 'TABLE') {
-      const karo = karoOfTable(el, warnings);
+      const karo = karoOfTable(el, warnings, used);
       if (karo) { close(); out.push(...karo); close(); } else {
         const beside = imagesBesideTable(el, warnings);
-        out.push(boxOfTable(el, warnings) || tableBlock(el, warnings), ...beside);
+        const id = takeId(el, used);
+        out.push(withId(boxOfTable(el, warnings, used) || tableBlock(el, warnings), id), ...beside);
       }
     }
     else if (tag === 'DIV' && /\bws-box\b/.test(el.getAttribute('class') || '')) {
-      const inner = blocksOf(el, warnings);
+      const id = takeId(el, used);
+      const inner = blocksOf(el, warnings, used);
       const box = { type: 'box' };
       if (el.getAttribute('data-title')) box.title = el.getAttribute('data-title');
       if (el.getAttribute('data-shaded') === '1') box.shaded = true;
-      if (inner.length || box.title) out.push({ ...box, blocks: inner });
+      if (inner.length || box.title) out.push(withId({ ...box, blocks: inner }, id));
     } else if (tag === 'IMG') {
       const b = imageBlock(el, warnings);
-      if (b) out.push(b);
+      if (b) out.push(withId(b, takeId(el, used)));
     } else if (tag === 'PRE') out.push({ type: 'code', code: el.textContent.replace(/\n$/, '') });
     else if (tag === 'HR') out.push({ type: 'spacer', lines: 1 });
-    else if (el.children.length) out.push(...blocksOf(el, warnings));
+    else if (el.children.length) out.push(...blocksOf(el, warnings, used));
     else pushText(cleanText(inline(el, [], warnings)));
     if (out.length && out[out.length - 1].type !== 'text') close();
   }
@@ -335,14 +367,18 @@ export function widgetHtml(block) {
   return `<div class="ds-widget" contenteditable="false" data-block="${encodeURIComponent(JSON.stringify(block))}" title="${esc(label)} – Doppelklick zum Bearbeiten"><span class="ds-widget-label">${esc(label)}</span>${preview}</div>`;
 }
 
-function paragraphsHtml(text, align) {
+/** data-id für die feste ID eines Blocks (ids.js). */
+const idAttr = (b) => (isBlockId(b?.id) ? ` data-id="${b.id}"` : '');
+
+/** Absätze eines Textblocks; alle tragen seine ID – so bleibt er beim Rückweg ein Block. */
+function paragraphsHtml(text, align, id = '') {
   const style = align && align !== 'left' ? ` style="text-align:${align}"` : '';
-  return String(text).split('\n\n').map((p) => `<p${style}>${richText(p.trim()) || '<br>'}</p>`).join('');
+  return String(text).split('\n\n').map((p) => `<p${id}${style}>${richText(p.trim()) || '<br>'}</p>`).join('');
 }
 
-function listItemsHtml(items, ordered) {
+function listItemsHtml(items, ordered, id = '') {
   const tag = ordered ? 'ol' : 'ul';
-  return `<${tag}>${(items || []).map((it) => (typeof it === 'object' && it
+  return `<${tag}${id}>${(items || []).map((it) => (typeof it === 'object' && it
     ? `<li>${richText(it.text ?? '')}${Array.isArray(it.items) ? listItemsHtml(it.items, ordered) : ''}</li>`
     : `<li>${richText(it)}</li>`)).join('')}</${tag}>`;
 }
@@ -368,32 +404,32 @@ export function specToEditorHtml(spec) {
     if (!b || typeof b !== 'object') return '';
     switch (b.type || 'text') {
       case 'section':
-        return `<h2 data-ds="section">${richText(b.title ?? b.text ?? '')}</h2>${b.title !== undefined && b.text ? paragraphsHtml(b.text) : ''}${blocks(b.blocks)}`;
+        return `<h2 data-ds="section"${idAttr(b)}>${richText(b.title ?? b.text ?? '')}</h2>${b.title !== undefined && b.text ? paragraphsHtml(b.text) : ''}${blocks(b.blocks)}`;
       case 'task':
       case 'subtask': {
         const tag = b.type === 'task' ? 'h3' : 'h4';
-        return `<${tag} data-ds="${b.type}">${richText(b.title ?? b.text ?? '')}</${tag}>${b.title !== undefined && b.text ? paragraphsHtml(b.text) : ''}${blocks(b.blocks)}`;
+        return `<${tag} data-ds="${b.type}"${idAttr(b)}>${richText(b.title ?? b.text ?? '')}</${tag}>${b.title !== undefined && b.text ? paragraphsHtml(b.text) : ''}${blocks(b.blocks)}`;
       }
       case 'heading': {
         const level = [1, 2, 3].includes(b.level) ? b.level + 1 : 2;
-        return `<h${level} data-ds="heading">${richText(b.text ?? b.title ?? '')}</h${level}>`;
+        return `<h${level} data-ds="heading"${idAttr(b)}>${richText(b.text ?? b.title ?? '')}</h${level}>`;
       }
       case 'text':
-        return paragraphsHtml(b.text ?? '', b.align);
+        return paragraphsHtml(b.text ?? '', b.align, idAttr(b));
       case 'note':
-        return `<p data-ds="note"><em>${richText(b.text ?? '')}</em></p>`;
+        return `<p data-ds="note"${idAttr(b)}><em>${richText(b.text ?? '')}</em></p>`;
       case 'list':
-        return listItemsHtml(b.items, b.ordered);
+        return listItemsHtml(b.items, b.ordered, idAttr(b));
       case 'table':
-        return `<table${b.caption ? ` data-caption="${esc(b.caption)}"` : ''}>${Array.isArray(b.header) ? `<thead><tr>${cellsHtml('th', b.header)}</tr></thead>` : ''}<tbody>${(b.rows || []).filter(Array.isArray).map((r) => `<tr>${cellsHtml('td', r)}</tr>`).join('')}</tbody></table>`;
+        return `<table${idAttr(b)}${b.caption ? ` data-caption="${esc(b.caption)}"` : ''}>${Array.isArray(b.header) ? `<thead><tr>${cellsHtml('th', b.header)}</tr></thead>` : ''}<tbody>${(b.rows || []).filter(Array.isArray).map((r) => `<tr>${cellsHtml('td', r)}</tr>`).join('')}</tbody></table>`;
       case 'image': {
         if (typeof b.src !== 'string') return widgetHtml(b);
         const cls = [b.float === 'left' ? 'ws-float-left' : b.float === 'right' ? 'ws-float-right' : b.float === 'center' ? 'ws-img-center' : '', b.border ? 'ws-img-border' : ''].filter(Boolean).join(' ');
         const px = cssPx(b.width);
-        return `<p><img src="${esc(b.src)}"${cls ? ` class="${cls}"` : ''}${px ? ` width="${Math.round(px)}" data-width="${esc(b.width)}"` : ''}${b.alt ? ` alt="${esc(b.alt)}"` : ''}${b.caption ? ` data-caption="${esc(b.caption)}"` : ''}${b.source ? ` data-source="${esc(b.source)}"` : ''}></p>`;
+        return `<p><img${idAttr(b)} src="${esc(b.src)}"${cls ? ` class="${cls}"` : ''}${px ? ` width="${Math.round(px)}" data-width="${esc(b.width)}"` : ''}${b.alt ? ` alt="${esc(b.alt)}"` : ''}${b.caption ? ` data-caption="${esc(b.caption)}"` : ''}${b.source ? ` data-source="${esc(b.source)}"` : ''}></p>`;
       }
       case 'box':
-        return `<div class="ws-box"${b.title ? ` data-title="${esc(b.title)}"` : ''}${b.shaded ? ' data-shaded="1"' : ''}>${b.text ? paragraphsHtml(b.text) : ''}${blocks(b.blocks) || '<p><br></p>'}</div>`;
+        return `<div class="ws-box"${idAttr(b)}${b.title ? ` data-title="${esc(b.title)}"` : ''}${b.shaded ? ' data-shaded="1"' : ''}>${b.text ? paragraphsHtml(b.text) : ''}${blocks(b.blocks) || '<p><br></p>'}</div>`;
       default:
         return widgetHtml(b);
     }

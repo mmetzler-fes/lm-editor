@@ -297,3 +297,12 @@ describe('Tabelle ohne Linien (Abbildungen nebeneinander)', () => {
     expect(ds.renderDocSpecHtml({ content: [{ ...block, border: undefined }] })).not.toContain('ds-table-plain');
   });
 });
+
+describe('Quiz im Dokument: Größe', () => {
+  it('scale 0.5–1.5 als Vorgabe (data-scale)', () => {
+    const block = { type: 'quiz', module: 'm1', scale: 0.8 };
+    expect(ds.validateDocSpec({ content: [block] })).toEqual([]);
+    expect(ds.renderDocSpecHtml({ content: [block] })).toContain('data-scale="0.8"');
+    expect(ds.validateDocSpec({ content: [{ ...block, scale: 3 }] }).join(' ')).toContain('scale: Größe von 0.5 bis 1.5');
+  });
+});

@@ -168,7 +168,7 @@ body.ink-open { overflow: hidden; }
   .ink-print-sheet h2, .ink-print-sheet h3, .ink-print-sheet h4 { break-after: avoid; }
   .ink-print-sheet .ds-pagebreak-mark { break-after: page; }
   /* Im Quiz nichts zum Klicken; die Fragen bleiben. */
-  .ink-print-sheet .ds-quiz button.btn-sm, .ink-print-sheet .ds-actions, .ink-print-sheet .ds-solutions-toggle { display: none !important; }
+  .ink-print-sheet .ds-quiz button.btn-sm, .ink-print-sheet .ds-quiz-size, .ink-print-sheet .ds-actions, .ink-print-sheet .ds-solutions-toggle { display: none !important; }
 }
 
 /* Unsichtbares Schreibfeld: beim Beschriften gestrichelt angedeutet, im Druck nicht. */

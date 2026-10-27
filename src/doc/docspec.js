@@ -157,6 +157,7 @@ function checkBlock(block, path, errors, inSolution) {
       need(isText(block.module) && String(block.module).trim() !== '', 'module (Modul des Lernthemas) fehlt.');
       need(!inSolution, 'Ein Quiz in einer Lösung ist nicht möglich.');
       if (block.title !== undefined) need(isText(block.title), 'title muss ein Text sein.');
+      if (block.scale !== undefined) need(typeof block.scale === 'number' && block.scale >= 0.5 && block.scale <= 1.5, 'scale: Größe von 0.5 bis 1.5, z. B. 0.8 für 80 %.');
       break;
     case 'karo':
       if (block.width !== undefined) need(KARO_WIDTH_RE.test(String(block.width).trim()), 'width: Breite in cm, z. B. "8cm".');
@@ -709,7 +710,7 @@ function renderBlockHtml(block, ctx) {
         : ctx.options.blockIds ? '<div class="ds-pagebreak-mark" aria-hidden="true"></div>' : '';
     case 'quiz':
       // Platzhalter; im Durchlauf hängt h5p-renderer.js das Modul hinein.
-      return `<div class="ds-quiz" data-module="${esc(block.module ?? '')}"><p class="ds-quiz-title">🧩 ${richText(isText(block.title) ? block.title : 'Quiz')}</p>`
+      return `<div class="ds-quiz" data-module="${esc(block.module ?? '')}"${typeof block.scale === 'number' ? ` data-scale="${block.scale}"` : ''}><p class="ds-quiz-title">🧩 ${richText(isText(block.title) ? block.title : 'Quiz')}</p>`
         + '<p class="ds-quiz-hint">Beim Bearbeiten des Lernthemas läuft das Quiz hier im Blatt, im Druck stehen QR-Code und Adresse.</p></div>';
     default:
       return '';

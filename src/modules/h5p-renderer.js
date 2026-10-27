@@ -41,6 +41,52 @@ function embeddedFrame(url, height, title, extraStyle = '') {
 const WIDE_TYPES = new Set(['dragAndDrop', 'imageHotspots', 'video', 'worksheet', 'coursePresentation',
   'branchingScenario', 'iframeEmbedder', 'collage', 'crossword']);
 
+// ---- Größe eines Quiz im Dokument ----
+//
+// Quizze sind für die App gestaltet; auf dem Blatt (11 pt, Stift-Editor)
+// wirken sie oft zu groß – oder am Beamer zu klein. A− / A+ stellt das
+// eingebettete Quiz als Ganzes kleiner oder größer (CSS zoom, Ziehen und
+// Einpassen rechnen das ein). Die Lehrkraft gibt im Dokument eine Größe vor
+// (Block `quiz`, `scale`); was jemand selbst einstellt, merkt sich das Gerät.
+
+const QUIZ_SCALES = [0.5, 0.6, 0.7, 0.8, 0.9, 1, 1.1, 1.25, 1.5];
+const quizScaleKey = (id) => `lm_quiz_scale:${id}`;
+
+function quizSizeControl(box, slot, moduleId) {
+  const preset = Number(box.dataset.scale) || 1;
+  let scale = preset;
+  try { scale = Number(localStorage.getItem(quizScaleKey(moduleId))) || preset; } catch (_) { /* ohne Speicher */ }
+  const nearest = (v) => QUIZ_SCALES.reduce((a, b) => (Math.abs(b - v) < Math.abs(a - v) ? b : a), 1);
+  scale = nearest(scale);
+  const bar = document.createElement('span');
+  bar.className = 'ds-quiz-size';
+  bar.innerHTML = '<button type="button" data-step="-1" title="Quiz verkleinern" aria-label="Quiz verkleinern">A−</button>'
+    + '<span class="ds-quiz-size-value"></span>'
+    + '<button type="button" data-step="1" title="Quiz vergrößern" aria-label="Quiz vergrößern">A+</button>';
+  const apply = () => {
+    slot.style.zoom = scale === 1 ? '' : String(scale);
+    bar.querySelector('.ds-quiz-size-value').textContent = `${Math.round(scale * 100)} %`;
+    bar.querySelector('[data-step="-1"]').disabled = scale <= QUIZ_SCALES[0];
+    bar.querySelector('[data-step="1"]').disabled = scale >= QUIZ_SCALES[QUIZ_SCALES.length - 1];
+  };
+  bar.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-step]');
+    if (!b) return;
+    e.preventDefault();
+    const i = QUIZ_SCALES.indexOf(scale) + Number(b.dataset.step);
+    scale = QUIZ_SCALES[Math.max(0, Math.min(QUIZ_SCALES.length - 1, i))];
+    try {
+      if (scale === preset) localStorage.removeItem(quizScaleKey(moduleId));
+      else localStorage.setItem(quizScaleKey(moduleId), String(scale));
+    } catch (_) { /* gilt dann nur bis zum Neuladen */ }
+    apply();
+    // Drag and Drop passt sein Bild an die neue Fläche an.
+    window.dispatchEvent(new Event('lm-zoom'));
+  });
+  box.insertBefore(bar, box.firstChild);
+  apply();
+}
+
 // ---- Drag and Drop mit Bild: an den Bildschirm anpassen ----
 //
 // Hohe Bilder ragten über den Bildschirm hinaus: Jedes Element musste dann
@@ -1559,6 +1605,7 @@ export class H5pRenderer {
             slot.appendChild(this.createTypePreview(emb.type, embContent, { ...options, embedModule: undefined, moduleId: emb.id, title: emb.title }));
             box.classList.add('ds-quiz-live');
             box.appendChild(slot);
+            quizSizeControl(box, slot, emb.id);
           });
         }
         // Knöpfe des Dokuments (✍️, ⬇ PDF) in einer eigenen Leiste über dem

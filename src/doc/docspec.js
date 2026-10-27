@@ -27,6 +27,7 @@ export const KARO_MAX_WIDTH_CM = 16.5;
 const KARO_WIDTH_RE = /^(\d+(?:\.\d+)?)\s*cm$/;
 // Spaltenbreite bzw. Zeilenhöhe einer Tabelle (`widths`, `heights`); leer = automatisch.
 const TABLE_LENGTH_RE = /^\d+(\.\d+)?\s*(cm|mm)$/;
+const CELL_ALIGNS = ['left', 'center', 'right'];
 const tableLengthOk = (v) => v === null || v === '' || TABLE_LENGTH_RE.test(String(v).trim());
 
 /** Breite eines Schreibfelds in cm (auf 0,5 cm gerundet, 1–16,5), null = Satzbreite. */
@@ -80,6 +81,7 @@ function cellOk(c) {
   const images = c.images === undefined || (Array.isArray(c.images) && c.images.every(cellImageOk));
   return (c.text === undefined || isText(c.text)) && span(c.colspan) && span(c.rowspan) && images
     && (c.beside === undefined || typeof c.beside === 'boolean')
+    && (c.align === undefined || CELL_ALIGNS.includes(c.align))
     && (c.blocks === undefined || Array.isArray(c.blocks));
 }
 
@@ -152,6 +154,7 @@ function checkBlock(block, path, errors, inSolution, parent = '') {
       if (block.header !== undefined) need(Array.isArray(block.header), 'header muss eine Liste sein.');
       if (block.widths !== undefined) need(Array.isArray(block.widths) && block.widths.length <= 40 && block.widths.every(tableLengthOk), 'widths: Liste der Spaltenbreiten, z. B. ["4cm", "", "3cm"] (leer = automatisch).');
       if (block.heights !== undefined) need(Array.isArray(block.heights) && block.heights.length <= 200 && block.heights.every(tableLengthOk), 'heights: Liste der Mindesthöhen je Zeile (Kopfzeile zuerst), z. B. ["", "2cm"].');
+      if (block.align !== undefined) need(CELL_ALIGNS.includes(block.align), `align: ${CELL_ALIGNS.join(', ')} (Ausrichtung aller Zellen).`);
       if (block.border !== undefined) need(typeof block.border === 'boolean', 'border: true oder false (false = ohne Linien, z. B. Abbildungen nebeneinander).');
       for (const row of [...(Array.isArray(block.header) ? [block.header] : []), ...(Array.isArray(block.rows) ? block.rows : [])]) {
         if (Array.isArray(row) && !row.every(cellOk)) {
@@ -648,6 +651,7 @@ export function tableRowAttr(block, r) {
 
 function cellHtml(tag, c, ctx = null) {
   if (isText(c)) return `<${tag}>${richText(c)}</${tag}>`;
+  const alignAttr = CELL_ALIGNS.includes(c?.align) ? ` style="text-align:${c.align}"` : '';
   const span = (name, v) => (Number.isInteger(v) && v > 1 && v <= 20 ? ` ${name}="${v}"` : '');
   const images = (Array.isArray(c?.images) ? c.images : []).filter(cellImageOk).map((i) => {
     const width = CSS_LENGTH_RE.test(String(i.width ?? '')) ? ` style="width:${i.width}"` : '';
@@ -659,9 +663,9 @@ function cellHtml(tag, c, ctx = null) {
     ? renderBlocksHtml(c.blocks, { ...ctx, options: { ...ctx.options, blockIds: false }, path: [] }) : '';
   // beside: Bilder neben dem Text (z. B. „Schließer“ und sein Schaltzeichen), sonst darunter.
   if (c?.beside && images) {
-    return `<${tag}${span('colspan', c?.colspan)}${span('rowspan', c?.rowspan)}><div class="ds-cell-beside"><div>${richText(c?.text ?? '')}</div>${images}</div>${inner}</${tag}>`;
+    return `<${tag}${span('colspan', c?.colspan)}${span('rowspan', c?.rowspan)}${alignAttr}><div class="ds-cell-beside"><div>${richText(c?.text ?? '')}</div>${images}</div>${inner}</${tag}>`;
   }
-  return `<${tag}${span('colspan', c?.colspan)}${span('rowspan', c?.rowspan)}>${richText(c?.text ?? '')}${images}${inner}</${tag}>`;
+  return `<${tag}${span('colspan', c?.colspan)}${span('rowspan', c?.rowspan)}${alignAttr}>${richText(c?.text ?? '')}${images}${inner}</${tag}>`;
 }
 
 function headingNumber(type, c) {
@@ -741,7 +745,7 @@ function renderBlockHtml(block, ctx) {
         ? `<thead><tr${tableRowAttr(block, 0)}>${block.header.map((c) => cellHtml('th', c ?? '', ctx)).join('')}</tr></thead>` : '';
       const rows = (block.rows || []).filter(Array.isArray)
         .map((r, i) => `<tr${tableRowAttr(block, i + off)}>${r.map((c) => cellHtml('td', c ?? '', ctx)).join('')}</tr>`).join('');
-      return `${caption}<div class="ds-table-wrap"><table class="ds-table${block.border === false ? ' ds-table-plain' : ''}">${tableColgroup(block)}${head}<tbody>${rows}</tbody></table></div>`;
+      return `${caption}<div class="ds-table-wrap"><table class="ds-table${block.border === false ? ' ds-table-plain' : ''}${CELL_ALIGNS.includes(block.align) ? ` ds-align-${block.align}` : ''}">${tableColgroup(block)}${head}<tbody>${rows}</tbody></table></div>`;
     }
     case 'formula': {
       const align = block.align === 'left' ? ' ds-formula-left' : '';

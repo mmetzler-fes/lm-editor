@@ -175,9 +175,11 @@ function tableBlock(el, warnings, used = new Set()) {
     // Bilder bleiben in ihrer Zelle (z. B. Baustein links, Zeitdiagramm rechts).
     const images = found.map((img) => imageBlock(img, warnings)).filter(Boolean)
       .map(({ type: _t, float: _f, caption: _c, border: _b, ...img }) => img);
-    if (cs === 1 && rs === 1 && !images.length && !blocks?.length) return text;
+    // Ausrichtung der Zelle (Tabellenleiste ⇤ ↔ ⇥) – sonst gilt die der Tabelle.
+    const align = ['left', 'center', 'right'].includes(td.style?.textAlign) ? td.style.textAlign : null;
+    if (cs === 1 && rs === 1 && !images.length && !blocks?.length) return align ? { text, align } : text;
     const beside = images.length && td.classList.contains('ws-cell-beside');
-    return { text, ...(cs > 1 ? { colspan: Math.min(cs, 20) } : {}), ...(rs > 1 ? { rowspan: Math.min(rs, 20) } : {}), ...(images.length ? { images } : {}), ...(beside ? { beside: true } : {}), ...(blocks?.length ? { blocks } : {}) };
+    return { text, ...(align ? { align } : {}), ...(cs > 1 ? { colspan: Math.min(cs, 20) } : {}), ...(rs > 1 ? { rowspan: Math.min(rs, 20) } : {}), ...(images.length ? { images } : {}), ...(beside ? { beside: true } : {}), ...(blocks?.length ? { blocks } : {}) };
   };
   const rowsOf = (section) => [...(section?.children || [])].filter((r) => r.tagName === 'TR')
     .map((tr) => [...tr.children].filter((c) => c.tagName === 'TD' || c.tagName === 'TH').map(cell));
@@ -190,6 +192,7 @@ function tableBlock(el, warnings, used = new Set()) {
   if (el.getAttribute('data-caption')) block.caption = el.getAttribute('data-caption');
   // Ohne Linien: z. B. Abbildungen nebeneinander mit Unterschrift.
   if (el.classList.contains('ws-table-plain')) block.border = false;
+  if (['left', 'center', 'right'].includes(el.dataset.align)) block.align = el.dataset.align;
   // Feste Spaltenbreiten (<col style="width">) und Zeilenhöhen (<tr style="height">), in cm.
   const trim = (list) => { while (list.length && !list[list.length - 1]) list.pop(); return list; };
   const cols = [...el.children].filter((c) => c.tagName === 'COLGROUP').flatMap((g) => [...g.children].filter((c) => c.tagName === 'COL'));
@@ -457,7 +460,8 @@ function cellsHtml(tag, row, blocksHtml = () => '') {
       }).join('');
       const inner = Array.isArray(c.blocks) ? blocksHtml(c.blocks) : '';
       // Leere Zelle mit <br>: Sonst nimmt sie keine Schreibmarke an (der Klick landete daneben).
-      return `<${tag}${span('colspan', c.colspan)}${span('rowspan', c.rowspan)}${c.beside ? ' class="ws-cell-beside"' : ''}>${richText(c.text ?? '')}${images}${inner}${!c.text && !images && !inner ? '<br>' : ''}</${tag}>`;
+      const align = ['left', 'center', 'right'].includes(c.align) ? ` style="text-align:${c.align}"` : '';
+      return `<${tag}${span('colspan', c.colspan)}${span('rowspan', c.rowspan)}${c.beside ? ' class="ws-cell-beside"' : ''}${align}>${richText(c.text ?? '')}${images}${inner}${!c.text && !images && !inner ? '<br>' : ''}</${tag}>`;
     }
     return `<${tag}>${richText(c ?? '') || '<br>'}</${tag}>`;
   }).join('');
@@ -488,7 +492,7 @@ export function specToEditorHtml(spec) {
         return listItemsHtml(b.items, b.ordered, idAttr(b));
       case 'table': {
         const off = Array.isArray(b.header) ? 1 : 0;
-        return `<table${idAttr(b)}${b.border === false ? ' class="ws-table-plain"' : ''}${b.caption ? ` data-caption="${esc(b.caption)}"` : ''}>${tableColgroup(b)}${off ? `<thead><tr${tableRowAttr(b, 0)}>${cellsHtml('th', b.header, blocks)}</tr></thead>` : ''}<tbody>${(b.rows || []).filter(Array.isArray).map((r, i) => `<tr${tableRowAttr(b, i + off)}>${cellsHtml('td', r, blocks)}</tr>`).join('')}</tbody></table>`;
+        return `<table${idAttr(b)}${b.border === false ? ' class="ws-table-plain"' : ''}${['left', 'center', 'right'].includes(b.align) ? ` data-align="${b.align}"` : ''}${b.caption ? ` data-caption="${esc(b.caption)}"` : ''}>${tableColgroup(b)}${off ? `<thead><tr${tableRowAttr(b, 0)}>${cellsHtml('th', b.header, blocks)}</tr></thead>` : ''}<tbody>${(b.rows || []).filter(Array.isArray).map((r, i) => `<tr${tableRowAttr(b, i + off)}>${cellsHtml('td', r, blocks)}</tr>`).join('')}</tbody></table>`;
       }
       case 'image': {
         if (typeof b.src !== 'string') return widgetHtml(b);

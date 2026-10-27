@@ -817,6 +817,10 @@ body {
 .docspec .ds-table tr[style*="height"] > td:empty, .docspec .ds-table tr[style*="height"] > th:empty { height: auto; }
 /* Zelle mit beside: Bilder neben dem Text */
 .docspec .ds-cell-beside { display: flex; align-items: center; gap: 8px; }
+/* Ausrichtung der Tabelle (align) – Zellen mit eigener Ausrichtung tragen sie im style */
+.docspec .ds-table.ds-align-left td, .docspec .ds-table.ds-align-left th { text-align: left; }
+.docspec .ds-table.ds-align-center td, .docspec .ds-table.ds-align-center th { text-align: center; }
+.docspec .ds-table.ds-align-right td, .docspec .ds-table.ds-align-right th { text-align: right; }
 .docspec .ds-cell-beside .ds-cell-image { margin: 0; }
 /* Spalten (type: columns): Inhalte nebeneinander, am Handy untereinander */
 .docspec .ds-columns { display: flex; gap: 0.5cm; align-items: flex-start; margin: 0.4em 0 0.8em; }

@@ -363,3 +363,14 @@ describe('Tabelle in der Tabelle (blocks in Zellen)', () => {
     expect(ds.renderDocSpecHtml({ content: [block] }, { blockIds: true })).toContain('<td>Rechts<div class="ds-table-wrap"><table class="ds-table"><thead>');
   });
 });
+
+describe('Tabelle: Ausrichtung', () => {
+  it('align an Tabelle und Zelle', () => {
+    const block = { type: 'table', border: false, align: 'left', rows: [['a', { text: 'b', align: 'right' }]] };
+    expect(ds.validateDocSpec({ content: [block] })).toEqual([]);
+    const html = ds.renderDocSpecHtml({ content: [block] });
+    expect(html).toContain('ds-table-plain ds-align-left');
+    expect(html).toContain('<td style="text-align:right">b</td>');
+    expect(ds.validateDocSpec({ content: [{ ...block, align: 'mitte' }] }).join(' ')).toContain('align:');
+  });
+});

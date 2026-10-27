@@ -834,6 +834,9 @@ body {
 .docspec .ds-table.ds-align-left > * > tr > td, .docspec .ds-table.ds-align-left > * > tr > th { text-align: left; }
 .docspec .ds-table.ds-align-center > * > tr > td, .docspec .ds-table.ds-align-center > * > tr > th { text-align: center; }
 .docspec .ds-table.ds-align-right > * > tr > td, .docspec .ds-table.ds-align-right > * > tr > th { text-align: right; }
+.docspec .ds-table.ds-valign-top > * > tr > td, .docspec .ds-table.ds-valign-top > * > tr > th { vertical-align: top; }
+.docspec .ds-table.ds-valign-middle > * > tr > td, .docspec .ds-table.ds-valign-middle > * > tr > th { vertical-align: middle; }
+.docspec .ds-table.ds-valign-bottom > * > tr > td, .docspec .ds-table.ds-valign-bottom > * > tr > th { vertical-align: bottom; }
 .docspec .ds-cell-beside .ds-cell-image { margin: 0; }
 /* Spalten (type: columns): Inhalte nebeneinander, am Handy untereinander */
 .docspec .ds-columns { display: flex; gap: 0.5cm; align-items: flex-start; margin: 0.4em 0 0.8em; }

@@ -16,7 +16,7 @@
  * Feste Block-IDs (ids.js) reisen als data-id mit – an ihnen hängen die
  * Striche der Schüler.
  */
-import { richText, renderDocSpecHtml, tableColgroup, tableRowAttr, tableLineStyle, TABLE_LINE_STYLES, TEXT_COLORS, HIGHLIGHTS, LINE_HEIGHTS, LIST_MARKERS, LIST_NUMBERINGS, LINE_COLORS, CELL_BACKGROUNDS, paraStyle } from './docspec.js';
+import { richText, renderDocSpecHtml, tableColgroup, tableRowAttr, tableLineStyle, TABLE_LINE_STYLES, TEXT_COLORS, HIGHLIGHTS, LINE_HEIGHTS, LIST_MARKERS, LIST_NUMBERINGS, LINE_COLORS, CELL_BACKGROUNDS, CELL_VALIGNS, paraStyle } from './docspec.js';
 import { isBlockId } from './ids.js';
 
 const MARKUP_CHARS = /[\\*`[\]]/g;
@@ -206,11 +206,11 @@ function tableBlock(el, warnings, used = new Set()) {
     // Ausrichtung der Zelle (Tabellenleiste ⇤ ↔ ⇥) – sonst gilt die der Tabelle.
     const align = ['left', 'center', 'right'].includes(td.style?.textAlign) ? td.style.textAlign : null;
     const background = CELL_BACKGROUNDS[td.dataset?.bg] ? td.dataset.bg : null;
-    if (cs === 1 && rs === 1 && !images.length && !blocks?.length) {
-      return align || background ? { text, ...(align ? { align } : {}), ...(background ? { background } : {}) } : text;
-    }
+    const valign = CELL_VALIGNS.includes(td.style?.verticalAlign) ? td.style.verticalAlign : null;
+    const look = { ...(align ? { align } : {}), ...(valign ? { valign } : {}), ...(background ? { background } : {}) };
+    if (cs === 1 && rs === 1 && !images.length && !blocks?.length) return Object.keys(look).length ? { text, ...look } : text;
     const beside = images.length && td.classList.contains('ws-cell-beside');
-    return { text, ...(align ? { align } : {}), ...(background ? { background } : {}), ...(cs > 1 ? { colspan: Math.min(cs, 20) } : {}), ...(rs > 1 ? { rowspan: Math.min(rs, 20) } : {}), ...(images.length ? { images } : {}), ...(beside ? { beside: true } : {}), ...(blocks?.length ? { blocks } : {}) };
+    return { text, ...look, ...(cs > 1 ? { colspan: Math.min(cs, 20) } : {}), ...(rs > 1 ? { rowspan: Math.min(rs, 20) } : {}), ...(images.length ? { images } : {}), ...(beside ? { beside: true } : {}), ...(blocks?.length ? { blocks } : {}) };
   };
   const rowsOf = (section) => [...(section?.children || [])].filter((r) => r.tagName === 'TR')
     .map((tr) => [...tr.children].filter((c) => c.tagName === 'TD' || c.tagName === 'TH').map(cell));
@@ -224,6 +224,7 @@ function tableBlock(el, warnings, used = new Set()) {
   // Ohne Linien: z. B. Abbildungen nebeneinander mit Unterschrift.
   if (el.classList.contains('ws-table-plain')) block.border = false;
   if (['left', 'center', 'right'].includes(el.dataset.align)) block.align = el.dataset.align;
+  if (CELL_VALIGNS.includes(el.dataset.valign)) block.valign = el.dataset.valign;
   // Linien: Stärke (pt) und Art.
   const lw = Number(el.dataset.lineWidth);
   if (lw >= 0.25 && lw <= 6) block.lineWidth = lw;
@@ -501,7 +502,7 @@ function cellsHtml(tag, row, blocksHtml = () => '') {
       }).join('');
       const inner = Array.isArray(c.blocks) ? blocksHtml(c.blocks) : '';
       // Leere Zelle mit <br>: Sonst nimmt sie keine Schreibmarke an (der Klick landete daneben).
-      const css = [['left', 'center', 'right'].includes(c.align) ? `text-align:${c.align}` : '', CELL_BACKGROUNDS[c.background] ? `background-color:${CELL_BACKGROUNDS[c.background]}` : ''].filter(Boolean).join(';');
+      const css = [['left', 'center', 'right'].includes(c.align) ? `text-align:${c.align}` : '', CELL_VALIGNS.includes(c.valign) ? `vertical-align:${c.valign}` : '', CELL_BACKGROUNDS[c.background] ? `background-color:${CELL_BACKGROUNDS[c.background]}` : ''].filter(Boolean).join(';');
       const align = `${CELL_BACKGROUNDS[c.background] ? ` data-bg="${c.background}"` : ''}${css ? ` style="${css}"` : ''}`;
       return `<${tag}${span('colspan', c.colspan)}${span('rowspan', c.rowspan)}${c.beside ? ' class="ws-cell-beside"' : ''}${align}>${richText(c.text ?? '')}${images}${inner}${!c.text && !images && !inner ? '<br>' : ''}</${tag}>`;
     }
@@ -536,7 +537,7 @@ export function specToEditorHtml(spec) {
       }
       case 'table': {
         const off = Array.isArray(b.header) ? 1 : 0;
-        return `<table${idAttr(b)}${b.border === false ? ' class="ws-table-plain"' : ''}${['left', 'center', 'right'].includes(b.align) ? ` data-align="${b.align}"` : ''}${b.lineWidth ? ` data-line-width="${esc(b.lineWidth)}"` : ''}${b.lineStyle ? ` data-line-style="${esc(b.lineStyle)}"` : ''}${b.lineColor ? ` data-line-color="${esc(b.lineColor)}"` : ''}${tableLineStyle(b)}${b.caption ? ` data-caption="${esc(b.caption)}"` : ''}>${tableColgroup(b)}${off ? `<thead><tr${tableRowAttr(b, 0)}>${cellsHtml('th', b.header, blocks)}</tr></thead>` : ''}<tbody>${(b.rows || []).filter(Array.isArray).map((r, i) => `<tr${tableRowAttr(b, i + off)}>${cellsHtml('td', r, blocks)}</tr>`).join('')}</tbody></table>`;
+        return `<table${idAttr(b)}${b.border === false ? ' class="ws-table-plain"' : ''}${['left', 'center', 'right'].includes(b.align) ? ` data-align="${b.align}"` : ''}${CELL_VALIGNS.includes(b.valign) ? ` data-valign="${b.valign}"` : ''}${b.lineWidth ? ` data-line-width="${esc(b.lineWidth)}"` : ''}${b.lineStyle ? ` data-line-style="${esc(b.lineStyle)}"` : ''}${b.lineColor ? ` data-line-color="${esc(b.lineColor)}"` : ''}${tableLineStyle(b)}${b.caption ? ` data-caption="${esc(b.caption)}"` : ''}>${tableColgroup(b)}${off ? `<thead><tr${tableRowAttr(b, 0)}>${cellsHtml('th', b.header, blocks)}</tr></thead>` : ''}<tbody>${(b.rows || []).filter(Array.isArray).map((r, i) => `<tr${tableRowAttr(b, i + off)}>${cellsHtml('td', r, blocks)}</tr>`).join('')}</tbody></table>`;
       }
       case 'image': {
         if (typeof b.src !== 'string') return widgetHtml(b);

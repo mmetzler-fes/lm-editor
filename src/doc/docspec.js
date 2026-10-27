@@ -41,6 +41,8 @@ const KARO_WIDTH_RE = /^(\d+(?:\.\d+)?)\s*cm$/;
 // Spaltenbreite bzw. Zeilenhöhe einer Tabelle (`widths`, `heights`); leer = automatisch.
 const TABLE_LENGTH_RE = /^\d+(\.\d+)?\s*(cm|mm)$/;
 const CELL_ALIGNS = ['left', 'center', 'right'];
+// Senkrechte Ausrichtung in Zellen (Tabelle oder einzelne Zelle).
+export const CELL_VALIGNS = ['top', 'middle', 'bottom'];
 // Linien einer Tabelle: Stärke in pt, Art.
 export const TABLE_LINE_STYLES = ['solid', 'dashed', 'dotted'];
 const lineWidthOk = (v) => typeof v === 'number' && v >= 0.25 && v <= 6;
@@ -111,6 +113,7 @@ function cellOk(c) {
     && (c.beside === undefined || typeof c.beside === 'boolean')
     && (c.align === undefined || CELL_ALIGNS.includes(c.align))
     && (c.background === undefined || !!CELL_BACKGROUNDS[c.background])
+    && (c.valign === undefined || CELL_VALIGNS.includes(c.valign))
     && (c.blocks === undefined || Array.isArray(c.blocks));
 }
 
@@ -192,6 +195,7 @@ function checkBlock(block, path, errors, inSolution, parent = '') {
       if (block.lineStyle !== undefined) need(TABLE_LINE_STYLES.includes(block.lineStyle), `lineStyle: ${TABLE_LINE_STYLES.join(', ')}.`);
       if (block.lineColor !== undefined) need(!!LINE_COLORS[block.lineColor], `lineColor: ${Object.keys(LINE_COLORS).join(', ')}.`);
       if (block.align !== undefined) need(CELL_ALIGNS.includes(block.align), `align: ${CELL_ALIGNS.join(', ')} (Ausrichtung aller Zellen).`);
+      if (block.valign !== undefined) need(CELL_VALIGNS.includes(block.valign), `valign: ${CELL_VALIGNS.join(', ')} (senkrechte Ausrichtung aller Zellen).`);
       if (block.border !== undefined) need(typeof block.border === 'boolean', 'border: true oder false (false = ohne Linien, z. B. Abbildungen nebeneinander).');
       for (const row of [...(Array.isArray(block.header) ? [block.header] : []), ...(Array.isArray(block.rows) ? block.rows : [])]) {
         if (Array.isArray(row) && !row.every(cellOk)) {
@@ -713,7 +717,7 @@ export function tableRowAttr(block, r) {
 
 function cellHtml(tag, c, ctx = null) {
   if (isText(c)) return `<${tag}>${richText(c)}</${tag}>`;
-  const cellCss = [CELL_ALIGNS.includes(c?.align) ? `text-align:${c.align}` : '', CELL_BACKGROUNDS[c?.background] ? `background:${CELL_BACKGROUNDS[c.background]}` : ''].filter(Boolean).join(';');
+  const cellCss = [CELL_ALIGNS.includes(c?.align) ? `text-align:${c.align}` : '', CELL_VALIGNS.includes(c?.valign) ? `vertical-align:${c.valign}` : '', CELL_BACKGROUNDS[c?.background] ? `background:${CELL_BACKGROUNDS[c.background]}` : ''].filter(Boolean).join(';');
   const alignAttr = cellCss ? ` style="${cellCss}"` : '';
   const span = (name, v) => (Number.isInteger(v) && v > 1 && v <= 20 ? ` ${name}="${v}"` : '');
   const images = (Array.isArray(c?.images) ? c.images : []).filter(cellImageOk).map((i) => {
@@ -813,7 +817,7 @@ function renderBlockHtml(block, ctx) {
         ? `<thead><tr${tableRowAttr(block, 0)}>${block.header.map((c) => cellHtml('th', c ?? '', ctx)).join('')}</tr></thead>` : '';
       const rows = (block.rows || []).filter(Array.isArray)
         .map((r, i) => `<tr${tableRowAttr(block, i + off)}>${r.map((c) => cellHtml('td', c ?? '', ctx)).join('')}</tr>`).join('');
-      return `${caption}<div class="ds-table-wrap"><table class="ds-table${block.border === false ? ' ds-table-plain' : ''}${CELL_ALIGNS.includes(block.align) ? ` ds-align-${block.align}` : ''}"${tableLineStyle(block)}>${tableColgroup(block)}${head}<tbody>${rows}</tbody></table></div>`;
+      return `${caption}<div class="ds-table-wrap"><table class="ds-table${block.border === false ? ' ds-table-plain' : ''}${CELL_ALIGNS.includes(block.align) ? ` ds-align-${block.align}` : ''}${CELL_VALIGNS.includes(block.valign) ? ` ds-valign-${block.valign}` : ''}"${tableLineStyle(block)}>${tableColgroup(block)}${head}<tbody>${rows}</tbody></table></div>`;
     }
     case 'formula': {
       const align = block.align === 'left' ? ' ds-formula-left' : '';

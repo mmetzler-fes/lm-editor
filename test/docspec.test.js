@@ -413,3 +413,14 @@ describe('Formatleiste: Farben, Absätze, Listen, Tabellenfarben', () => {
     expect(ds.validateDocSpec({ content: [{ ...block, lineColor: 'rot' }] }).join(' ')).toContain('lineColor');
   });
 });
+
+describe('Tabelle: senkrechte Ausrichtung (valign)', () => {
+  it('an Tabelle und Zelle', () => {
+    const block = { type: 'table', valign: 'middle', rows: [['a', { text: 'b', valign: 'bottom' }]] };
+    expect(ds.validateDocSpec({ content: [block] })).toEqual([]);
+    const html = ds.renderDocSpecHtml({ content: [block] });
+    expect(html).toContain('ds-valign-middle');
+    expect(html).toContain('<td style="vertical-align:bottom">b</td>');
+    expect(ds.validateDocSpec({ content: [{ ...block, valign: 'mitte' }] }).join(' ')).toContain('valign');
+  });
+});

@@ -4,6 +4,7 @@ import {
   isBox, resizedBox, corners, MM,
 } from './ink-geometry.js';
 import { rulerSvg, rulerHandles } from './ink-ruler.js';
+import { svgEl, itemSvg, fieldSvg, inkSvgFor } from './ink-view.js';
 import { showContextMenu } from '../util/dom.js';
 
 // ==================== STIFT-EDITOR ====================
@@ -54,7 +55,6 @@ const ICON_PATHS = {
   zoomOut: 'M11 4a7 7 0 100 14 7 7 0 000-14zM20 20l-4-4M8 11h6',
   fit: 'M4 12h16M7.5 8.5L4 12l3.5 3.5M16.5 8.5L20 12l-3.5 3.5',
   trash: 'M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3',
-  pin: 'M14.5 3.5l6 6M17.5 6.5l-4.3 4.3-4.4-.9-2.3 2.3 7.3 7.3 2.3-2.3-.9-4.4 4.3-4.3M9.5 14.5L4 20',
   pointer: 'M6 3l13 8-6 1.5L9.5 19z',
   field: 'M4 5h16v14H4zM4 9.7h16M4 14.3h16M9.3 5v14M14.7 5v14',
   print: 'M7 9V3h10v6M7 17H4v-7h16v7h-3M7 14h10v7H7z',
@@ -112,6 +112,11 @@ async function dbPut(key, value) {
     });
     return true;
   } catch (_) { return false; }
+}
+
+/** Auf diesem Gerät gespeicherter Stand zu `key` (wie openInkEditor) – oder null. */
+export function savedInk(key) {
+  return dbGet(`ink:${key}`);
 }
 
 // ---------- pdf.js (erst bei Bedarf) ----------
@@ -174,7 +179,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
 
   const state = {
     tool: 'pen', color: COLORS[0], marker: MARKERS[0], widthIdx: 1, textSizeIdx: 1, fieldPattern: 'karo',
-    zoom: 1, fingerDraws: false, pinned: false, variant: 'blatt',
+    zoom: 1, fingerDraws: false, variant: 'blatt',
     selection: null,          // { page, ids: Set }
     undo: [], redo: [],
   };
@@ -198,7 +203,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
       <span class="ink-title">${esc(title)}</span>
       ${actions.map((a, i) => `<button type="button" class="ink-btn ink-labeled ink-action" data-action="${i}" title="${esc(a.title || a.label)}">${esc(a.label)}</button>`).join('')}
       <span class="ink-group ink-tools">
-        ${paper ? tool('interact', 'pointer', 'Bedienen: Quizze im Blatt ausfüllen – der Finger bedient immer, solange „Mit dem Finger zeichnen“ aus ist') : ''}
+        ${paper ? tool('interact', 'pointer', 'Bedienen: Quizze im Blatt ausfüllen – beim Auswählen springt es auf einem Quiz von selbst hierher; der Finger bedient Quizze immer') : ''}
         ${tool('select', 'select', 'Auswählen: Strich antippen oder Rechteck aufziehen')}
         ${tool('pen', 'pen', 'Stift – am Ende kurz halten: gerade Linie')}
         ${tool('marker', 'marker', 'Textmarker')}
@@ -213,7 +218,6 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
         ${btn('ink-redo', 'redo', 'Wiederholen')}
       </span>
       <span class="ink-group">
-        ${btn('ink-pin', 'pin', 'Seite feststellen – sie verschiebt sich beim Zeichnen nicht mehr (auch nicht mit dem Finger)')}
         ${btn('ink-finger', 'finger', 'Mit dem Finger zeichnen (sonst scrollt der Finger, gezeichnet wird mit Stift oder Maus)')}
         <select class="ink-bg-select" title="Hintergrund" aria-label="Hintergrund">
           ${paper ? '<option value="paper">🧾 Dokument</option>' : ''}
@@ -265,7 +269,13 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     overlay.querySelectorAll('[data-tool]').forEach((b) => b.classList.toggle('active', b.dataset.tool === state.tool));
     const list = state.tool === 'marker' ? MARKERS : COLORS;
     const current = state.tool === 'marker' ? state.marker : state.color;
-    $('.ink-colors').innerHTML = list.map((c) => `<button type="button" class="ink-btn ink-color ${c === current ? 'active' : ''}" data-color="${c}" style="--c:${c}" title="Farbe"></button>`).join('');
+    // Nur bei anderer Palette neu bauen: Ersetzte Knöpfe verschlucken sonst einen Klick,
+    // wenn zwischen Drücken und Loslassen gespeichert wird (z. B. Textfeld verliert den Fokus).
+    if ($('.ink-colors').dataset.list !== list.join()) {
+      $('.ink-colors').dataset.list = list.join();
+      $('.ink-colors').innerHTML = list.map((c) => `<button type="button" class="ink-btn ink-color" data-color="${c}" style="--c:${c}" title="Farbe"></button>`).join('');
+    }
+    $('.ink-colors').querySelectorAll('[data-color]').forEach((b) => b.classList.toggle('active', b.dataset.color === current));
     const drawing = ['pen', 'marker'].includes(state.tool);
     $('.ink-colors').hidden = !drawing && state.tool !== 'text';
     $('.ink-widths').hidden = !drawing;
@@ -282,7 +292,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     });
     overlay.querySelectorAll('.ink-size').forEach((b) => b.classList.toggle('active', Number(b.dataset.size) === state.textSizeIdx));
     $('.ink-subhint').textContent = {
-      interact: 'Quizze im Blatt ausfüllen – zum Schreiben wieder den Stift wählen.',
+      interact: 'Quizze im Blatt ausfüllen – neben einem Quiz wird wieder ausgewählt; zum Schreiben den Stift wählen.',
       field: 'Rechteck aufziehen – das Feld deckt ab, was darunter liegt.',
       eraser: 'Über einen Strich wischen – er wird ganz gelöscht.',
       select: state.selection?.ids.size
@@ -295,8 +305,6 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     $('.ink-more').hidden = !state.selection?.ids.size && !(state.tool === 'select' && clipboard);
     $('.ink-finger').classList.toggle('active', state.fingerDraws);
     overlay.classList.toggle('ink-finger-off', !state.fingerDraws);
-    $('.ink-pin').classList.toggle('active', state.pinned);
-    overlay.classList.toggle('ink-pinned', state.pinned);
     overlay.classList.toggle('ink-tool-text', state.tool === 'text');
     overlay.classList.toggle('ink-tool-interact', state.tool === 'interact');
     overlay.classList.toggle('ink-tool-select', state.tool === 'select');
@@ -318,10 +326,20 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     if (state.tool !== 'select') clearSelection();
     paintToolbar();
   });
+  // Das Textfeld, in dem gerade geschrieben wird, behält den Fokus und bekommt die Farbe gleich mit.
+  $('.ink-colors').addEventListener('mousedown', (e) => e.preventDefault());
   $('.ink-colors').addEventListener('click', (e) => {
     const b = e.target.closest('[data-color]');
     if (!b) return;
     if (state.tool === 'marker') state.marker = b.dataset.color; else state.color = b.dataset.color;
+    const box = document.activeElement?.closest?.('.ink-text');
+    if (box && overlay.contains(box)) {
+      box.style.color = b.dataset.color;
+      for (const pg of doc.pages) {
+        const it = (pg.items || []).find((x) => x.id === box.dataset.id);
+        if (it) { it.color = b.dataset.color; changed(); }
+      }
+    }
     paintToolbar();
   });
   $('.ink-patterns').addEventListener('click', (e) => {
@@ -354,14 +372,13 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     selectionMenu(r.left, r.bottom + 4);
   });
   $('.ink-finger').addEventListener('click', () => { state.fingerDraws = !state.fingerDraws; paintToolbar(); });
-  $('.ink-pin').addEventListener('click', () => { state.pinned = !state.pinned; paintToolbar(); });
   // Apple Pencil: Safari scrollt mit dem Stift wie mit dem Finger. Berührungen
   // des Stifts (touchType 'stylus') deshalb anhalten, bevor Safari scrollt –
-  // der Finger scrollt weiter. Festgestellt (📌) scrollt gar nichts.
+  // der Finger scrollt weiter (mit „Mit dem Finger zeichnen“ nur mit zwei Fingern).
   const holdStylus = (e) => {
     if (e.target.closest?.('.ink-text')) return; // ins Textfeld tippen bleibt möglich
-    if (state.tool === 'interact' && !state.pinned) return; // Stift bedient Quizze
-    if (state.pinned || [...e.touches].some((t) => t.touchType === 'stylus')) e.preventDefault();
+    if (state.tool === 'interact') return; // Stift bedient Quizze
+    if ([...e.touches].some((t) => t.touchType === 'stylus')) e.preventDefault();
   };
   scroller.addEventListener('touchstart', holdStylus, { passive: false });
   scroller.addEventListener('touchmove', holdStylus, { passive: false });
@@ -1134,35 +1151,6 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
   // ---------- Zeichnen der Beschriftung ----------
   // SVG-Elemente kennen „hidden“ nicht zuverlässig – deshalb display.
   const showSvg = (el, on) => { if (on) el.removeAttribute('display'); else el.setAttribute('display', 'none'); };
-  const svgEl = (tag, attrs) => {
-    const el = document.createElementNS('http://www.w3.org/2000/svg', tag);
-    for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
-    return el;
-  };
-
-  function itemSvg(item) {
-    if (item.tool === 'marker') {
-      return svgEl('path', { d: polyline(item.points), stroke: item.color, 'stroke-width': item.width, fill: 'none', 'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'data-id': item.id });
-    }
-    return svgEl('path', { d: strokeOutline(item.points, item.width), fill: item.color, 'data-id': item.id });
-  }
-
-  /** Feld: weiße Fläche, darauf Karo (5 mm) oder Linien (10 mm) – oder nur weiß. */
-  function fieldSvg(item) {
-    const g = svgEl('g', { 'data-id': item.id, class: 'ink-field' });
-    g.appendChild(svgEl('rect', { x: item.x, y: item.y, width: item.w, height: item.h, fill: '#fff' }));
-    let d = '';
-    if (item.pattern === 'karo') {
-      for (let x = item.x + 5 * MM; x < item.x + item.w - 0.5; x += 5 * MM) d += `M${x.toFixed(2)},${item.y}V${item.y + item.h}`;
-      for (let y = item.y + 5 * MM; y < item.y + item.h - 0.5; y += 5 * MM) d += `M${item.x},${y.toFixed(2)}H${item.x + item.w}`;
-    } else if (item.pattern === 'linien') {
-      for (let y = item.y + 10 * MM; y < item.y + item.h + 0.5; y += 10 * MM) d += `M${item.x},${y.toFixed(2)}H${item.x + item.w}`;
-    }
-    if (d) g.appendChild(svgEl('path', { d, stroke: item.pattern === 'karo' ? '#c7d2e0' : '#94a3b8', 'stroke-width': 0.6, fill: 'none' }));
-    if (item.pattern === 'karo') g.appendChild(svgEl('rect', { x: item.x, y: item.y, width: item.w, height: item.h, fill: 'none', stroke: '#94a3b8', 'stroke-width': 0.6 }));
-    return g;
-  }
-
   function drawItems(i) {
     const p = pages[i];
     if (!p) return;
@@ -1423,11 +1411,29 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     status('Gruppe aufgehoben');
   }
 
+  /** Textfeld zum Schreiben öffnen: Text-Werkzeug, Schreibmarke ans Ende. */
+  function editText(id) {
+    state.tool = 'text';
+    clearSelection();
+    paintToolbar();
+    const box = overlay.querySelector(`.ink-text[data-id="${CSS.escape(id)}"]`);
+    if (!box) return;
+    box.focus();
+    const range = document.createRange();
+    range.selectNodeContents(box);
+    range.collapse(false);
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+  }
+
   /** Menü der Auswahl – nur, was gerade geht. */
   function selectionMenu(x, y) {
     const items = selectedItems();
     const key = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Strg+';
     const entries = [];
+    const texts = items.filter((it) => it.type === 'text');
+    if (texts.length === 1) entries.push({ label: '✏️ Text bearbeiten', onClick: () => editText(texts[0].id) });
     if (items.length) {
       entries.push({ label: `Kopieren (${key}C)`, onClick: () => copySelection() });
       entries.push({ label: `Ausschneiden (${key}X)`, onClick: () => cutSelection() });
@@ -1451,6 +1457,13 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
       return [((e.clientX - r.left) / r.width) * p.w, ((e.clientY - r.top) / r.height) * p.h];
     };
     let gesture = null;
+    // Zeichnet der Finger, scrollen zwei Finger das Blatt (der begonnene Strich entfällt).
+    const touches = new Map(); // pointerId → [clientX, clientY]
+    let pan = null;            // { mid: [x, y] }
+    const midOf = () => {
+      const pts = [...touches.values()];
+      return [(pts[0][0] + pts[1][0]) / 2, (pts[0][1] + pts[1][1]) / 2];
+    };
     // Finger oder Stift ruht auf der Auswahl: ihr Menü (iPad kennt keinen Rechtsklick).
     const pressForMenu = (e) => {
       if (e.pointerType === 'mouse') return;
@@ -1464,14 +1477,44 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     };
 
     p.el.addEventListener('pointerdown', (e) => {
+      // Handballen: Solange der Stift schreibt, zählt kein Finger.
+      if (e.pointerType === 'touch' && penDown) return;
+      const onQuiz = p.paper && !!e.target.closest?.('.ds-quiz-live');
+      // Ein Finger auf einem Quiz bedient es immer – zeichnen geht dort mit Stift oder Maus.
+      if (onQuiz && e.pointerType === 'touch' && !touches.size) return;
+      // Auswählen und Bedienen wechseln von selbst: Auf einem Quiz wird ausgefüllt,
+      // daneben (oder auf einem Strich/Textfeld darüber) ausgewählt.
+      if (p.paper && (state.tool === 'select' || state.tool === 'interact')) {
+        const [qx, qy] = toPage(e);
+        const inkHere = handleAt(p.i, qx, qy) || itemAt(doc.pages[p.i].items, qx, qy, 6 / state.zoom);
+        const want = onQuiz && !inkHere ? 'interact' : 'select';
+        if (state.tool !== want) {
+          state.tool = want;
+          if (want === 'interact') clearSelection();
+          paintToolbar();
+        }
+      }
       // Im Dokument: Karo-Anfasser, „Bedienen“ und Textfelder (mit dem Text-
       // Werkzeug) gehen an das Blatt; alles andere fängt der Editor vorher ab.
       if (p.paper && (e.target.closest?.('.ink-karo-handle, .ink-karo-tools, .ink-insert-mark') || state.tool === 'interact'
         || (state.tool === 'text' && e.target.closest?.('.ink-text')))) return;
       if (e.pointerType === 'pen') penDown = true;
-      // Handballen: Solange der Stift schreibt, zählt kein Finger.
-      if (e.pointerType === 'touch' && penDown) return;
       if (e.button > 0 && e.button !== 5) return;
+      if (e.pointerType === 'touch' && state.fingerDraws && !rulerDrag) {
+        touches.set(e.pointerId, [e.clientX, e.clientY]);
+        if (pan) return;
+        if (touches.size === 2) {
+          if (gesture?.kind === 'stroke') { clearTimeout(gesture.hold); gesture.el.remove(); }
+          if (gesture) clearTimeout(gesture.press);
+          if (gesture?.kind === 'rect') showSvg(p.svg.querySelector('.ink-sel-rect'), false);
+          gesture = null;
+          p.busy = false;
+          pan = { mid: midOf() };
+          e.preventDefault();
+          p.el.setPointerCapture?.(e.pointerId);
+          return;
+        }
+      }
       const [x, y] = toPage(e);
       // Stift mit Radierer-Ende (Windows Ink / Wacom): radiert.
       const tool = e.button === 5 || (e.buttons & 32) ? 'eraser' : state.tool;
@@ -1558,6 +1601,15 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     }, { capture: !!p.paper });
 
     const move = (e) => {
+      if (touches.has(e.pointerId)) touches.set(e.pointerId, [e.clientX, e.clientY]);
+      if (pan) {
+        if (touches.size >= 2) {
+          const mid = midOf();
+          scroller.scrollBy(pan.mid[0] - mid[0], pan.mid[1] - mid[1]);
+          pan.mid = mid;
+        }
+        return;
+      }
       if (rulerDrag?.pointers.has(e.pointerId)) { const [x, y] = toPage(e); rulerMove(e, x, y); return; }
       if (!gesture || e.pointerId !== gesture.id) return;
       const events = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
@@ -1627,6 +1679,12 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
 
     const up = (e) => {
       if (e.pointerType === 'pen') penDown = false;
+      touches.delete(e.pointerId);
+      if (pan) {
+        if (touches.size < 2) pan.mid = touches.size ? [...touches.values()][0] : pan.mid;
+        if (!touches.size) pan = null;
+        return;
+      }
       if (rulerDrag?.pointers.has(e.pointerId)) { rulerEnd(e); return; }
       if (!gesture || e.pointerId !== gesture.id) return;
       const g = gesture;
@@ -1684,6 +1742,13 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     p.el.addEventListener('pointermove', move);
     p.el.addEventListener('pointerup', up);
     p.el.addEventListener('pointercancel', up);
+    // Doppelklick auf ein Textfeld beim Auswählen: gleich weiterschreiben.
+    p.el.addEventListener('dblclick', (e) => {
+      if (state.tool !== 'select') return;
+      const [x, y] = toPage(e);
+      const hit = itemAt(doc.pages[p.i].items, x, y, 6 / state.zoom);
+      if (hit?.type === 'text') { e.preventDefault(); editText(hit.id); }
+    });
     // Rechtsklick beim Auswählen: Menü der Auswahl (ein Element darunter wird zuerst gewählt).
     p.el.addEventListener('contextmenu', (e) => {
       if (state.tool !== 'select') return;
@@ -1711,31 +1776,6 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
    * Innenabstand des Blatts, nicht Seitenrand (@page) – sonst verkleinerte der
    * Browser die ganze Seite, sobald etwas in den Rand reicht.
    */
-  function inkSvgFor(items, left, width) {
-    const h = Math.max(1, ...items.map((it) => { const b = bounds(it); return b.y + b.h; })) + 4;
-    const svg = svgEl('svg', { viewBox: `0 0 ${width} ${h}`, class: 'ink-print-layer' });
-    svg.style.left = `${-left}pt`;
-    svg.style.width = `${width}pt`;
-    svg.style.height = `${h}pt`;
-    const groups = ['fields', 'marker', 'pen', 'texts'].map((name) => svgEl('g', { class: `ink-print-${name}` }));
-    for (const it of items) {
-      if (it.type === 'field') groups[0].appendChild(fieldSvg(it));
-      else if (it.type === 'stroke') groups[it.tool === 'marker' ? 1 : 2].appendChild(itemSvg(it));
-      else if (it.type === 'text' && it.text) {
-        const size = it.size || TEXT_SIZE;
-        const t = svgEl('text', { x: it.x + 3, y: it.y + 1 + size, fill: it.color || '#1e293b', 'font-size': size, 'font-family': 'LM Sans, Liberation Sans, Arial, sans-serif' });
-        it.text.split('\n').forEach((line, i) => {
-          const span = svgEl('tspan', { x: it.x + 3, dy: i ? size * 1.3 : 0 });
-          span.textContent = line || ' ';
-          t.appendChild(span);
-        });
-        groups[3].appendChild(t);
-      }
-    }
-    groups.forEach((g) => svg.appendChild(g));
-    return svg;
-  }
-
   async function printPaper({ solutions: withSolutions, ink }) {
     if (!paperView) return;
     // Eine Kopie vom letzten Mal (falls der Browser kein afterprint meldete) zuerst weg.

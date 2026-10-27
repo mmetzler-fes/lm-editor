@@ -165,43 +165,83 @@ function sanitizeRichHtml(html, worksheet) {
  * Gleiche Funktion wie in content-editors.js (klassisches Skript, kann nicht
  * importieren).
  */
+/**
+ * Kontextmenü an (x, y). Einträge: { label, onClick, danger?, hint? },
+ * '-' als Trenner, { label, submenu: [...] } öffnet ein Untermenü (▸) beim
+ * Darüberfahren oder Klicken – auch verschachtelt.
+ */
 export function showContextMenu(x, y, items) {
-  document.querySelectorAll('.ctx-menu').forEach((m) => m._close());
-  const menu = document.createElement('div');
-  menu.className = 'ctx-menu';
+  document.querySelectorAll('.ctx-menu').forEach((m) => m._close?.());
+  const menus = [];
   const close = () => {
-    menu.remove();
+    menus.forEach((m) => m.remove());
     document.removeEventListener('pointerdown', onOutside, true);
     document.removeEventListener('keydown', onKey, true);
-    window.removeEventListener('scroll', close, true);
+    window.removeEventListener('scroll', onScroll, true);
     window.removeEventListener('blur', close);
   };
-  const onOutside = (e) => { if (!menu.contains(e.target)) close(); };
+  const onOutside = (e) => { if (!menus.some((m) => m.contains(e.target))) close(); };
   const onKey = (e) => { if (e.key === 'Escape') close(); };
-  menu._close = close;
-  items.forEach((item) => {
-    // '-' trennt Gruppen.
-    if (item === '-') {
-      menu.appendChild(Object.assign(document.createElement('div'), { className: 'ctx-menu-sep' }));
-      return;
-    }
-    const { label, onClick, danger } = item;
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'ctx-menu-item' + (danger ? ' danger' : '');
-    btn.textContent = label;
-    // Den Fokus nicht nehmen – die Schreibmarke im Editor bleibt, wo sie war.
-    btn.addEventListener('mousedown', (e) => e.preventDefault());
-    btn.addEventListener('click', () => { close(); onClick(); });
-    menu.appendChild(btn);
-  });
-  document.body.appendChild(menu);
-  const r = menu.getBoundingClientRect();
-  menu.style.left = Math.max(4, Math.min(x, window.innerWidth - r.width - 4)) + 'px';
-  menu.style.top = Math.max(4, Math.min(y, window.innerHeight - r.height - 4)) + 'px';
+  const onScroll = (e) => { if (!menus.some((m) => m.contains(e.target))) close(); };
+
+  const place = (menu, px, py, alt = null) => {
+    const r = menu.getBoundingClientRect();
+    let left = px;
+    // Kein Platz rechts: links neben dem Elternmenü.
+    if (alt !== null && left + r.width > window.innerWidth - 4) left = alt - r.width;
+    menu.style.left = `${Math.max(4, Math.min(left, window.innerWidth - r.width - 4))}px`;
+    menu.style.top = `${Math.max(4, Math.min(py, window.innerHeight - r.height - 4))}px`;
+  };
+
+  const build = (list, level) => {
+    const menu = document.createElement('div');
+    menu.className = 'ctx-menu';
+    menu._close = close;
+    menu.dataset.level = String(level);
+    // Untermenüs tiefer als diese Ebene schließen.
+    const closeBelow = () => { while (menus.length > level + 1) menus.pop().remove(); };
+    list.forEach((item) => {
+      if (item === '-') {
+        menu.appendChild(Object.assign(document.createElement('div'), { className: 'ctx-menu-sep' }));
+        return;
+      }
+      const { label, onClick, danger, submenu, hint } = item;
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'ctx-menu-item' + (danger ? ' danger' : '') + (submenu ? ' ctx-has-sub' : '');
+      btn.textContent = label;
+      if (hint || submenu) {
+        const side = document.createElement('span');
+        side.className = 'ctx-menu-hint';
+        side.textContent = submenu ? '▸' : hint;
+        btn.appendChild(side);
+      }
+      // Den Fokus nicht nehmen – die Schreibmarke im Editor bleibt, wo sie war.
+      btn.addEventListener('mousedown', (e) => e.preventDefault());
+      const openSub = () => {
+        closeBelow();
+        if (!submenu?.length) return;
+        const sub = build(submenu, level + 1);
+        const r = btn.getBoundingClientRect();
+        place(sub, r.right - 2, r.top - 4, r.left + 2);
+      };
+      btn.addEventListener('mouseenter', () => (submenu ? openSub() : closeBelow()));
+      btn.addEventListener('click', () => {
+        if (submenu) { openSub(); return; }
+        close();
+        onClick?.();
+      });
+      menu.appendChild(btn);
+    });
+    document.body.appendChild(menu);
+    menus.push(menu);
+    return menu;
+  };
+
+  place(build(items, 0), x, y);
   document.addEventListener('pointerdown', onOutside, true);
   document.addEventListener('keydown', onKey, true);
-  window.addEventListener('scroll', close, true);
+  window.addEventListener('scroll', onScroll, true);
   window.addEventListener('blur', close);
 }
 

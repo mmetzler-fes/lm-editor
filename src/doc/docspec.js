@@ -20,12 +20,17 @@ const ALIGNS = ['left', 'center', 'right', 'justify'];
 export const LINE_HEIGHTS = [1, 1.15, 1.5, 2];
 export const LIST_MARKERS = ['dash', 'arrow', 'square', 'check'];
 export const LIST_NUMBERINGS = ['a', 'i'];
-const indentOk = (v) => Number.isInteger(v) && v >= 1 && v <= 6;
+const indentOk = (v) => typeof v === 'number' && v > 0 && v <= 6;
+const spaceOk = (v) => typeof v === 'number' && v >= 0 && v <= 3;
+const firstLineOk = (v) => typeof v === 'number' && v >= -3 && v <= 3 && v !== 0;
 
-/** style-Attribut für Einzug und Zeilenabstand eines Absatzes bzw. einer Liste. */
+/** style-Attribut für Einzug, Abstände und Zeilenabstand eines Absatzes bzw. einer Liste. */
 export function paraStyle(block) {
   const parts = [];
   if (indentOk(block?.indent)) parts.push(`margin-left:${block.indent}cm`);
+  if (firstLineOk(block?.firstLine)) parts.push(`text-indent:${block.firstLine}cm`);
+  if (spaceOk(block?.spaceBefore)) parts.push(`margin-top:${block.spaceBefore}cm`);
+  if (spaceOk(block?.spaceAfter)) parts.push(`margin-bottom:${block.spaceAfter}cm`);
   if (LINE_HEIGHTS.includes(block?.lineHeight)) parts.push(`line-height:${Math.round(block.lineHeight * 140) / 100}`);
   return parts.join(';');
 }
@@ -149,7 +154,10 @@ function checkBlock(block, path, errors, inSolution, parent = '') {
     case 'text':
       need(isText(block.text), 'text fehlt.');
       if (block.align !== undefined) need(ALIGNS.includes(block.align), `align: ${ALIGNS.join(', ')}.`);
-      if (block.indent !== undefined) need(indentOk(block.indent), 'indent: Einzug in cm, ganze Zahl von 1 bis 6.');
+      if (block.indent !== undefined) need(indentOk(block.indent), 'indent: Einzug links in cm, bis 6.');
+      if (block.firstLine !== undefined) need(firstLineOk(block.firstLine), 'firstLine: Einzug der ersten Zeile in cm, −3 bis 3 (negativ = hängend).');
+      if (block.spaceBefore !== undefined) need(spaceOk(block.spaceBefore), 'spaceBefore: Abstand vor dem Absatz in cm, 0 bis 3.');
+      if (block.spaceAfter !== undefined) need(spaceOk(block.spaceAfter), 'spaceAfter: Abstand nach dem Absatz in cm, 0 bis 3.');
       if (block.lineHeight !== undefined) need(LINE_HEIGHTS.includes(block.lineHeight), `lineHeight: ${LINE_HEIGHTS.join(', ')}.`);
       break;
     case 'note':
@@ -161,6 +169,8 @@ function checkBlock(block, path, errors, inSolution, parent = '') {
       if (block.marker !== undefined) need(LIST_MARKERS.includes(block.marker), `marker: ${LIST_MARKERS.join(', ')} (check = Checkliste ☐).`);
       if (block.numbering !== undefined) need(LIST_NUMBERINGS.includes(block.numbering), `numbering: ${LIST_NUMBERINGS.join(', ')} (a = a), b) …, i = i., ii. …).`);
       if (block.lineHeight !== undefined) need(LINE_HEIGHTS.includes(block.lineHeight), `lineHeight: ${LINE_HEIGHTS.join(', ')}.`);
+      if (block.spaceBefore !== undefined) need(spaceOk(block.spaceBefore), 'spaceBefore: Abstand vor der Liste in cm, 0 bis 3.');
+      if (block.spaceAfter !== undefined) need(spaceOk(block.spaceAfter), 'spaceAfter: Abstand nach der Liste in cm, 0 bis 3.');
       break;
     case 'box':
       need(Array.isArray(block.blocks) || isText(block.text), 'blocks oder text fehlt.');

@@ -172,6 +172,8 @@ body {
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18);
 }
 .ctx-menu-sep { height: 1px; margin: 4px 6px; background: var(--border); }
+.ctx-menu-item.ctx-has-sub, .ctx-menu-item:has(.ctx-menu-hint) { display: flex; justify-content: space-between; gap: 18px; }
+.ctx-menu-hint { color: var(--text-secondary); font-size: 0.9em; }
 .ctx-menu-item {
   display: block;
   width: 100%;

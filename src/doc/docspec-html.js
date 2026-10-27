@@ -151,11 +151,23 @@ function cssPx(len) {
 /** Einzug und Zeilenabstand eines Absatzes bzw. einer Liste (data-indent, data-lh). */
 function paraOf(el) {
   const out = {};
-  const indent = Number(el?.dataset?.indent);
-  if (Number.isInteger(indent) && indent >= 1 && indent <= 6) out.indent = indent;
-  const lh = Number(el?.dataset?.lh);
+  const num = (k) => (el?.dataset?.[k] !== undefined && el.dataset[k] !== '' ? Number(el.dataset[k]) : NaN);
+  const indent = num('indent');
+  if (indent > 0 && indent <= 6) out.indent = indent;
+  const first = num('first');
+  if (first >= -3 && first <= 3 && first !== 0) out.firstLine = first;
+  const sb = num('sb');
+  if (sb >= 0 && sb <= 3) out.spaceBefore = sb;
+  const sa = num('sa');
+  if (sa >= 0 && sa <= 3) out.spaceAfter = sa;
+  const lh = num('lh');
   if (LINE_HEIGHTS.includes(lh)) out.lineHeight = lh;
   return out;
+}
+
+/** data-Attribute zu Einzug, Abständen und Zeilenabstand (Gegenstück zu paraOf). */
+function paraData(b) {
+  return `${b?.indent ? ` data-indent="${b.indent}"` : ''}${b?.firstLine ? ` data-first="${b.firstLine}"` : ''}${b?.spaceBefore !== undefined ? ` data-sb="${b.spaceBefore}"` : ''}${b?.spaceAfter !== undefined ? ` data-sa="${b.spaceAfter}"` : ''}${b?.lineHeight ? ` data-lh="${b.lineHeight}"` : ''}`;
 }
 
 function listBlock(el, images, warnings, lifted = []) {
@@ -178,7 +190,8 @@ function listBlock(el, images, warnings, lifted = []) {
   if (el.tagName === 'OL') block.ordered = true;
   if (el.tagName === 'UL' && LIST_MARKERS.includes(el.dataset.marker)) block.marker = el.dataset.marker;
   if (el.tagName === 'OL' && LIST_NUMBERINGS.includes(el.dataset.numbering)) block.numbering = el.dataset.numbering;
-  if (LINE_HEIGHTS.includes(Number(el.dataset.lh))) block.lineHeight = Number(el.dataset.lh);
+  const para = paraOf(el);
+  for (const k of ['lineHeight', 'spaceBefore', 'spaceAfter']) if (para[k] !== undefined) block[k] = para[k];
   return block;
 }
 
@@ -344,7 +357,7 @@ function blocksOf(parent, warnings, used = new Set()) {
     // Einzug und Zeilenabstand (Editorleiste) – solche Absätze stehen für sich.
     const extra = paraOf(el);
     const plain = !align && !Object.keys(extra).length;
-    const mergeable = plain && prev && prev.type === 'text' && !prev.align && !prev.indent && !prev.lineHeight && !prev._closed;
+    const mergeable = plain && prev && prev.type === 'text' && !prev.align && !['indent', 'lineHeight', 'firstLine', 'spaceBefore', 'spaceAfter'].some((k) => prev[k] !== undefined) && !prev._closed;
     // Aufeinanderfolgende einfache Absätze werden ein Textblock (Leerzeile trennt) –
     // außer der Absatz gehört zu einem anderen Block (eigene data-id). Mit Enter
     // geteilte Absätze tragen dieselbe ID wie ihr Block.
@@ -480,7 +493,7 @@ const idAttr = (b) => (isBlockId(b?.id) ? ` data-id="${b.id}"` : '');
 /** Absätze eines Textblocks; alle tragen seine ID – so bleibt er beim Rückweg ein Block. */
 function paragraphsHtml(text, align, id = '', block = null) {
   const css = [align && align !== 'left' ? `text-align:${align}` : '', paraStyle(block)].filter(Boolean).join(';');
-  const data = `${block?.indent ? ` data-indent="${block.indent}"` : ''}${block?.lineHeight ? ` data-lh="${block.lineHeight}"` : ''}`;
+  const data = paraData(block);
   const style = css ? ` style="${css}"` : '';
   return String(text).split('\n\n').map((p) => `<p${id}${data}${style}>${richText(p.trim()) || '<br>'}</p>`).join('');
 }
@@ -532,7 +545,7 @@ export function specToEditorHtml(spec) {
       case 'note':
         return `<p data-ds="note"${idAttr(b)}><em>${richText(b.text ?? '')}</em></p>`;
       case 'list': {
-        const attrs = `${idAttr(b)}${b.marker && !b.ordered ? ` data-marker="${esc(b.marker)}"` : ''}${b.numbering && b.ordered ? ` data-numbering="${esc(b.numbering)}"` : ''}${b.lineHeight ? ` data-lh="${b.lineHeight}"` : ''}${paraStyle(b) ? ` style="${paraStyle(b)}"` : ''}`;
+        const attrs = `${idAttr(b)}${b.marker && !b.ordered ? ` data-marker="${esc(b.marker)}"` : ''}${b.numbering && b.ordered ? ` data-numbering="${esc(b.numbering)}"` : ''}${paraData(b)}${paraStyle(b) ? ` style="${paraStyle(b)}"` : ''}`;
         return listItemsHtml(b.items, b.ordered, attrs);
       }
       case 'table': {

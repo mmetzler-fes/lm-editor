@@ -820,9 +820,9 @@ export function odtToHtml(buffer, fileName = '') {
                     }
                     const box = elements(c).find((x) => x.name === 'draw:text-box');
                     if (box) {
-                        const inner = blocks(box);
-                        if (inner.trim())
-                            out.push({ block: `<div class="ws-box">${inner}</div>` });
+                        const inner = textBox(c, box);
+                        if (inner)
+                            out.push({ block: inner });
                         break;
                     }
                     if (elements(c).some((x) => x.name === 'draw:image' || x.name === 'draw:object' || x.name === 'draw:object-ole')) {
@@ -865,9 +865,9 @@ export function odtToHtml(buffer, fileName = '') {
             }
             const box = elements(f).find((x) => x.name === 'draw:text-box');
             if (box) {
-                const inner = blocks(box);
-                if (inner.trim())
-                    out.push({ block: `<div class="ws-box">${inner}</div>` });
+                const inner = textBox(f, box);
+                if (inner)
+                    out.push({ block: inner });
                 continue;
             }
             if (elements(f).some((x) => x.name === 'draw:image' || x.name === 'draw:object' || x.name === 'draw:object-ole')) {
@@ -916,26 +916,50 @@ export function odtToHtml(buffer, fileName = '') {
         // als Abstand; mehr fasst `blocks` ohnehin zusammen.
         return parts.length ? parts.join('') : '<p data-empty="1"><br></p>';
     };
+    // Textrahmen: mit Rand ein Kasten, ohne Rand nur der Inhalt (wie odt.ts).
+    const textBox = (frame, box) => {
+        const inner = blocks(box);
+        if (!inner.trim())
+            return '';
+        return styles.graphic(frame.attrs['draw:style-name'], 'border') === 'none' ? inner : `<div class="ws-box">${inner}</div>`;
+    };
     const headingTag = (n) => {
         const level = Number(n.attrs['text:outline-level'] || 1);
         return `h${Math.min(4, Math.max(2, level + 1))}`;
     };
+    // Punkte mit Überschriften (Gliederung) ohne Liste – wie odt.ts.
+    // Überschrift in nummerierter Gliederung: Abschnitt, Aufgabe, Teilaufgabe (wie odt.ts).
+    const numberedHeading = (c, tag) => {
+        const html = paragraph(c, headingTag(c));
+        if (tag !== 'ol')
+            return html;
+        const level = Number(c.attrs['text:outline-level'] || 1);
+        const ds = level <= 1 ? 'section' : level === 2 ? 'task' : 'subtask';
+        return html.replace(/<(h[2-6])(?=[ >])/, `<$1 data-ds="${ds}"`);
+    };
+    const hasHeading = (n) => elements(n).some((c) => c.name === 'text:h' || (c.name !== 'table:table' && hasHeading(c)));
     const list = (n, listStyle, depth) => {
         const styleName = n.attrs['text:style-name'] || listStyle;
         const tag = styles.listType(styleName, depth);
-        const items = elements(n)
-            .filter((c) => c.name === 'text:list-item' || c.name === 'text:list-header')
-            .map((item) => {
+        let html = '';
+        let open = '';
+        for (const item of elements(n).filter((c) => c.name === 'text:list-item' || c.name === 'text:list-header')) {
             const inner = elements(item)
                 .map((c) => c.name === 'text:list' ? list(c, styleName, depth + 1)
                 : c.name === 'text:p' ? paragraph(c, 'p').replace(/^<p data-empty="1"><br><\/p>$/, '')
-                    : c.name === 'text:h' ? paragraph(c, headingTag(c))
+                    : c.name === 'text:h' ? numberedHeading(c, tag)
                         : blocks({ name: '#', attrs: {}, children: [c] }))
                 .join('');
-            return `<li>${inner}</li>`;
-        })
-            .join('');
-        return items ? `<${tag}>${items}</${tag}>` : '';
+            if (hasHeading(item)) {
+                if (open)
+                    html += `<${tag}>${open}</${tag}>`;
+                open = '';
+                html += inner;
+            }
+            else
+                open += `<li>${inner}</li>`;
+        }
+        return html + (open ? `<${tag}>${open}</${tag}>` : '');
     };
     // Spaltenbreiten und Zeilenhöhen (wie odt.ts in LearningModules).
     const columnWidths = (n) => {

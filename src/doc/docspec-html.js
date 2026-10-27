@@ -128,15 +128,25 @@ function cssPx(len) {
   return m[2] === 'cm' ? v * 37.8 : m[2] === 'mm' ? v * 3.78 : m[2] === '%' ? (v / 100) * 624 : v;
 }
 
-function listBlock(el, images, warnings) {
+/**
+ * Liste aus <ul>/<ol>. Tabellen und Kästen in einem Punkt (z. B. aus Writer
+ * eingefügt) passen nicht in einen Listentext – sie kommen in `lifted` und
+ * folgen der Liste, statt als Buchstabensalat im Punkt zu landen.
+ */
+function listBlock(el, images, warnings, lifted = []) {
   const items = [];
   for (const li of el.children) {
     if (li.tagName !== 'LI') continue;
     const nested = [...li.children].filter((c) => c.tagName === 'UL' || c.tagName === 'OL');
     const clone = li.cloneNode(true);
     for (const n of [...clone.querySelectorAll('ul, ol')]) n.remove();
+    for (const n of [...clone.querySelectorAll('table, div.ws-box')]) {
+      if (lifted.some((l) => l.contains(n))) continue; // steckt schon in einem herausgehobenen
+      lifted.push(n);
+      n.remove();
+    }
     const text = cleanText(inline(clone, images, warnings));
-    const sub = nested.flatMap((n) => listBlock(n, images, warnings).items);
+    const sub = nested.flatMap((n) => listBlock(n, images, warnings, lifted).items);
     items.push(sub.length ? { text, items: sub } : text);
   }
   const block = { type: 'list', items };
@@ -335,7 +345,15 @@ function blocksOf(parent, warnings, used = new Set()) {
       } else if (!images.length) spacer();
     } else if (tag === 'UL' || tag === 'OL') {
       const images = [];
-      out.push(withId(listBlock(el, images, warnings), takeId(el, used)));
+      const lifted = [];
+      const list = listBlock(el, images, warnings, lifted);
+      if (list.items.some((it) => (typeof it === 'string' ? it : it.text || it.items?.length))) out.push(withId(list, takeId(el, used)));
+      if (lifted.length) {
+        const holder = el.ownerDocument.createElement('div');
+        holder.append(...lifted);
+        close();
+        out.push(...blocksOf(holder, warnings, used));
+      }
       if (images.length) warnings.push(`${images.length} Bild${images.length === 1 ? '' : 'er'} in Listen weggelassen.`);
     } else if (tag === 'TABLE') {
       const karo = karoOfTable(el, warnings, used);

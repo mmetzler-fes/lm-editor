@@ -16,7 +16,7 @@
  * Feste Block-IDs (ids.js) reisen als data-id mit – an ihnen hängen die
  * Striche der Schüler.
  */
-import { richText, renderDocSpecHtml, tableColgroup, tableRowAttr } from './docspec.js';
+import { richText, renderDocSpecHtml, tableColgroup, tableRowAttr, tableLineStyle, TABLE_LINE_STYLES } from './docspec.js';
 import { isBlockId } from './ids.js';
 
 const MARKUP_CHARS = /[\\*`[\]]/g;
@@ -193,6 +193,10 @@ function tableBlock(el, warnings, used = new Set()) {
   // Ohne Linien: z. B. Abbildungen nebeneinander mit Unterschrift.
   if (el.classList.contains('ws-table-plain')) block.border = false;
   if (['left', 'center', 'right'].includes(el.dataset.align)) block.align = el.dataset.align;
+  // Linien: Stärke (pt) und Art.
+  const lw = Number(el.dataset.lineWidth);
+  if (lw >= 0.25 && lw <= 6) block.lineWidth = lw;
+  if (TABLE_LINE_STYLES.includes(el.dataset.lineStyle)) block.lineStyle = el.dataset.lineStyle;
   // Feste Spaltenbreiten (<col style="width">) und Zeilenhöhen (<tr style="height">), in cm.
   const trim = (list) => { while (list.length && !list[list.length - 1]) list.pop(); return list; };
   const cols = [...el.children].filter((c) => c.tagName === 'COLGROUP').flatMap((g) => [...g.children].filter((c) => c.tagName === 'COL'));
@@ -492,7 +496,7 @@ export function specToEditorHtml(spec) {
         return listItemsHtml(b.items, b.ordered, idAttr(b));
       case 'table': {
         const off = Array.isArray(b.header) ? 1 : 0;
-        return `<table${idAttr(b)}${b.border === false ? ' class="ws-table-plain"' : ''}${['left', 'center', 'right'].includes(b.align) ? ` data-align="${b.align}"` : ''}${b.caption ? ` data-caption="${esc(b.caption)}"` : ''}>${tableColgroup(b)}${off ? `<thead><tr${tableRowAttr(b, 0)}>${cellsHtml('th', b.header, blocks)}</tr></thead>` : ''}<tbody>${(b.rows || []).filter(Array.isArray).map((r, i) => `<tr${tableRowAttr(b, i + off)}>${cellsHtml('td', r, blocks)}</tr>`).join('')}</tbody></table>`;
+        return `<table${idAttr(b)}${b.border === false ? ' class="ws-table-plain"' : ''}${['left', 'center', 'right'].includes(b.align) ? ` data-align="${b.align}"` : ''}${b.lineWidth ? ` data-line-width="${esc(b.lineWidth)}"` : ''}${b.lineStyle ? ` data-line-style="${esc(b.lineStyle)}"` : ''}${tableLineStyle(b)}${b.caption ? ` data-caption="${esc(b.caption)}"` : ''}>${tableColgroup(b)}${off ? `<thead><tr${tableRowAttr(b, 0)}>${cellsHtml('th', b.header, blocks)}</tr></thead>` : ''}<tbody>${(b.rows || []).filter(Array.isArray).map((r, i) => `<tr${tableRowAttr(b, i + off)}>${cellsHtml('td', r, blocks)}</tr>`).join('')}</tbody></table>`;
       }
       case 'image': {
         if (typeof b.src !== 'string') return widgetHtml(b);

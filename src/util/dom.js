@@ -179,11 +179,19 @@ export function showContextMenu(x, y, items) {
   const onOutside = (e) => { if (!menu.contains(e.target)) close(); };
   const onKey = (e) => { if (e.key === 'Escape') close(); };
   menu._close = close;
-  items.forEach(({ label, onClick, danger }) => {
+  items.forEach((item) => {
+    // '-' trennt Gruppen.
+    if (item === '-') {
+      menu.appendChild(Object.assign(document.createElement('div'), { className: 'ctx-menu-sep' }));
+      return;
+    }
+    const { label, onClick, danger } = item;
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'ctx-menu-item' + (danger ? ' danger' : '');
     btn.textContent = label;
+    // Den Fokus nicht nehmen – die Schreibmarke im Editor bleibt, wo sie war.
+    btn.addEventListener('mousedown', (e) => e.preventDefault());
     btn.addEventListener('click', () => { close(); onClick(); });
     menu.appendChild(btn);
   });

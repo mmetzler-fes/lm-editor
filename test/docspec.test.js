@@ -374,3 +374,13 @@ describe('Tabelle: Ausrichtung', () => {
     expect(ds.validateDocSpec({ content: [{ ...block, align: 'mitte' }] }).join(' ')).toContain('align:');
   });
 });
+
+describe('Tabelle: Linien (lineWidth, lineStyle)', () => {
+  it('gültig und als CSS-Variablen an der Tabelle', () => {
+    const block = { type: 'table', lineWidth: 1.5, lineStyle: 'dashed', rows: [['a']] };
+    expect(ds.validateDocSpec({ content: [block] })).toEqual([]);
+    expect(ds.renderDocSpecHtml({ content: [block] })).toContain('style="--ds-line-w:1.5pt;--ds-line-s:dashed;--ds-line-c:#1f2937"');
+    expect(ds.validateDocSpec({ content: [{ ...block, lineWidth: 9 }] }).join(' ')).toContain('lineWidth');
+    expect(ds.validateDocSpec({ content: [{ ...block, lineStyle: 'wavy' }] }).join(' ')).toContain('lineStyle');
+  });
+});

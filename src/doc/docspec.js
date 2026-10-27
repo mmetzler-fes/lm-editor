@@ -79,7 +79,8 @@ function cellOk(c) {
   const span = (v) => v === undefined || (Number.isInteger(v) && v >= 1 && v <= 20);
   const images = c.images === undefined || (Array.isArray(c.images) && c.images.every(cellImageOk));
   return (c.text === undefined || isText(c.text)) && span(c.colspan) && span(c.rowspan) && images
-    && (c.beside === undefined || typeof c.beside === 'boolean');
+    && (c.beside === undefined || typeof c.beside === 'boolean')
+    && (c.blocks === undefined || Array.isArray(c.blocks));
 }
 
 function checkBlocks(blocks, path, errors, inSolution, parent = '') {
@@ -158,6 +159,10 @@ function checkBlock(block, path, errors, inSolution, parent = '') {
           break;
         }
       }
+      // Bausteine in Zellen (z. B. eine Tabelle in der Tabelle) – geprüft wie sonst auch.
+      (block.rows || []).forEach((row, r) => (Array.isArray(row) ? row : []).forEach((c, k) => {
+        if (c && typeof c === 'object' && Array.isArray(c.blocks)) checkBlocks(c.blocks, `${path}.rows[${r}][${k}].blocks`, errors, inSolution, 'cell');
+      }));
       break;
     case 'formula':
       need(isText(block.math) && String(block.math).trim() !== '', 'math (Formel) fehlt.');
@@ -641,18 +646,22 @@ export function tableRowAttr(block, r) {
   return h ? ` style="height:${h}"` : '';
 }
 
-function cellHtml(tag, c) {
+function cellHtml(tag, c, ctx = null) {
   if (isText(c)) return `<${tag}>${richText(c)}</${tag}>`;
   const span = (name, v) => (Number.isInteger(v) && v > 1 && v <= 20 ? ` ${name}="${v}"` : '');
   const images = (Array.isArray(c?.images) ? c.images : []).filter(cellImageOk).map((i) => {
     const width = CSS_LENGTH_RE.test(String(i.width ?? '')) ? ` style="width:${i.width}"` : '';
     return `<img class="ds-cell-image" src="${esc(i.src)}" alt="${esc(i.alt ?? '')}"${width}>`;
   }).join('');
+  // Bausteine in der Zelle (Tabelle in der Tabelle …) – ohne eigene Block-IDs:
+  // Beschriftung hängt an der äußeren Tabelle.
+  const inner = Array.isArray(c?.blocks) && ctx
+    ? renderBlocksHtml(c.blocks, { ...ctx, options: { ...ctx.options, blockIds: false }, path: [] }) : '';
   // beside: Bilder neben dem Text (z. B. „Schließer“ und sein Schaltzeichen), sonst darunter.
   if (c?.beside && images) {
-    return `<${tag}${span('colspan', c?.colspan)}${span('rowspan', c?.rowspan)}><div class="ds-cell-beside"><div>${richText(c?.text ?? '')}</div>${images}</div></${tag}>`;
+    return `<${tag}${span('colspan', c?.colspan)}${span('rowspan', c?.rowspan)}><div class="ds-cell-beside"><div>${richText(c?.text ?? '')}</div>${images}</div>${inner}</${tag}>`;
   }
-  return `<${tag}${span('colspan', c?.colspan)}${span('rowspan', c?.rowspan)}>${richText(c?.text ?? '')}${images}</${tag}>`;
+  return `<${tag}${span('colspan', c?.colspan)}${span('rowspan', c?.rowspan)}>${richText(c?.text ?? '')}${images}${inner}</${tag}>`;
 }
 
 function headingNumber(type, c) {
@@ -729,9 +738,9 @@ function renderBlockHtml(block, ctx) {
       const caption = isText(block.caption) ? `<p class="ds-caption"><em>${esc(block.caption)}</em></p>` : '';
       const off = Array.isArray(block.header) ? 1 : 0;
       const head = off
-        ? `<thead><tr${tableRowAttr(block, 0)}>${block.header.map((c) => cellHtml('th', c ?? '')).join('')}</tr></thead>` : '';
+        ? `<thead><tr${tableRowAttr(block, 0)}>${block.header.map((c) => cellHtml('th', c ?? '', ctx)).join('')}</tr></thead>` : '';
       const rows = (block.rows || []).filter(Array.isArray)
-        .map((r, i) => `<tr${tableRowAttr(block, i + off)}>${r.map((c) => cellHtml('td', c ?? '')).join('')}</tr>`).join('');
+        .map((r, i) => `<tr${tableRowAttr(block, i + off)}>${r.map((c) => cellHtml('td', c ?? '', ctx)).join('')}</tr>`).join('');
       return `${caption}<div class="ds-table-wrap"><table class="ds-table${block.border === false ? ' ds-table-plain' : ''}">${tableColgroup(block)}${head}<tbody>${rows}</tbody></table></div>`;
     }
     case 'formula': {

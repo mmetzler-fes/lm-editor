@@ -154,8 +154,19 @@ function listBlock(el, images, warnings, lifted = []) {
   return block;
 }
 
-function tableBlock(el, warnings) {
+function tableBlock(el, warnings, used = new Set()) {
   const cell = (td) => {
+    // Tabellen und Kästen in der Zelle werden ihre Bausteine (Tabelle in der Tabelle).
+    const own = (cellEl) => [...cellEl.querySelectorAll('table, div.ws-box')].filter((n) => n.parentElement.closest('td, th') === cellEl);
+    let blocks = null;
+    if (own(td).length) {
+      const holder = td.ownerDocument.createElement('div');
+      td = td.cloneNode(true);
+      const clones = own(td);
+      const top = clones.filter((n) => !clones.some((m) => m !== n && m.contains(n)));
+      holder.append(...top);
+      blocks = blocksOf(holder, warnings, used);
+    }
     const found = [];
     // Führende Leerzeichen bleiben: Sie richten z. B. Programmausgaben aus.
     const text = cleanText(inline(td, found, warnings)).replace(/^/, (/^ +/.exec(td.textContent) || [''])[0]);
@@ -164,9 +175,9 @@ function tableBlock(el, warnings) {
     // Bilder bleiben in ihrer Zelle (z. B. Baustein links, Zeitdiagramm rechts).
     const images = found.map((img) => imageBlock(img, warnings)).filter(Boolean)
       .map(({ type: _t, float: _f, caption: _c, border: _b, ...img }) => img);
-    if (cs === 1 && rs === 1 && !images.length) return text;
+    if (cs === 1 && rs === 1 && !images.length && !blocks?.length) return text;
     const beside = images.length && td.classList.contains('ws-cell-beside');
-    return { text, ...(cs > 1 ? { colspan: Math.min(cs, 20) } : {}), ...(rs > 1 ? { rowspan: Math.min(rs, 20) } : {}), ...(images.length ? { images } : {}), ...(beside ? { beside: true } : {}) };
+    return { text, ...(cs > 1 ? { colspan: Math.min(cs, 20) } : {}), ...(rs > 1 ? { rowspan: Math.min(rs, 20) } : {}), ...(images.length ? { images } : {}), ...(beside ? { beside: true } : {}), ...(blocks?.length ? { blocks } : {}) };
   };
   const rowsOf = (section) => [...(section?.children || [])].filter((r) => r.tagName === 'TR')
     .map((tr) => [...tr.children].filter((c) => c.tagName === 'TD' || c.tagName === 'TH').map(cell));
@@ -276,8 +287,9 @@ function imagesBesideTable(el, warnings) {
   const rows = tableRows(el);
   const cols = Math.max(0, ...rows.map((tr) => tableCells(tr).length));
   if (rows.length <= 6 && cols <= 3) return [];
-  if (rows.flatMap(tableCells).filter((td) => td.querySelector('img')).length > 1) return [];
-  const imgs = [...el.querySelectorAll('img')];
+  // Nur Bilder dieser Tabelle – nicht die einer Tabelle in einer Zelle.
+  const imgs = [...el.querySelectorAll('img')].filter((img) => img.closest('table') === el);
+  if (new Set(imgs.map((img) => img.closest('td, th'))).size > 1) return [];
   const blocks = imgs.map((img) => imageBlock(img, warnings)).filter(Boolean);
   imgs.forEach((img) => img.remove());
   return blocks;
@@ -373,7 +385,7 @@ function blocksOf(parent, warnings, used = new Set()) {
       if (karo) { close(); out.push(...karo); close(); } else {
         const beside = imagesBesideTable(el, warnings);
         const id = takeId(el, used);
-        out.push(withId(boxOfTable(el, warnings, used) || tableBlock(el, warnings), id), ...beside);
+        out.push(withId(boxOfTable(el, warnings, used) || tableBlock(el, warnings, used), id), ...beside);
       }
     }
     else if (tag === 'DIV' && /\bws-box\b/.test(el.getAttribute('class') || '')) {
@@ -435,7 +447,7 @@ function listItemsHtml(items, ordered, id = '') {
     : `<li>${richText(it)}</li>`)).join('')}</${tag}>`;
 }
 
-function cellsHtml(tag, row) {
+function cellsHtml(tag, row, blocksHtml = () => '') {
   return row.map((c) => {
     if (c && typeof c === 'object') {
       const span = (n, v) => (Number.isInteger(v) && v > 1 ? ` ${n}="${v}"` : '');
@@ -443,7 +455,8 @@ function cellsHtml(tag, row) {
         const px = cssPx(b.width);
         return `<img src="${esc(b.src)}"${px ? ` width="${Math.round(px)}" data-width="${esc(b.width)}"` : ''}${b.alt ? ` alt="${esc(b.alt)}"` : ''}${b.source ? ` data-source="${esc(b.source)}"` : ''}>`;
       }).join('');
-      return `<${tag}${span('colspan', c.colspan)}${span('rowspan', c.rowspan)}${c.beside ? ' class="ws-cell-beside"' : ''}>${richText(c.text ?? '')}${images}</${tag}>`;
+      const inner = Array.isArray(c.blocks) ? blocksHtml(c.blocks) : '';
+      return `<${tag}${span('colspan', c.colspan)}${span('rowspan', c.rowspan)}${c.beside ? ' class="ws-cell-beside"' : ''}>${richText(c.text ?? '')}${images}${inner}</${tag}>`;
     }
     return `<${tag}>${richText(c ?? '')}</${tag}>`;
   }).join('');
@@ -474,7 +487,7 @@ export function specToEditorHtml(spec) {
         return listItemsHtml(b.items, b.ordered, idAttr(b));
       case 'table': {
         const off = Array.isArray(b.header) ? 1 : 0;
-        return `<table${idAttr(b)}${b.border === false ? ' class="ws-table-plain"' : ''}${b.caption ? ` data-caption="${esc(b.caption)}"` : ''}>${tableColgroup(b)}${off ? `<thead><tr${tableRowAttr(b, 0)}>${cellsHtml('th', b.header)}</tr></thead>` : ''}<tbody>${(b.rows || []).filter(Array.isArray).map((r, i) => `<tr${tableRowAttr(b, i + off)}>${cellsHtml('td', r)}</tr>`).join('')}</tbody></table>`;
+        return `<table${idAttr(b)}${b.border === false ? ' class="ws-table-plain"' : ''}${b.caption ? ` data-caption="${esc(b.caption)}"` : ''}>${tableColgroup(b)}${off ? `<thead><tr${tableRowAttr(b, 0)}>${cellsHtml('th', b.header, blocks)}</tr></thead>` : ''}<tbody>${(b.rows || []).filter(Array.isArray).map((r, i) => `<tr${tableRowAttr(b, i + off)}>${cellsHtml('td', r, blocks)}</tr>`).join('')}</tbody></table>`;
       }
       case 'image': {
         if (typeof b.src !== 'string') return widgetHtml(b);

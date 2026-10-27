@@ -352,3 +352,14 @@ describe('Tabelle: Bild neben Text (beside)', () => {
     expect(ds.validateDocSpec({ content: [{ ...block, rows: [[{ text: 'a', beside: 'ja' }]] }] }).join(' ')).toContain('Zelle');
   });
 });
+
+describe('Tabelle in der Tabelle (blocks in Zellen)', () => {
+  const inner = { type: 'table', header: ['C', 'X'], rows: [['', '']] };
+  const block = { type: 'table', rows: [['Links', { text: 'Rechts', blocks: [inner] }]] };
+  it('gültig, innen geprüft, in der Zelle gezeigt', () => {
+    expect(ds.validateDocSpec({ content: [block] })).toEqual([]);
+    const bad = { type: 'table', rows: [[{ text: 'x', blocks: [{ type: 'karo', lines: 0 }] }]] };
+    expect(ds.validateDocSpec({ content: [bad] }).join(' ')).toContain('content[0].rows[0][0].blocks[0] (karo)');
+    expect(ds.renderDocSpecHtml({ content: [block] }, { blockIds: true })).toContain('<td>Rechts<div class="ds-table-wrap"><table class="ds-table"><thead>');
+  });
+});

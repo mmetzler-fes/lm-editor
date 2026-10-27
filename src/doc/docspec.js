@@ -11,10 +11,10 @@
 // `n_S` mit tiefgestelltem S, Lösungen zunächst ausgeblendet.
 
 export const DOC_BLOCK_TYPES = ['section', 'task', 'subtask', 'heading', 'text', 'list', 'code', 'image', 'table',
-  'formula', 'note', 'solution', 'box', 'karo', 'spacer', 'pagebreak', 'quiz'];
+  'formula', 'note', 'solution', 'box', 'karo', 'spacer', 'pagebreak', 'quiz', 'columns', 'column'];
 
 const HEADING_TYPES = ['section', 'task', 'subtask'];
-const WITH_BLOCKS = ['section', 'task', 'subtask', 'solution', 'box'];
+const WITH_BLOCKS = ['section', 'task', 'subtask', 'solution', 'box', 'columns', 'column'];
 const ALIGNS = ['left', 'center', 'right', 'justify'];
 const FLOATS = ['left', 'right', 'center'];
 // Bildquellen, die in der App angezeigt werden dürfen. Verweise per `file:`
@@ -81,11 +81,11 @@ function cellOk(c) {
   return (c.text === undefined || isText(c.text)) && span(c.colspan) && span(c.rowspan) && images;
 }
 
-function checkBlocks(blocks, path, errors, inSolution) {
-  blocks.forEach((block, i) => checkBlock(block, `${path}[${i}]`, errors, inSolution));
+function checkBlocks(blocks, path, errors, inSolution, parent = '') {
+  blocks.forEach((block, i) => checkBlock(block, `${path}[${i}]`, errors, inSolution, parent));
 }
 
-function checkBlock(block, path, errors, inSolution) {
+function checkBlock(block, path, errors, inSolution, parent = '') {
   if (isText(block)) return; // Ein einfacher Text ist ein Textblock.
   if (!block || typeof block !== 'object' || Array.isArray(block)) {
     errors.push(`${path}: Block muss ein Objekt mit type sein.`);
@@ -123,6 +123,17 @@ function checkBlock(block, path, errors, inSolution) {
       break;
     case 'box':
       need(Array.isArray(block.blocks) || isText(block.text), 'blocks oder text fehlt.');
+      break;
+    case 'columns':
+      // Nebeneinander: 2–4 Spalten (type: column), je mit eigenen Bausteinen.
+      need(Array.isArray(block.blocks) && block.blocks.length >= 2 && block.blocks.length <= 4
+        && block.blocks.every((c) => c && typeof c === 'object' && c.type === 'column'), 'blocks: 2 bis 4 Spalten {type: column, blocks: [...]}.');
+      need(!inSolution, 'Spalten in einer Lösung sind nicht möglich.');
+      break;
+    case 'column':
+      need(parent === 'columns', 'Eine Spalte steht nur in „columns“.');
+      need(Array.isArray(block.blocks), 'blocks: Liste der Bausteine der Spalte fehlt.');
+      if (block.width !== undefined) need(tableLengthOk(block.width), 'width: Breite in cm, z. B. "9cm" (leer = automatisch).');
       break;
     case 'code':
       need(isText(block.code) || isText(block.file), 'code fehlt.');
@@ -179,7 +190,7 @@ function checkBlock(block, path, errors, inSolution) {
   if (block.blocks !== undefined) {
     if (!WITH_BLOCKS.includes(type)) errors.push(`${at}: blocks gibt es nur bei ${WITH_BLOCKS.join(', ')}.`);
     else if (!Array.isArray(block.blocks)) errors.push(`${at}: blocks muss eine Liste sein.`);
-    else checkBlocks(block.blocks, `${path}.blocks`, errors, inSolution || type === 'solution');
+    else checkBlocks(block.blocks, `${path}.blocks`, errors, inSolution || type === 'solution', type);
   }
 }
 
@@ -673,6 +684,18 @@ function renderBlockHtml(block, ctx) {
       const html = paragraphs(block.text);
       return ALIGNS.includes(block.align) && block.align !== 'left' ? html.replace(/<p class="ds-text">/g, `<p class="ds-text" style="text-align:${block.align}">`) : html;
     }
+    case 'columns':
+      // Spalten direkt (ohne Hülle je Spalte) – sonst stünden sie nicht nebeneinander.
+      // Der Pfad zählt sie trotzdem mit (wie ids.js): content[2].blocks[1].blocks[0] = 2.1.0.
+      return `<div class="ds-columns">${(Array.isArray(block.blocks) ? block.blocks : []).map((col, i) => {
+        ctx.path.push(i);
+        const inner = renderBlocksHtml(col?.blocks, ctx);
+        ctx.path.pop();
+        const w = tableLength(col?.width);
+        return `<div class="ds-column"${w ? ` style="flex:0 0 ${w}"` : ''}>${inner}</div>`;
+      }).join('')}</div>`;
+    case 'column':
+      return renderBlocksHtml(block.blocks, ctx);
     case 'box': {
       const title = isText(block.title) ? `<p class="ds-box-title"><strong>${richText(block.title)}</strong></p>` : '';
       return `<div class="ds-box${block.shaded ? ' ds-box-shaded' : ''}">${title}${isText(block.text) ? paragraphs(block.text) : ''}${renderBlocksHtml(block.blocks, ctx)}</div>`;

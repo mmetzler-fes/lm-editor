@@ -1042,7 +1042,29 @@ export function odtToHtml(buffer, fileName = '') {
         }
         return lines >= 2 ? `${Math.round(lines * 0.55 * 10) / 10}cm` : '';
     };
+    // Layout-Tabelle (Tabelle in einer Zelle): je Zeile Spalten – wie odt.ts.
+    const tableRowsOf = (n) => elements(n).flatMap((c) => (c.name === 'table:table-row' ? [c]
+        : ['table:table-header-rows', 'table:table-rows', 'table:table-row-group'].includes(c.name) ? tableRowsOf(c) : []));
+    const layoutTable = (n) => {
+        const rows = tableRowsOf(n);
+        const cellsOf = (r) => elements(r).filter((c) => c.name === 'table:table-cell');
+        if (!rows.some((r) => cellsOf(r).length >= 2 && cellsOf(r).some((c) => elements(c).some((x) => x.name === 'table:table'))))
+            return null;
+        const widths = columnWidths(n);
+        const cols = widths.length && widths.every(Boolean) ? `<colgroup>${widths.map((w) => `<col style="width:${w}">`).join('')}</colgroup>` : '';
+        return rows.map((r) => {
+            const cells = cellsOf(r).map((c) => blocks(c).replace(/^<p data-empty="1"><br><\/p>$/, ''));
+            if (cells.length < 2)
+                return cells.join('');
+            if (cells.every((c) => !c.replace(/<p data-empty="1"><br><\/p>/g, '').trim()))
+                return '';
+            return `<table class="ws-columns">${cols}<tbody><tr>${cells.map((c) => `<td>${c || '<p><br></p>'}</td>`).join('')}</tr></tbody></table>`;
+        }).join('');
+    };
     const table = (n) => {
+        const layout = layoutTable(n);
+        if (layout !== null)
+            return layout;
         stats.tables++;
         const rowsHtml = (container, cellTag) => {
             let html = '';

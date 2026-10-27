@@ -116,7 +116,7 @@ describe('validateDocSpec', () => {
       'content[3].blocks[0] (solution): Lösung in einer Lösung ist nicht möglich.',
       expect.stringContaining('content[4] (formula): Formel –'),
       'content[5] (image): src: nur Bilder als data:image/… oder https://.',
-      'content[6] (text): blocks gibt es nur bei section, task, subtask, solution, box.',
+      'content[6] (text): blocks gibt es nur bei section, task, subtask, solution, box, columns, column.',
     ]);
   });
 
@@ -322,5 +322,23 @@ describe('Tabelle: Spaltenbreiten und Zeilenhöhen', () => {
   });
   it('ohne Angaben kein <colgroup>', () => {
     expect(ds.renderDocSpecHtml({ content: [{ type: 'table', rows: [['x']] }] })).not.toContain('colgroup');
+  });
+});
+
+describe('Spalten (columns)', () => {
+  const block = { type: 'columns', blocks: [
+    { type: 'column', width: '9cm', blocks: [{ type: 'text', text: 'links' }] },
+    { type: 'column', blocks: [{ type: 'table', rows: [['C', 'X']] }] },
+  ] };
+  it('2–4 Spalten, Spalte nur in columns', () => {
+    expect(ds.validateDocSpec({ content: [block] })).toEqual([]);
+    expect(ds.validateDocSpec({ content: [{ type: 'columns', blocks: [block.blocks[0]] }] }).join(' ')).toContain('2 bis 4 Spalten');
+    expect(ds.validateDocSpec({ content: [block.blocks[0]] }).join(' ')).toContain('nur in „columns“');
+  });
+  it('nebeneinander, Pfade wie die Block-IDs', () => {
+    const html = ds.renderDocSpecHtml({ content: [block] }, { blockIds: true });
+    expect(html).toContain('<div class="ds-columns"><div class="ds-column" style="flex:0 0 9cm">');
+    expect(html).toContain('data-bpath="0.0.0"');
+    expect(html).toContain('data-bpath="0.1.0"');
   });
 });

@@ -355,6 +355,18 @@ function blocksOf(parent, warnings, used = new Set()) {
         out.push(...blocksOf(holder, warnings, used));
       }
       if (images.length) warnings.push(`${images.length} Bild${images.length === 1 ? '' : 'er'} in Listen weggelassen.`);
+    } else if (tag === 'TABLE' && el.classList.contains('ws-columns')) {
+      // Spalten: je Zelle der ersten Zeile eine Spalte mit eigenen Bausteinen.
+      const id = takeId(el, used);
+      const cols = [...el.children].filter((c) => c.tagName === 'COLGROUP').flatMap((g) => [...g.children]);
+      const columns = tableCells(tableRows(el)[0] || el).map((td, i) => {
+        const width = cssCm(cols[i]?.style?.width);
+        return withId({ type: 'column', ...(width ? { width } : {}), blocks: blocksOf(td, warnings, used) }, takeId(td, used));
+      });
+      close();
+      if (columns.length >= 2) out.push(withId({ type: 'columns', blocks: columns.slice(0, 4) }, id));
+      else out.push(...(columns[0]?.blocks || []));
+      close();
     } else if (tag === 'TABLE') {
       const karo = karoOfTable(el, warnings, used);
       if (karo) { close(); out.push(...karo); close(); } else {
@@ -468,6 +480,11 @@ export function specToEditorHtml(spec) {
         const cls = [b.float === 'left' ? 'ws-float-left' : b.float === 'right' ? 'ws-float-right' : b.float === 'center' ? 'ws-img-center' : '', b.border ? 'ws-img-border' : ''].filter(Boolean).join(' ');
         const px = cssPx(b.width);
         return `<p><img${idAttr(b)} src="${esc(b.src)}"${cls ? ` class="${cls}"` : ''}${px ? ` width="${Math.round(px)}" data-width="${esc(b.width)}"` : ''}${b.alt ? ` alt="${esc(b.alt)}"` : ''}${b.caption ? ` data-caption="${esc(b.caption)}"` : ''}${b.source ? ` data-source="${esc(b.source)}"` : ''}></p>`;
+      }
+      case 'columns': {
+        const cols = (b.blocks || []).filter((c) => c && typeof c === 'object');
+        const widths = cols.map((c) => c.width || '');
+        return `<table class="ws-columns"${idAttr(b)}>${tableColgroup({ widths })}<tbody><tr>${cols.map((c) => `<td${idAttr(c)}>${blocks(c.blocks) || '<p><br></p>'}</td>`).join('')}</tr></tbody></table>`;
       }
       case 'box':
         return `<div class="ws-box"${idAttr(b)}${b.title ? ` data-title="${esc(b.title)}"` : ''}${b.shaded ? ' data-shaded="1"' : ''}>${b.text ? paragraphsHtml(b.text) : ''}${blocks(b.blocks) || '<p><br></p>'}</div>`;

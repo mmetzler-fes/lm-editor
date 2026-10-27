@@ -813,6 +813,10 @@ body {
 .docspec .ds-table td { border: 1px solid var(--border); padding: 4px 8px; vertical-align: top; }
 /* Leere Zellen eine Zeile hoch – wie im Druck (Wertetabellen zum Ausfüllen) */
 .docspec .ds-table td:empty, .docspec .ds-table th:empty { height: 1.6em; }
+/* Spalten (type: columns): Inhalte nebeneinander, am Handy untereinander */
+.docspec .ds-columns { display: flex; gap: 0.5cm; align-items: flex-start; margin: 0.4em 0 0.8em; }
+.docspec .ds-column { flex: 1 1 0; min-width: 0; }
+@media (max-width: 600px) { .docspec .ds-columns { flex-direction: column; } .docspec .ds-column { flex-basis: auto !important; } }
 .docspec .ds-table th { background: var(--bg-primary); }
 .docspec .ds-table-plain th,
 .docspec .ds-table-plain td { border: none; text-align: center; vertical-align: bottom; }

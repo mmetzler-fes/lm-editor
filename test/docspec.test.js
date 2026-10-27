@@ -342,3 +342,13 @@ describe('Spalten (columns)', () => {
     expect(html).toContain('data-bpath="0.1.0"');
   });
 });
+
+describe('Tabelle: Bild neben Text (beside)', () => {
+  const img = 'data:image/png;base64,iVBORw0KGgo=';
+  const block = { type: 'table', rows: [[{ text: 'Schließer', beside: true, images: [{ src: img, width: '1cm' }] }, 'x']] };
+  it('gültig, nebeneinander gezeigt', () => {
+    expect(ds.validateDocSpec({ content: [block] })).toEqual([]);
+    expect(ds.renderDocSpecHtml({ content: [block] })).toContain('<td><div class="ds-cell-beside"><div>Schließer</div><img class="ds-cell-image"');
+    expect(ds.validateDocSpec({ content: [{ ...block, rows: [[{ text: 'a', beside: 'ja' }]] }] }).join(' ')).toContain('Zelle');
+  });
+});

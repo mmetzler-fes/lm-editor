@@ -813,6 +813,9 @@ body {
 .docspec .ds-table td { border: 1px solid var(--border); padding: 4px 8px; vertical-align: top; }
 /* Leere Zellen eine Zeile hoch – wie im Druck (Wertetabellen zum Ausfüllen) */
 .docspec .ds-table td:empty, .docspec .ds-table th:empty { height: 1.6em; }
+/* Zelle mit beside: Bilder neben dem Text */
+.docspec .ds-cell-beside { display: flex; align-items: center; gap: 8px; }
+.docspec .ds-cell-beside .ds-cell-image { margin: 0; }
 /* Spalten (type: columns): Inhalte nebeneinander, am Handy untereinander */
 .docspec .ds-columns { display: flex; gap: 0.5cm; align-items: flex-start; margin: 0.4em 0 0.8em; }
 .docspec .ds-column { flex: 1 1 0; min-width: 0; }

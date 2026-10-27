@@ -165,7 +165,8 @@ function tableBlock(el, warnings) {
     const images = found.map((img) => imageBlock(img, warnings)).filter(Boolean)
       .map(({ type: _t, float: _f, caption: _c, border: _b, ...img }) => img);
     if (cs === 1 && rs === 1 && !images.length) return text;
-    return { text, ...(cs > 1 ? { colspan: Math.min(cs, 20) } : {}), ...(rs > 1 ? { rowspan: Math.min(rs, 20) } : {}), ...(images.length ? { images } : {}) };
+    const beside = images.length && td.classList.contains('ws-cell-beside');
+    return { text, ...(cs > 1 ? { colspan: Math.min(cs, 20) } : {}), ...(rs > 1 ? { rowspan: Math.min(rs, 20) } : {}), ...(images.length ? { images } : {}), ...(beside ? { beside: true } : {}) };
   };
   const rowsOf = (section) => [...(section?.children || [])].filter((r) => r.tagName === 'TR')
     .map((tr) => [...tr.children].filter((c) => c.tagName === 'TD' || c.tagName === 'TH').map(cell));
@@ -442,7 +443,7 @@ function cellsHtml(tag, row) {
         const px = cssPx(b.width);
         return `<img src="${esc(b.src)}"${px ? ` width="${Math.round(px)}" data-width="${esc(b.width)}"` : ''}${b.alt ? ` alt="${esc(b.alt)}"` : ''}${b.source ? ` data-source="${esc(b.source)}"` : ''}>`;
       }).join('');
-      return `<${tag}${span('colspan', c.colspan)}${span('rowspan', c.rowspan)}>${richText(c.text ?? '')}${images}</${tag}>`;
+      return `<${tag}${span('colspan', c.colspan)}${span('rowspan', c.rowspan)}${c.beside ? ' class="ws-cell-beside"' : ''}>${richText(c.text ?? '')}${images}</${tag}>`;
     }
     return `<${tag}>${richText(c ?? '')}</${tag}>`;
   }).join('');

@@ -78,7 +78,8 @@ function cellOk(c) {
   if (!c || typeof c !== 'object' || Array.isArray(c)) return false;
   const span = (v) => v === undefined || (Number.isInteger(v) && v >= 1 && v <= 20);
   const images = c.images === undefined || (Array.isArray(c.images) && c.images.every(cellImageOk));
-  return (c.text === undefined || isText(c.text)) && span(c.colspan) && span(c.rowspan) && images;
+  return (c.text === undefined || isText(c.text)) && span(c.colspan) && span(c.rowspan) && images
+    && (c.beside === undefined || typeof c.beside === 'boolean');
 }
 
 function checkBlocks(blocks, path, errors, inSolution, parent = '') {
@@ -647,6 +648,10 @@ function cellHtml(tag, c) {
     const width = CSS_LENGTH_RE.test(String(i.width ?? '')) ? ` style="width:${i.width}"` : '';
     return `<img class="ds-cell-image" src="${esc(i.src)}" alt="${esc(i.alt ?? '')}"${width}>`;
   }).join('');
+  // beside: Bilder neben dem Text (z. B. „Schließer“ und sein Schaltzeichen), sonst darunter.
+  if (c?.beside && images) {
+    return `<${tag}${span('colspan', c?.colspan)}${span('rowspan', c?.rowspan)}><div class="ds-cell-beside"><div>${richText(c?.text ?? '')}</div>${images}</div></${tag}>`;
+  }
   return `<${tag}${span('colspan', c?.colspan)}${span('rowspan', c?.rowspan)}>${richText(c?.text ?? '')}${images}</${tag}>`;
 }
 

@@ -53,6 +53,32 @@ export function inkSvgFor(items, left, width) {
   svg.style.left = `${-left}pt`;
   svg.style.width = `${width}pt`;
   svg.style.height = `${h}pt`;
+  inkGroups(items).forEach((g) => svg.appendChild(g));
+  return svg;
+}
+
+/**
+ * Striche eines Bausteins als knapp zugeschnittenes SVG für den Druck über den
+ * Renderer (ink-print.js): `{ svg, x, y, w, h }` in Punkt, x ab dem Blattrand,
+ * y ab der Oberkante des Bausteins – oder null ohne Inhalt.
+ */
+export function inkSvgBox(items) {
+  const list = items.filter((it) => it.type !== 'text' || it.text);
+  if (!list.length) return null;
+  const bs = list.map(bounds);
+  const pad = 2;
+  const r = (v) => Math.round(v * 100) / 100;
+  const x = r(Math.min(...bs.map((b) => b.x)) - pad);
+  const y = r(Math.min(...bs.map((b) => b.y)) - pad);
+  const w = r(Math.max(...bs.map((b) => b.x + b.w)) + pad - x);
+  const h = r(Math.max(...bs.map((b) => b.y + b.h)) + pad - y);
+  const svg = svgEl('svg', { viewBox: `${x} ${y} ${w} ${h}`, width: `${w}pt`, height: `${h}pt` });
+  inkGroups(list).forEach((g) => svg.appendChild(g));
+  return { svg: new XMLSerializer().serializeToString(svg), x, y, w, h };
+}
+
+/** Felder, Textmarker, Stift und Textfelder – in dieser Stapelfolge. */
+function inkGroups(items) {
   const groups = ['fields', 'marker', 'pen', 'texts'].map((name) => svgEl('g', { class: `ink-print-${name}` }));
   for (const it of items) {
     if (it.type === 'field') groups[0].appendChild(fieldSvg(it));
@@ -68,8 +94,7 @@ export function inkSvgFor(items, left, width) {
       groups[3].appendChild(t);
     }
   }
-  groups.forEach((g) => svg.appendChild(g));
-  return svg;
+  return groups;
 }
 
 /** Hat der Stand eine Beschriftung auf dem Dokument? */

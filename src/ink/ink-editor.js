@@ -4,7 +4,7 @@ import {
   isBox, resizedBox, corners, MM,
 } from './ink-geometry.js';
 import { rulerSvg, rulerHandles } from './ink-ruler.js';
-import { svgEl, itemSvg, fieldSvg, inkSvgFor } from './ink-view.js';
+import { svgEl, itemSvg, fieldSvg, inkSvgFor, inkSvgBox } from './ink-view.js';
 import { showContextMenu } from '../util/dom.js';
 
 // ==================== STIFT-EDITOR ====================
@@ -58,6 +58,7 @@ const ICON_PATHS = {
   pointer: 'M6 3l13 8-6 1.5L9.5 19z',
   field: 'M4 5h16v14H4zM4 9.7h16M4 14.3h16M9.3 5v14M14.7 5v14',
   print: 'M7 9V3h10v6M7 17H4v-7h16v7h-3M7 14h10v7H7z',
+  head: 'M4 3h16v6H4zM7 6h4M4 13h16M4 17h12M4 21h14',
   save: 'M5 4h11l3 3v13H5zM8 4v5h7V4M8 20v-6h8v6',
 };
 // Feld (Abdeckung): Raster wie im Dokument – Karo 5 mm, Linien 10 mm.
@@ -229,6 +230,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
         </select>
         ${solutions && (loadPdf || paper) ? btn('ink-solution', 'bulb', 'Lösungen ein- und ausblenden') : ''}
         ${btn('ink-add-page', 'page', 'Seite anfügen')}
+        ${paper?.headerPdf ? btn('ink-head', 'head', 'Kopfzeile der Vorlage zeigen (Logo, Titel – wie im Druck)') : ''}
         ${paper ? btn('ink-print', 'print', 'Drucken oder als PDF speichern – Arbeitsblatt oder Lösungsblatt, mit oder ohne Beschriftung') : ''}
       </span>
       <span class="ink-group ink-zoom">
@@ -426,15 +428,28 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
   // iPad: Wechsel zu einer anderen App oder Tab zu – Ungespeichertes gleich sichern.
   const onHide = () => { if (document.visibilityState === 'hidden' && saveTimer) void persist(); };
   document.addEventListener('visibilitychange', onHide);
+  $('.ink-head')?.addEventListener('click', async () => {
+    headOn = !headOn;
+    if (paper.head) void paper.head.set(headOn);
+    else try { localStorage.setItem('lm_ink_head', headOn ? '1' : '0'); } catch (_) { /* egal */ }
+    $('.ink-head').classList.toggle('active', headOn);
+    if (doc.bg === 'paper') await layoutPaper();
+  });
   $('.ink-print')?.addEventListener('click', (e) => {
     const r = e.currentTarget.getBoundingClientRect();
-    const entries = [
-      { label: '🖨 Arbeitsblatt', onClick: () => printPaper({ solutions: false, ink: false }) },
-      { label: '🖨 Arbeitsblatt mit Beschriftung', onClick: () => printPaper({ solutions: false, ink: true }) },
-    ];
-    if (solutions) {
-      entries.push({ label: '🖨 Lösungsblatt', onClick: () => printPaper({ solutions: true, ink: false }) });
-      entries.push({ label: '🖨 Lösungsblatt mit Beschriftung', onClick: () => printPaper({ solutions: true, ink: true }) });
+    const sheets = [{ solutions: false, name: 'Arbeitsblatt' }, ...(solutions ? [{ solutions: true, name: 'Lösungsblatt' }] : [])];
+    const entries = [];
+    // Mit Gastgeber (Lehrkraft): als PDF über den Renderer – mit Vorlage (Logo, Kopfzeile, Ränder).
+    if (paperView && paper?.printPdf) {
+      for (const { solutions: sol, name } of sheets) {
+        entries.push({ label: `📄 ${name} mit Beschriftung – PDF mit Vorlage`, onClick: () => printViaRenderer({ solutions: sol, ink: true }) });
+        entries.push({ label: `📄 ${name} – PDF mit Vorlage`, onClick: () => printViaRenderer({ solutions: sol, ink: false }) });
+      }
+    }
+    for (const { solutions: sol, name } of sheets) {
+      const view = entries.length ? 'Ansicht drucken: ' : '🖨 ';
+      entries.push({ label: `${view}${name} mit Beschriftung`, onClick: () => printPaper({ solutions: sol, ink: true }) });
+      entries.push({ label: `${view}${name}`, onClick: () => printPaper({ solutions: sol, ink: false }) });
     }
     showContextMenu(r.left, r.bottom + 4, entries);
   });
@@ -648,6 +663,9 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
       try { paper.restore?.(sheet, doc.forms || null); } catch (_) { /* dann eben leer */ }
       sheet.addEventListener('input', changed);
       sheet.addEventListener('change', changed);
+    }
+    if (headOn && paper.headerPdf) {
+      try { placeHead(sheet, await headStrip()); } catch (err) { status(`Kopfzeile: ${err.message}`); }
     }
     // Erst mit den richtigen Schriften stimmen die Zeilenumbrüche.
     try { await document.fonts?.ready; } catch (_) { /* ohne */ }
@@ -1862,6 +1880,119 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
       }
       showContextMenu(e.clientX, e.clientY, entries);
     });
+  }
+
+  // ---------- Kopfzeile der Vorlage (Vorschau) ----------
+  //
+  // Der Renderer setzt ein Blatt ohne Inhalt mit der Vorlage dieses Dokuments
+  // (paper.headerPdf); von Seite 1 bleibt der Streifen bis zum Ende der
+  // Kopfzeile. Er steht oben auf dem Blatt wie im Druck – nur zur Ansicht.
+  // Die Striche hängen an den Bausteinen und rücken mit.
+
+  // Ein/aus: Einstellung des Gastgebers (Konto der Lehrkraft), sonst dieses Gerät.
+  let headOn = false;
+  if (paper?.head) headOn = !!paper.head.get();
+  else try { headOn = localStorage.getItem('lm_ink_head') === '1'; } catch (_) { /* aus */ }
+  let headCache = null;
+  $('.ink-head')?.classList.toggle('active', headOn);
+
+  /** Streifen der Kopfzeile: { src, cm } – Höhe in cm ab der Blattkante. */
+  async function headStrip() {
+    if (headCache) return headCache;
+    const pdf = await openPdf(await paper.headerPdf());
+    const page = await pdf.getPage(1);
+    const scale = 2;
+    const vp = page.getViewport({ scale });
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.ceil(vp.width);
+    canvas.height = Math.ceil(vp.height);
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    await page.render({ canvasContext: ctx, viewport: vp }).promise;
+    // Von oben: erste Zeile mit Inhalt, dann bis zur ersten Lücke von 1 cm (danach käme nur noch die Fußzeile).
+    const pxPerCm = canvas.height / (vp.height / scale / 72 * 2.54);
+    const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const inked = (y) => {
+      for (let x = 0; x < canvas.width; x += 2) {
+        const i = (y * canvas.width + x) * 4;
+        if (data[i] < 200 || data[i + 1] < 200 || data[i + 2] < 200) return true;
+      }
+      return false;
+    };
+    let y = 0;
+    while (y < canvas.height && !inked(y)) y++;
+    let last = y;
+    for (; y < canvas.height && y - last < pxPerCm; y++) if (inked(y)) last = y;
+    if (last <= 0) throw new Error('Die Vorlage hat keine Kopfzeile.');
+    const cut = Math.min(canvas.height, last + Math.round(pxPerCm * 0.3));
+    const strip = document.createElement('canvas');
+    strip.width = canvas.width;
+    strip.height = cut;
+    strip.getContext('2d').drawImage(canvas, 0, 0);
+    headCache = { src: strip.toDataURL('image/png'), cm: cut / pxPerCm };
+    return headCache;
+  }
+
+  /** Streifen oben ins Blatt setzen – über den oberen Rand, so breit wie das Papier. */
+  function placeHead(sheet, strip) {
+    const css = getComputedStyle(sheet);
+    const box = document.createElement('div');
+    box.className = 'ink-template-head';
+    box.style.margin = `-${css.paddingTop} -${css.paddingRight} 0 -${css.paddingLeft}`;
+    box.innerHTML = `<img src="${strip.src}" alt="Kopfzeile der Vorlage" style="display:block;width:100%;height:${strip.cm}cm">`;
+    sheet.prepend(box);
+  }
+
+  // ---------- Drucken über den Renderer (PDF mit Vorlage) ----------
+  //
+  // Der Gastgeber (paper.printPdf) baut daraus mit ink-print.js das Dokument
+  // für den Renderer: Felder aus der Ebene, eingefügte Felder, und je Baustein
+  // die Beschriftung als SVG (x ab dem Satzspiegel, y ab dem Baustein).
+
+  /** Was der Renderer vom Stand des Blatts wissen muss (siehe ink-print.js). */
+  function printData(withInk) {
+    const layerNow = toLayer();
+    measurePaper();
+    const padLeft = parseFloat(getComputedStyle(paperView.el).paddingLeft) * PX_PT;
+    const insertIds = new Set(inserts.map((i) => i.id));
+    const pathOf = (bid) => findBlock(bid)?.path ?? (bid.startsWith('p:') ? bid.slice(2) : null);
+    const overlays = [];
+    let loose = 0;
+    if (withInk) {
+      for (const [bid, entry] of Object.entries(layerNow.blocks || {})) {
+        const box = inkSvgBox(entry.items || []);
+        if (!box) continue;
+        const o = { svg: box.svg, x: box.x - padLeft, y: box.y, w: box.w, h: box.h };
+        if (insertIds.has(bid)) o.insert = bid;
+        else if (bid !== '_' && pathOf(bid) != null) o.path = pathOf(bid);
+        else { loose += (entry.items || []).length; continue; }
+        overlays.push(o);
+      }
+    }
+    const karo = Object.entries(karoMap).filter(([bid]) => !insertIds.has(bid))
+      .map(([bid, k]) => ({ path: pathOf(bid), ...k })).filter((k) => k.path != null);
+    const ins = inserts.map((i) => ({
+      id: i.id, pattern: i.pattern, ...karoMap[i.id],
+      after: i.after == null ? null : pathOf(i.after) ?? 'end',
+    }));
+    return { data: { overlays, karo, inserts: ins }, loose };
+  }
+
+  async function printViaRenderer({ solutions: withSolutions, ink }) {
+    // Fenster sofort öffnen – nach dem await ließe der Popup-Blocker es nicht mehr zu.
+    const win = window.open('', '_blank');
+    status('PDF wird erzeugt …');
+    try {
+      await persist();
+      const { data, loose } = printData(ink);
+      const warnings = (await paper.printPdf(data, { solutions: withSolutions, win })) || [];
+      if (loose) warnings.push(`${loose} Strich${loose === 1 ? '' : 'e'} außerhalb der Bausteine fehlen im PDF.`);
+      status(warnings.length ? `PDF erzeugt – ${warnings.join(' · ')}` : 'PDF erzeugt');
+    } catch (err) {
+      win?.close();
+      status(`PDF nicht erzeugt: ${err.message}`);
+    }
   }
 
   // ---------- Drucken (PDF über den Druckdialog des Browsers) ----------

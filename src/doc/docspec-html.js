@@ -16,7 +16,7 @@
  * Feste Block-IDs (ids.js) reisen als data-id mit – an ihnen hängen die
  * Striche der Schüler.
  */
-import { richText, renderDocSpecHtml, tableColgroup, tableRowAttr, tableLineStyle, TABLE_LINE_STYLES } from './docspec.js';
+import { richText, renderDocSpecHtml, tableColgroup, tableRowAttr, tableLineStyle, TABLE_LINE_STYLES, TEXT_COLORS, HIGHLIGHTS, LINE_HEIGHTS, LIST_MARKERS, LIST_NUMBERINGS, LINE_COLORS, CELL_BACKGROUNDS, paraStyle } from './docspec.js';
 import { isBlockId } from './ids.js';
 
 const MARKUP_CHARS = /[\\*`[\]]/g;
@@ -42,6 +42,15 @@ function mark(inner, open, close = open) {
 const BLOCK_TAGS = new Set(['P', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'UL', 'OL', 'TABLE', 'DIV', 'FIGURE', 'BLOCKQUOTE', 'PRE', 'HR']);
 
 /** Inline-Inhalt eines Elements → Text mit Auszeichnung. Bilder sammelt `images`. */
+/** CSS-Farbe (rgb(…) oder #hex) → Name aus der Palette – oder null. */
+function paletteName(css, palette) {
+  const hex = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+  const m = /rgba?\((\d+),\s*(\d+),\s*(\d+)/.exec(css || '');
+  const rgb = m ? m.slice(1, 4).map(Number) : /^#[0-9a-f]{6}$/i.test(css || '') ? hex(css) : null;
+  if (!rgb) return null;
+  return Object.keys(palette).find((k) => hex(palette[k]).every((v, i) => Math.abs(v - rgb[i]) <= 3)) || null;
+}
+
 function inline(node, images, warnings) {
   let out = '';
   for (const c of node.childNodes) {
@@ -64,6 +73,12 @@ function inline(node, images, warnings) {
     else if (tag === 'A') {
       const href = c.getAttribute('href') || '';
       out += /^(https?:|mailto:)/i.test(href) && inner.trim() ? `[${inner.trim()}](${href})` : inner;
+    } else if (['SPAN', 'FONT', 'MARK'].includes(tag)) {
+      // Farbe und Hervorhebung: [Text]{blau,hl-gelb} – nur Farben der Palette.
+      const color = TEXT_COLORS[c.dataset?.color] ? c.dataset.color : paletteName(c.style?.color || c.getAttribute('color'), TEXT_COLORS);
+      const hl = HIGHLIGHTS[c.dataset?.hl] ? c.dataset.hl : paletteName(c.style?.backgroundColor, HIGHLIGHTS) || (tag === 'MARK' ? 'gelb' : null);
+      const spec = [color, hl ? `hl-${hl}` : ''].filter(Boolean).join(',');
+      out += spec && inner.trim() && !inner.includes('\\\n') ? `[${inner}]{${spec}}` : inner;
     } else out += inner;
   }
   return out;
@@ -133,6 +148,16 @@ function cssPx(len) {
  * eingefügt) passen nicht in einen Listentext – sie kommen in `lifted` und
  * folgen der Liste, statt als Buchstabensalat im Punkt zu landen.
  */
+/** Einzug und Zeilenabstand eines Absatzes bzw. einer Liste (data-indent, data-lh). */
+function paraOf(el) {
+  const out = {};
+  const indent = Number(el?.dataset?.indent);
+  if (Number.isInteger(indent) && indent >= 1 && indent <= 6) out.indent = indent;
+  const lh = Number(el?.dataset?.lh);
+  if (LINE_HEIGHTS.includes(lh)) out.lineHeight = lh;
+  return out;
+}
+
 function listBlock(el, images, warnings, lifted = []) {
   const items = [];
   for (const li of el.children) {
@@ -151,6 +176,9 @@ function listBlock(el, images, warnings, lifted = []) {
   }
   const block = { type: 'list', items };
   if (el.tagName === 'OL') block.ordered = true;
+  if (el.tagName === 'UL' && LIST_MARKERS.includes(el.dataset.marker)) block.marker = el.dataset.marker;
+  if (el.tagName === 'OL' && LIST_NUMBERINGS.includes(el.dataset.numbering)) block.numbering = el.dataset.numbering;
+  if (LINE_HEIGHTS.includes(Number(el.dataset.lh))) block.lineHeight = Number(el.dataset.lh);
   return block;
 }
 
@@ -177,9 +205,12 @@ function tableBlock(el, warnings, used = new Set()) {
       .map(({ type: _t, float: _f, caption: _c, border: _b, ...img }) => img);
     // Ausrichtung der Zelle (Tabellenleiste ⇤ ↔ ⇥) – sonst gilt die der Tabelle.
     const align = ['left', 'center', 'right'].includes(td.style?.textAlign) ? td.style.textAlign : null;
-    if (cs === 1 && rs === 1 && !images.length && !blocks?.length) return align ? { text, align } : text;
+    const background = CELL_BACKGROUNDS[td.dataset?.bg] ? td.dataset.bg : null;
+    if (cs === 1 && rs === 1 && !images.length && !blocks?.length) {
+      return align || background ? { text, ...(align ? { align } : {}), ...(background ? { background } : {}) } : text;
+    }
     const beside = images.length && td.classList.contains('ws-cell-beside');
-    return { text, ...(align ? { align } : {}), ...(cs > 1 ? { colspan: Math.min(cs, 20) } : {}), ...(rs > 1 ? { rowspan: Math.min(rs, 20) } : {}), ...(images.length ? { images } : {}), ...(beside ? { beside: true } : {}), ...(blocks?.length ? { blocks } : {}) };
+    return { text, ...(align ? { align } : {}), ...(background ? { background } : {}), ...(cs > 1 ? { colspan: Math.min(cs, 20) } : {}), ...(rs > 1 ? { rowspan: Math.min(rs, 20) } : {}), ...(images.length ? { images } : {}), ...(beside ? { beside: true } : {}), ...(blocks?.length ? { blocks } : {}) };
   };
   const rowsOf = (section) => [...(section?.children || [])].filter((r) => r.tagName === 'TR')
     .map((tr) => [...tr.children].filter((c) => c.tagName === 'TD' || c.tagName === 'TH').map(cell));
@@ -197,6 +228,7 @@ function tableBlock(el, warnings, used = new Set()) {
   const lw = Number(el.dataset.lineWidth);
   if (lw >= 0.25 && lw <= 6) block.lineWidth = lw;
   if (TABLE_LINE_STYLES.includes(el.dataset.lineStyle)) block.lineStyle = el.dataset.lineStyle;
+  if (LINE_COLORS[el.dataset.lineColor]) block.lineColor = el.dataset.lineColor;
   // Feste Spaltenbreiten (<col style="width">) und Zeilenhöhen (<tr style="height">), in cm.
   const trim = (list) => { while (list.length && !list[list.length - 1]) list.pop(); return list; };
   const cols = [...el.children].filter((c) => c.tagName === 'COLGROUP').flatMap((g) => [...g.children].filter((c) => c.tagName === 'COL'));
@@ -308,13 +340,16 @@ function blocksOf(parent, warnings, used = new Set()) {
   const pushText = (text, align, el = null) => {
     if (!text) return;
     const prev = out[out.length - 1];
-    const mergeable = !align && prev && prev.type === 'text' && !prev.align && !prev._closed;
+    // Einzug und Zeilenabstand (Editorleiste) – solche Absätze stehen für sich.
+    const extra = paraOf(el);
+    const plain = !align && !Object.keys(extra).length;
+    const mergeable = plain && prev && prev.type === 'text' && !prev.align && !prev.indent && !prev.lineHeight && !prev._closed;
     // Aufeinanderfolgende einfache Absätze werden ein Textblock (Leerzeile trennt) –
     // außer der Absatz gehört zu einem anderen Block (eigene data-id). Mit Enter
     // geteilte Absätze tragen dieselbe ID wie ihr Block.
     const raw = el?.getAttribute?.('data-id');
     if (mergeable && (!raw || raw === prev.id)) { prev.text += `\n\n${text}`; return; }
-    out.push(withId(align ? { type: 'text', align, text } : { type: 'text', text }, takeId(el, used)));
+    out.push(withId({ type: 'text', ...(align ? { align } : {}), ...extra, text }, takeId(el, used)));
   };
   const close = () => { const prev = out[out.length - 1]; if (prev) prev._closed = true; };
   const spacer = () => {
@@ -442,9 +477,11 @@ export function widgetHtml(block) {
 const idAttr = (b) => (isBlockId(b?.id) ? ` data-id="${b.id}"` : '');
 
 /** Absätze eines Textblocks; alle tragen seine ID – so bleibt er beim Rückweg ein Block. */
-function paragraphsHtml(text, align, id = '') {
-  const style = align && align !== 'left' ? ` style="text-align:${align}"` : '';
-  return String(text).split('\n\n').map((p) => `<p${id}${style}>${richText(p.trim()) || '<br>'}</p>`).join('');
+function paragraphsHtml(text, align, id = '', block = null) {
+  const css = [align && align !== 'left' ? `text-align:${align}` : '', paraStyle(block)].filter(Boolean).join(';');
+  const data = `${block?.indent ? ` data-indent="${block.indent}"` : ''}${block?.lineHeight ? ` data-lh="${block.lineHeight}"` : ''}`;
+  const style = css ? ` style="${css}"` : '';
+  return String(text).split('\n\n').map((p) => `<p${id}${data}${style}>${richText(p.trim()) || '<br>'}</p>`).join('');
 }
 
 function listItemsHtml(items, ordered, id = '') {
@@ -464,7 +501,8 @@ function cellsHtml(tag, row, blocksHtml = () => '') {
       }).join('');
       const inner = Array.isArray(c.blocks) ? blocksHtml(c.blocks) : '';
       // Leere Zelle mit <br>: Sonst nimmt sie keine Schreibmarke an (der Klick landete daneben).
-      const align = ['left', 'center', 'right'].includes(c.align) ? ` style="text-align:${c.align}"` : '';
+      const css = [['left', 'center', 'right'].includes(c.align) ? `text-align:${c.align}` : '', CELL_BACKGROUNDS[c.background] ? `background-color:${CELL_BACKGROUNDS[c.background]}` : ''].filter(Boolean).join(';');
+      const align = `${CELL_BACKGROUNDS[c.background] ? ` data-bg="${c.background}"` : ''}${css ? ` style="${css}"` : ''}`;
       return `<${tag}${span('colspan', c.colspan)}${span('rowspan', c.rowspan)}${c.beside ? ' class="ws-cell-beside"' : ''}${align}>${richText(c.text ?? '')}${images}${inner}${!c.text && !images && !inner ? '<br>' : ''}</${tag}>`;
     }
     return `<${tag}>${richText(c ?? '') || '<br>'}</${tag}>`;
@@ -489,14 +527,16 @@ export function specToEditorHtml(spec) {
         return `<h${level} data-ds="heading"${idAttr(b)}>${richText(b.text ?? b.title ?? '')}</h${level}>`;
       }
       case 'text':
-        return paragraphsHtml(b.text ?? '', b.align, idAttr(b));
+        return paragraphsHtml(b.text ?? '', b.align, idAttr(b), b);
       case 'note':
         return `<p data-ds="note"${idAttr(b)}><em>${richText(b.text ?? '')}</em></p>`;
-      case 'list':
-        return listItemsHtml(b.items, b.ordered, idAttr(b));
+      case 'list': {
+        const attrs = `${idAttr(b)}${b.marker && !b.ordered ? ` data-marker="${esc(b.marker)}"` : ''}${b.numbering && b.ordered ? ` data-numbering="${esc(b.numbering)}"` : ''}${b.lineHeight ? ` data-lh="${b.lineHeight}"` : ''}${paraStyle(b) ? ` style="${paraStyle(b)}"` : ''}`;
+        return listItemsHtml(b.items, b.ordered, attrs);
+      }
       case 'table': {
         const off = Array.isArray(b.header) ? 1 : 0;
-        return `<table${idAttr(b)}${b.border === false ? ' class="ws-table-plain"' : ''}${['left', 'center', 'right'].includes(b.align) ? ` data-align="${b.align}"` : ''}${b.lineWidth ? ` data-line-width="${esc(b.lineWidth)}"` : ''}${b.lineStyle ? ` data-line-style="${esc(b.lineStyle)}"` : ''}${tableLineStyle(b)}${b.caption ? ` data-caption="${esc(b.caption)}"` : ''}>${tableColgroup(b)}${off ? `<thead><tr${tableRowAttr(b, 0)}>${cellsHtml('th', b.header, blocks)}</tr></thead>` : ''}<tbody>${(b.rows || []).filter(Array.isArray).map((r, i) => `<tr${tableRowAttr(b, i + off)}>${cellsHtml('td', r, blocks)}</tr>`).join('')}</tbody></table>`;
+        return `<table${idAttr(b)}${b.border === false ? ' class="ws-table-plain"' : ''}${['left', 'center', 'right'].includes(b.align) ? ` data-align="${b.align}"` : ''}${b.lineWidth ? ` data-line-width="${esc(b.lineWidth)}"` : ''}${b.lineStyle ? ` data-line-style="${esc(b.lineStyle)}"` : ''}${b.lineColor ? ` data-line-color="${esc(b.lineColor)}"` : ''}${tableLineStyle(b)}${b.caption ? ` data-caption="${esc(b.caption)}"` : ''}>${tableColgroup(b)}${off ? `<thead><tr${tableRowAttr(b, 0)}>${cellsHtml('th', b.header, blocks)}</tr></thead>` : ''}<tbody>${(b.rows || []).filter(Array.isArray).map((r, i) => `<tr${tableRowAttr(b, i + off)}>${cellsHtml('td', r, blocks)}</tr>`).join('')}</tbody></table>`;
       }
       case 'image': {
         if (typeof b.src !== 'string') return widgetHtml(b);

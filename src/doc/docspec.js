@@ -16,6 +16,19 @@ export const DOC_BLOCK_TYPES = ['section', 'task', 'subtask', 'heading', 'text',
 const HEADING_TYPES = ['section', 'task', 'subtask'];
 const WITH_BLOCKS = ['section', 'task', 'subtask', 'solution', 'box', 'columns', 'column'];
 const ALIGNS = ['left', 'center', 'right', 'justify'];
+// Absätze: Einzug in cm (1–6), Zeilenabstand; Listen: Zeichen bzw. Nummerierung.
+export const LINE_HEIGHTS = [1, 1.15, 1.5, 2];
+export const LIST_MARKERS = ['dash', 'arrow', 'square', 'check'];
+export const LIST_NUMBERINGS = ['a', 'i'];
+const indentOk = (v) => Number.isInteger(v) && v >= 1 && v <= 6;
+
+/** style-Attribut für Einzug und Zeilenabstand eines Absatzes bzw. einer Liste. */
+export function paraStyle(block) {
+  const parts = [];
+  if (indentOk(block?.indent)) parts.push(`margin-left:${block.indent}cm`);
+  if (LINE_HEIGHTS.includes(block?.lineHeight)) parts.push(`line-height:${Math.round(block.lineHeight * 140) / 100}`);
+  return parts.join(';');
+}
 const FLOATS = ['left', 'right', 'center'];
 // Bildquellen, die in der App angezeigt werden dürfen. Verweise per `file:`
 // gibt es nur im Kurs-Projekt des Generators.
@@ -31,13 +44,17 @@ const CELL_ALIGNS = ['left', 'center', 'right'];
 // Linien einer Tabelle: Stärke in pt, Art.
 export const TABLE_LINE_STYLES = ['solid', 'dashed', 'dotted'];
 const lineWidthOk = (v) => typeof v === 'number' && v >= 0.25 && v <= 6;
+// Rahmenfarbe der Tabelle und Hintergrund einer Zelle – feste Paletten.
+export const LINE_COLORS = { schwarz: '#1f2937', grau: '#9ca3af', blau: '#1d4ed8', gruen: '#15803d', orange: '#c2410c', lila: '#7e22ce' };
+export const CELL_BACKGROUNDS = { grau: '#e5e7eb', gelb: '#fef08a', gruen: '#bbf7d0', blau: '#bfdbfe', rosa: '#fbcfe8' };
 
 /** style-Attribut mit den Linien einer Tabelle (CSS-Variablen; innere Tabellen setzen eigene). */
 export function tableLineStyle(block) {
   const w = lineWidthOk(block?.lineWidth) ? block.lineWidth : null;
   const s = TABLE_LINE_STYLES.includes(block?.lineStyle) ? block.lineStyle : null;
-  if (!w && !s) return '';
-  return ` style="--ds-line-w:${w ?? 0.75}pt;--ds-line-s:${s ?? 'solid'};--ds-line-c:#1f2937"`;
+  const c = LINE_COLORS[block?.lineColor] || null;
+  if (!w && !s && !c) return '';
+  return ` style="--ds-line-w:${w ?? 0.75}pt;--ds-line-s:${s ?? 'solid'};--ds-line-c:${c ?? LINE_COLORS.schwarz}"`;
 }
 const tableLengthOk = (v) => v === null || v === '' || TABLE_LENGTH_RE.test(String(v).trim());
 
@@ -93,6 +110,7 @@ function cellOk(c) {
   return (c.text === undefined || isText(c.text)) && span(c.colspan) && span(c.rowspan) && images
     && (c.beside === undefined || typeof c.beside === 'boolean')
     && (c.align === undefined || CELL_ALIGNS.includes(c.align))
+    && (c.background === undefined || !!CELL_BACKGROUNDS[c.background])
     && (c.blocks === undefined || Array.isArray(c.blocks));
 }
 
@@ -128,6 +146,8 @@ function checkBlock(block, path, errors, inSolution, parent = '') {
     case 'text':
       need(isText(block.text), 'text fehlt.');
       if (block.align !== undefined) need(ALIGNS.includes(block.align), `align: ${ALIGNS.join(', ')}.`);
+      if (block.indent !== undefined) need(indentOk(block.indent), 'indent: Einzug in cm, ganze Zahl von 1 bis 6.');
+      if (block.lineHeight !== undefined) need(LINE_HEIGHTS.includes(block.lineHeight), `lineHeight: ${LINE_HEIGHTS.join(', ')}.`);
       break;
     case 'note':
       need(isText(block.text), 'text fehlt.');
@@ -135,6 +155,9 @@ function checkBlock(block, path, errors, inSolution, parent = '') {
     case 'list':
       need(Array.isArray(block.items) && block.items.length > 0, 'items: Liste mit mindestens einem Punkt fehlt.');
       if (Array.isArray(block.items)) need(listItemsOk(block.items, 1), 'items: Jeder Punkt ist ein Text oder { text, items } (höchstens 3 Ebenen).');
+      if (block.marker !== undefined) need(LIST_MARKERS.includes(block.marker), `marker: ${LIST_MARKERS.join(', ')} (check = Checkliste ☐).`);
+      if (block.numbering !== undefined) need(LIST_NUMBERINGS.includes(block.numbering), `numbering: ${LIST_NUMBERINGS.join(', ')} (a = a), b) …, i = i., ii. …).`);
+      if (block.lineHeight !== undefined) need(LINE_HEIGHTS.includes(block.lineHeight), `lineHeight: ${LINE_HEIGHTS.join(', ')}.`);
       break;
     case 'box':
       need(Array.isArray(block.blocks) || isText(block.text), 'blocks oder text fehlt.');
@@ -167,6 +190,7 @@ function checkBlock(block, path, errors, inSolution, parent = '') {
       if (block.heights !== undefined) need(Array.isArray(block.heights) && block.heights.length <= 200 && block.heights.every(tableLengthOk), 'heights: Liste der Mindesthöhen je Zeile (Kopfzeile zuerst), z. B. ["", "2cm"].');
       if (block.lineWidth !== undefined) need(lineWidthOk(block.lineWidth), 'lineWidth: Liniendicke in pt von 0.25 bis 6, z. B. 1.5.');
       if (block.lineStyle !== undefined) need(TABLE_LINE_STYLES.includes(block.lineStyle), `lineStyle: ${TABLE_LINE_STYLES.join(', ')}.`);
+      if (block.lineColor !== undefined) need(!!LINE_COLORS[block.lineColor], `lineColor: ${Object.keys(LINE_COLORS).join(', ')}.`);
       if (block.align !== undefined) need(CELL_ALIGNS.includes(block.align), `align: ${CELL_ALIGNS.join(', ')} (Ausrichtung aller Zellen).`);
       if (block.border !== undefined) need(typeof block.border === 'boolean', 'border: true oder false (false = ohne Linien, z. B. Abbildungen nebeneinander).');
       for (const row of [...(Array.isArray(block.header) ? [block.header] : []), ...(Array.isArray(block.rows) ? block.rows : [])]) {
@@ -256,6 +280,23 @@ export function textLines(text) {
 // *kursiv*, ++unterstrichen++, ~~durchgestrichen~~, `code`, ^{hoch}, _{tief},
 // [Text](https://…). Die Zeichen wirken nur am Wortrand – „8*7“ bleibt eine
 // Rechnung. Ein Backslash davor schreibt das Zeichen selbst.
+/**
+ * Farben im Text: `[Text]{blau}` (Schrift), `[Text]{hl-gelb}` (Hervorhebung),
+ * beides: `[Text]{blau,hl-gelb}`. Kein Rot – rote Schrift heißt „Lösung“.
+ */
+export const TEXT_COLORS = { blau: '#1d4ed8', gruen: '#15803d', orange: '#c2410c', lila: '#7e22ce', grau: '#6b7280' };
+export const HIGHLIGHTS = { gelb: '#fef08a', gruen: '#bbf7d0', blau: '#bfdbfe', rosa: '#fbcfe8' };
+
+/** `blau,hl-gelb` → { color, hl } (nur bekannte Namen). */
+export function parseColorSpec(spec) {
+  const out = {};
+  for (const part of String(spec || '').split(',')) {
+    if (part.startsWith('hl-') && HIGHLIGHTS[part.slice(3)]) out.hl = part.slice(3);
+    else if (TEXT_COLORS[part]) out.color = part;
+  }
+  return out;
+}
+
 const INLINE_RE = new RegExp([
   '\\\\(?<esc>[\\\\*`\\[\\]^~+{}])',
   '`(?<code>[^`\\n]+)`',
@@ -267,6 +308,7 @@ const INLINE_RE = new RegExp([
   '\\^\\{(?<sup>[^}]{1,40})\\}',
   '_\\{(?<sub>[^}]{1,24})\\}',
   '\\[(?<atext>[^\\]\\n]+)\\]\\((?<href>(?:https?://|mailto:)[^)\\s]+)\\)',
+  '\\[(?<ctext>[^\\]\\n]+)\\]\\{(?<color>[a-z-]+(?:,[a-z-]+)?)\\}',
 ].join('|'), 'g');
 
 /** Unbeschriebener Text: `n_S`-Indizes wie bisher. */
@@ -302,6 +344,13 @@ export function inlineHtml(line) {
     else if (g.sup !== undefined) html += `<sup>${esc(g.sup)}</sup>`;
     else if (g.sub !== undefined) html += `<sub>${esc(g.sub)}</sub>`;
     else if (g.href !== undefined) html += `<a href="${esc(g.href)}" target="_blank" rel="noopener noreferrer">${inlineHtml(g.atext)}</a>`;
+    else if (g.color !== undefined) {
+      const { color, hl } = parseColorSpec(g.color);
+      const style = [color ? `color:${TEXT_COLORS[color]}` : '', hl ? `background:${HIGHLIGHTS[hl]}` : ''].filter(Boolean).join(';');
+      html += style
+        ? `<span class="ds-color"${color ? ` data-color="${color}"` : ''}${hl ? ` data-hl="${hl}"` : ''} style="${style}">${inlineHtml(g.ctext)}</span>`
+        : plainText(m[0]); // unbekannte Farbe: wörtlich
+    }
   }
   buf += String(line).slice(pos);
   flush();
@@ -664,7 +713,8 @@ export function tableRowAttr(block, r) {
 
 function cellHtml(tag, c, ctx = null) {
   if (isText(c)) return `<${tag}>${richText(c)}</${tag}>`;
-  const alignAttr = CELL_ALIGNS.includes(c?.align) ? ` style="text-align:${c.align}"` : '';
+  const cellCss = [CELL_ALIGNS.includes(c?.align) ? `text-align:${c.align}` : '', CELL_BACKGROUNDS[c?.background] ? `background:${CELL_BACKGROUNDS[c.background]}` : ''].filter(Boolean).join(';');
+  const alignAttr = cellCss ? ` style="${cellCss}"` : '';
   const span = (name, v) => (Number.isInteger(v) && v > 1 && v <= 20 ? ` ${name}="${v}"` : '');
   const images = (Array.isArray(c?.images) ? c.images : []).filter(cellImageOk).map((i) => {
     const width = CSS_LENGTH_RE.test(String(i.width ?? '')) ? ` style="width:${i.width}"` : '';
@@ -713,7 +763,8 @@ function renderBlockHtml(block, ctx) {
     case 'text': {
       if (!isText(block.text)) return '';
       const html = paragraphs(block.text);
-      return ALIGNS.includes(block.align) && block.align !== 'left' ? html.replace(/<p class="ds-text">/g, `<p class="ds-text" style="text-align:${block.align}">`) : html;
+      const style = [ALIGNS.includes(block.align) && block.align !== 'left' ? `text-align:${block.align}` : '', paraStyle(block)].filter(Boolean).join(';');
+      return style ? html.replace(/<p class="ds-text">/g, `<p class="ds-text" style="${style}">`) : html;
     }
     case 'columns':
       // Spalten direkt (ohne Hülle je Spalte) – sonst stünden sie nicht nebeneinander.
@@ -733,8 +784,12 @@ function renderBlockHtml(block, ctx) {
     }
     case 'note':
       return isText(block.text) ? `<p class="ds-note"><em>${richText(block.text)}</em></p>` : '';
-    case 'list':
-      return listHtml(block.items, !!block.ordered);
+    case 'list': {
+      const html = listHtml(block.items, !!block.ordered);
+      const cls = [LIST_MARKERS.includes(block.marker) && !block.ordered ? `ds-list-${block.marker}` : '', LIST_NUMBERINGS.includes(block.numbering) && block.ordered ? `ds-list-num-${block.numbering}` : ''].filter(Boolean).join(' ');
+      const style = paraStyle(block);
+      return cls || style ? html.replace(/^<(ol|ul) class="ds-list">/, `<$1 class="ds-list${cls ? ` ${cls}` : ''}"${style ? ` style="${style}"` : ''}>`) : html;
+    }
     case 'code': {
       const caption = isText(block.caption) ? `<p class="ds-caption"><em>${esc(block.caption)}</em></p>` : '';
       const code = isText(block.code)

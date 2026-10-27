@@ -384,3 +384,32 @@ describe('Tabelle: Linien (lineWidth, lineStyle)', () => {
     expect(ds.validateDocSpec({ content: [{ ...block, lineStyle: 'wavy' }] }).join(' ')).toContain('lineStyle');
   });
 });
+
+describe('Formatleiste: Farben, Absätze, Listen, Tabellenfarben', () => {
+  it('Textfarbe und Hervorhebung', () => {
+    expect(ds.inlineHtml('[a]{blau,hl-gelb}')).toBe('<span class="ds-color" data-color="blau" data-hl="gelb" style="color:#1d4ed8;background:#fef08a">a</span>');
+    expect(ds.inlineHtml('[a]{rot}')).toBe('[a]{rot}');
+  });
+  it('Einzug, Zeilenabstand, Listenarten', () => {
+    const content = [
+      { type: 'text', text: 'x', indent: 2, lineHeight: 1.5, align: 'justify' },
+      { type: 'list', marker: 'check', items: ['a'] },
+      { type: 'list', ordered: true, numbering: 'i', items: ['a'] },
+    ];
+    expect(ds.validateDocSpec({ content })).toEqual([]);
+    const html = ds.renderDocSpecHtml({ content });
+    expect(html).toContain('style="text-align:justify;margin-left:2cm;line-height:2.1"');
+    expect(html).toContain('class="ds-list ds-list-check"');
+    expect(html).toContain('class="ds-list ds-list-num-i"');
+    expect(ds.validateDocSpec({ content: [{ type: 'text', text: 'x', indent: 9 }] }).join(' ')).toContain('indent');
+    expect(ds.validateDocSpec({ content: [{ type: 'list', marker: 'stern', items: ['a'] }] }).join(' ')).toContain('marker');
+  });
+  it('Rahmenfarbe und Zellenhintergrund', () => {
+    const block = { type: 'table', lineColor: 'blau', rows: [[{ text: 'a', background: 'gelb' }]] };
+    expect(ds.validateDocSpec({ content: [block] })).toEqual([]);
+    const html = ds.renderDocSpecHtml({ content: [block] });
+    expect(html).toContain('--ds-line-c:#1d4ed8');
+    expect(html).toContain('<td style="background:#fef08a">a</td>');
+    expect(ds.validateDocSpec({ content: [{ ...block, lineColor: 'rot' }] }).join(' ')).toContain('lineColor');
+  });
+});

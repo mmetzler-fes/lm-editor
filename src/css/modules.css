@@ -822,6 +822,14 @@ body {
 .docspec .ds-table tr[style*="height"] > td:empty, .docspec .ds-table tr[style*="height"] > th:empty { height: auto; }
 /* Zelle mit beside: Bilder neben dem Text */
 .docspec .ds-cell-beside { display: flex; align-items: center; gap: 8px; }
+/* Listenarten (marker, numbering) und Farben im Text */
+.docspec .ds-list-dash, .worksheet-content ul[data-marker="dash"] { list-style-type: '– '; }
+.docspec .ds-list-arrow, .worksheet-content ul[data-marker="arrow"] { list-style-type: '➤ '; }
+.docspec .ds-list-square, .worksheet-content ul[data-marker="square"] { list-style-type: square; }
+.docspec .ds-list-check, .worksheet-content ul[data-marker="check"] { list-style-type: '☐ '; }
+.docspec .ds-list-num-a, .worksheet-content ol[data-numbering="a"] { list-style-type: lower-alpha; }
+.docspec .ds-list-num-i, .worksheet-content ol[data-numbering="i"] { list-style-type: lower-roman; }
+.ds-color { border-radius: 2px; padding: 0 1px; }
 /* Ausrichtung der Tabelle (align) – Zellen mit eigener Ausrichtung tragen sie im style */
 .docspec .ds-table.ds-align-left > * > tr > td, .docspec .ds-table.ds-align-left > * > tr > th { text-align: left; }
 .docspec .ds-table.ds-align-center > * > tr > td, .docspec .ds-table.ds-align-center > * > tr > th { text-align: center; }

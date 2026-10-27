@@ -55,13 +55,28 @@ const lineWidthOk = (v) => typeof v === 'number' && v >= 0.25 && v <= 6;
 export const LINE_COLORS = { schwarz: '#1f2937', grau: '#9ca3af', blau: '#1d4ed8', gruen: '#15803d', orange: '#c2410c', lila: '#7e22ce' };
 export const CELL_BACKGROUNDS = { grau: '#e5e7eb', gelb: '#fef08a', gruen: '#bbf7d0', blau: '#bfdbfe', rosa: '#fbcfe8' };
 
-/** style-Attribut mit den Linien einer Tabelle (CSS-Variablen; innere Tabellen setzen eigene). */
+// Tabelle als Ganzes: Breite (cm), Lage auf der Seite, Abstand oben/unten, Innenabstand der Zellen.
+export const TABLE_POSITIONS = ['left', 'center', 'right'];
+const tableWidthOk = (v) => typeof v === 'number' && v >= 2 && v <= 17;
+const paddingOk = (v) => typeof v === 'number' && v >= 0 && v <= 1;
+
+/**
+ * style-Attribut einer Tabelle: Linien (CSS-Variablen; innere Tabellen setzen
+ * eigene), Breite, Lage, Abstand oben/unten und Innenabstand der Zellen.
+ */
 export function tableLineStyle(block) {
+  const css = [];
   const w = lineWidthOk(block?.lineWidth) ? block.lineWidth : null;
   const s = TABLE_LINE_STYLES.includes(block?.lineStyle) ? block.lineStyle : null;
   const c = LINE_COLORS[block?.lineColor] || null;
-  if (!w && !s && !c) return '';
-  return ` style="--ds-line-w:${w ?? 0.75}pt;--ds-line-s:${s ?? 'solid'};--ds-line-c:${c ?? LINE_COLORS.schwarz}"`;
+  if (w || s || c) css.push(`--ds-line-w:${w ?? 0.75}pt`, `--ds-line-s:${s ?? 'solid'}`, `--ds-line-c:${c ?? LINE_COLORS.schwarz}`);
+  if (tableWidthOk(block?.width)) css.push(`width:${block.width}cm`);
+  if (block?.position === 'center') css.push('margin-left:auto', 'margin-right:auto');
+  if (block?.position === 'right') css.push('margin-left:auto');
+  if (spaceOk(block?.spaceBefore)) css.push(`margin-top:${block.spaceBefore}cm`);
+  if (spaceOk(block?.spaceAfter)) css.push(`margin-bottom:${block.spaceAfter}cm`);
+  if (paddingOk(block?.padding)) css.push(`--ds-cell-pad:${block.padding}cm`);
+  return css.length ? ` style="${css.join(';')}"` : '';
 }
 const tableLengthOk = (v) => v === null || v === '' || TABLE_LENGTH_RE.test(String(v).trim());
 
@@ -204,6 +219,11 @@ function checkBlock(block, path, errors, inSolution, parent = '') {
       if (block.lineWidth !== undefined) need(lineWidthOk(block.lineWidth), 'lineWidth: Liniendicke in pt von 0.25 bis 6, z. B. 1.5.');
       if (block.lineStyle !== undefined) need(TABLE_LINE_STYLES.includes(block.lineStyle), `lineStyle: ${TABLE_LINE_STYLES.join(', ')}.`);
       if (block.lineColor !== undefined) need(!!LINE_COLORS[block.lineColor], `lineColor: ${Object.keys(LINE_COLORS).join(', ')}.`);
+      if (block.width !== undefined) need(tableWidthOk(block.width), 'width: Breite der Tabelle in cm, 2 bis 17.');
+      if (block.position !== undefined) need(TABLE_POSITIONS.includes(block.position), `position: ${TABLE_POSITIONS.join(', ')} (Lage auf der Seite).`);
+      if (block.spaceBefore !== undefined) need(spaceOk(block.spaceBefore), 'spaceBefore: Abstand über der Tabelle in cm, 0 bis 3.');
+      if (block.spaceAfter !== undefined) need(spaceOk(block.spaceAfter), 'spaceAfter: Abstand unter der Tabelle in cm, 0 bis 3.');
+      if (block.padding !== undefined) need(paddingOk(block.padding), 'padding: Innenabstand der Zellen in cm, 0 bis 1.');
       if (block.align !== undefined) need(CELL_ALIGNS.includes(block.align), `align: ${CELL_ALIGNS.join(', ')} (Ausrichtung aller Zellen).`);
       if (block.valign !== undefined) need(CELL_VALIGNS.includes(block.valign), `valign: ${CELL_VALIGNS.join(', ')} (senkrechte Ausrichtung aller Zellen).`);
       if (block.border !== undefined) need(typeof block.border === 'boolean', 'border: true oder false (false = ohne Linien, z. B. Abbildungen nebeneinander).');

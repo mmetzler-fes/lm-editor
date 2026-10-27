@@ -424,3 +424,18 @@ describe('Tabelle: senkrechte Ausrichtung (valign)', () => {
     expect(ds.validateDocSpec({ content: [{ ...block, valign: 'mitte' }] }).join(' ')).toContain('valign');
   });
 });
+
+describe('Absatz und Tabelle als Ganzes', () => {
+  it('Abstand vor/nach, erste Zeile', () => {
+    const block = { type: 'text', text: 'x', spaceBefore: 0.6, spaceAfter: 1, firstLine: -0.5, indent: 1.5 };
+    expect(ds.validateDocSpec({ content: [block] })).toEqual([]);
+    expect(ds.renderDocSpecHtml({ content: [block] })).toContain('margin-left:1.5cm;text-indent:-0.5cm;margin-top:0.6cm;margin-bottom:1cm');
+    expect(ds.validateDocSpec({ content: [{ ...block, spaceBefore: 5 }] }).join(' ')).toContain('spaceBefore');
+  });
+  it('Breite, Lage, Abstand, Innenabstand der Tabelle', () => {
+    const block = { type: 'table', width: 9, position: 'center', spaceBefore: 0.5, padding: 0.3, rows: [['a']] };
+    expect(ds.validateDocSpec({ content: [block] })).toEqual([]);
+    expect(ds.renderDocSpecHtml({ content: [block] })).toContain('style="width:9cm;margin-left:auto;margin-right:auto;margin-top:0.5cm;--ds-cell-pad:0.3cm"');
+    expect(ds.validateDocSpec({ content: [{ ...block, width: 30 }] }).join(' ')).toContain('width:');
+  });
+});

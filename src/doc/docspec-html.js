@@ -243,6 +243,13 @@ function tableBlock(el, warnings, used = new Set()) {
   if (lw >= 0.25 && lw <= 6) block.lineWidth = lw;
   if (TABLE_LINE_STYLES.includes(el.dataset.lineStyle)) block.lineStyle = el.dataset.lineStyle;
   if (LINE_COLORS[el.dataset.lineColor]) block.lineColor = el.dataset.lineColor;
+  // Tabelle als Ganzes (Tabelleneigenschaften …).
+  const tnum = (k) => (el.dataset[k] !== undefined && el.dataset[k] !== '' ? Number(el.dataset[k]) : NaN);
+  if (tnum('width') >= 2 && tnum('width') <= 17) block.width = tnum('width');
+  if (['left', 'center', 'right'].includes(el.dataset.position)) block.position = el.dataset.position;
+  if (tnum('sb') >= 0 && tnum('sb') <= 3) block.spaceBefore = tnum('sb');
+  if (tnum('sa') >= 0 && tnum('sa') <= 3) block.spaceAfter = tnum('sa');
+  if (tnum('pad') >= 0 && tnum('pad') <= 1) block.padding = tnum('pad');
   // Feste Spaltenbreiten (<col style="width">) und Zeilenhöhen (<tr style="height">), in cm.
   const trim = (list) => { while (list.length && !list[list.length - 1]) list.pop(); return list; };
   const cols = [...el.children].filter((c) => c.tagName === 'COLGROUP').flatMap((g) => [...g.children].filter((c) => c.tagName === 'COL'));
@@ -550,7 +557,7 @@ export function specToEditorHtml(spec) {
       }
       case 'table': {
         const off = Array.isArray(b.header) ? 1 : 0;
-        return `<table${idAttr(b)}${b.border === false ? ' class="ws-table-plain"' : ''}${['left', 'center', 'right'].includes(b.align) ? ` data-align="${b.align}"` : ''}${CELL_VALIGNS.includes(b.valign) ? ` data-valign="${b.valign}"` : ''}${b.lineWidth ? ` data-line-width="${esc(b.lineWidth)}"` : ''}${b.lineStyle ? ` data-line-style="${esc(b.lineStyle)}"` : ''}${b.lineColor ? ` data-line-color="${esc(b.lineColor)}"` : ''}${tableLineStyle(b)}${b.caption ? ` data-caption="${esc(b.caption)}"` : ''}>${tableColgroup(b)}${off ? `<thead><tr${tableRowAttr(b, 0)}>${cellsHtml('th', b.header, blocks)}</tr></thead>` : ''}<tbody>${(b.rows || []).filter(Array.isArray).map((r, i) => `<tr${tableRowAttr(b, i + off)}>${cellsHtml('td', r, blocks)}</tr>`).join('')}</tbody></table>`;
+        return `<table${idAttr(b)}${b.border === false ? ' class="ws-table-plain"' : ''}${['left', 'center', 'right'].includes(b.align) ? ` data-align="${b.align}"` : ''}${CELL_VALIGNS.includes(b.valign) ? ` data-valign="${b.valign}"` : ''}${b.lineWidth ? ` data-line-width="${esc(b.lineWidth)}"` : ''}${b.lineStyle ? ` data-line-style="${esc(b.lineStyle)}"` : ''}${b.lineColor ? ` data-line-color="${esc(b.lineColor)}"` : ''}${b.width ? ` data-width="${b.width}"` : ''}${b.position ? ` data-position="${esc(b.position)}"` : ''}${b.spaceBefore !== undefined ? ` data-sb="${b.spaceBefore}"` : ''}${b.spaceAfter !== undefined ? ` data-sa="${b.spaceAfter}"` : ''}${b.padding !== undefined ? ` data-pad="${b.padding}"` : ''}${tableLineStyle(b)}${b.caption ? ` data-caption="${esc(b.caption)}"` : ''}>${tableColgroup(b)}${off ? `<thead><tr${tableRowAttr(b, 0)}>${cellsHtml('th', b.header, blocks)}</tr></thead>` : ''}<tbody>${(b.rows || []).filter(Array.isArray).map((r, i) => `<tr${tableRowAttr(b, i + off)}>${cellsHtml('td', r, blocks)}</tr>`).join('')}</tbody></table>`;
       }
       case 'image': {
         if (typeof b.src !== 'string') return widgetHtml(b);

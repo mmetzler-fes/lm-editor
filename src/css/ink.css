@@ -176,6 +176,9 @@ body.ink-open { overflow: hidden; }
 
 /* ⊕ zum Einfügen zwischen den Bausteinen: groß genug für den Finger, sichtbar nur ein kleiner Punkt. */
 .ink-paper-host .lm-paper { position: relative; }
+/* Beschriftung der Lehrkraft unter der eigenen (Schüler, nur zum Ansehen) hängt an ihrem Baustein. */
+.ink-paper-host .ds-b { position: relative; }
+.ink-teacher-layer { pointer-events: none; }
 .ink-insert-mark {
   position: absolute; left: 0.55cm; width: 30px; height: 30px; margin-top: -15px; padding: 0;
   display: flex; align-items: center; justify-content: center; z-index: 3;

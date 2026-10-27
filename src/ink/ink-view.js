@@ -88,6 +88,51 @@ function blockEl(sheet, bid) {
     || [...sheet.querySelectorAll(`[data-bpath="${CSS.escape(path)}"]`)].find((el) => !el.dataset.bid.startsWith('pos')) || null;
 }
 
+/**
+ * Zwei Stände übereinander: `top` (z. B. die Beschriftung der Lehrkraft) kommt
+ * zu `base` dazu – Schreibfelder und Einfügungen bleiben die von `base`.
+ */
+export function mergeStands(base, top) {
+  if (!top?.layer?.blocks) return base;
+  if (!base?.layer?.blocks) return { ...top, bg: 'paper' };
+  const blocks = { ...base.layer.blocks };
+  for (const [bid, entry] of Object.entries(top.layer.blocks)) {
+    const items = entry.items || [];
+    if (!items.length) continue;
+    blocks[bid] = blocks[bid] ? { ...blocks[bid], items: [...(blocks[bid].items || []), ...items] } : { items, at: entry.at };
+  }
+  return { ...base, bg: 'paper', layer: { ...base.layer, blocks } };
+}
+
+/**
+ * Striche einer Ebene (nur zum Ansehen) in ein gerendertes Blatt zeichnen –
+ * je Baustein ein SVG (`.ink-print-layer`). `sheet`: das .lm-paper-Element.
+ */
+export function drawLayer(sheet, layer, { className = '' } = {}) {
+  const docEl = sheet.querySelector('.docspec') || sheet;
+  const r = sheet.getBoundingClientRect();
+  const pageW = sheet.offsetWidth * PX_PT;
+  const k = r.width ? pageW / r.width : PX_PT;
+  const padLeft = parseFloat(getComputedStyle(sheet).paddingLeft) * PX_PT;
+  for (const [bid, entry] of Object.entries(layer?.blocks || {})) {
+    const items = entry.items || [];
+    if (!items.length) continue;
+    const host = bid === '_' ? null : blockEl(sheet, bid);
+    let svg;
+    if (host && host.getClientRects().length) {
+      svg = inkSvgFor(items, (host.getBoundingClientRect().left - r.left) * k, pageW);
+      host.appendChild(svg);
+    } else {
+      // Ohne Baustein: am Blatt selbst, wo die Striche zuletzt waren.
+      const at = bid === '_' ? 0 : entry.at || 0;
+      svg = inkSvgFor(items.map((it) => moved(it, 0, at)), padLeft, pageW);
+      svg.classList.add('ink-print-free');
+      docEl.prepend(svg);
+    }
+    if (className) svg.classList.add(className);
+  }
+}
+
 /** Blatt in `view` wieder auflösen – das Dokument steht dann wie vorher da. */
 export function removeInkView(view) {
   const wrap = view.querySelector(':scope .ink-view');
@@ -159,24 +204,7 @@ export async function showInkView(view, stand, { landscape = false } = {}) {
 
   // Messen in natürlicher Größe, dann verkleinern.
   wrap.style.zoom = '1';
-  const r = sheet.getBoundingClientRect();
-  const pageW = sheet.offsetWidth * PX_PT;
-  const k = r.width ? pageW / r.width : PX_PT;
-  const padLeft = parseFloat(getComputedStyle(sheet).paddingLeft) * PX_PT;
-  for (const [bid, entry] of Object.entries(layer.blocks || {})) {
-    const items = entry.items || [];
-    if (!items.length) continue;
-    const host = bid === '_' ? null : blockEl(sheet, bid);
-    if (host && host.getClientRects().length) {
-      host.appendChild(inkSvgFor(items, (host.getBoundingClientRect().left - r.left) * k, pageW));
-    } else {
-      // Ohne Baustein: am Blatt selbst, wo die Striche zuletzt waren.
-      const at = bid === '_' ? 0 : entry.at || 0;
-      const svg = inkSvgFor(items.map((it) => moved(it, 0, at)), padLeft, pageW);
-      svg.classList.add('ink-print-free');
-      docEl.prepend(svg);
-    }
-  }
+  drawLayer(sheet, layer);
   const fit = () => {
     const room = view.clientWidth;
     if (room > 0) wrap.style.zoom = String(Math.min(1, room / sheet.offsetWidth));

@@ -1288,6 +1288,46 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     drawItems(sel.page);
   }
 
+  /**
+   * Gewählte Striche und Textfelder als Bild (PNG, durchsichtig) in einen
+   * Baustein des Dokuments: hinter den Baustein an ihrer Stelle, als Lösung
+   * oder als Bild. Aus der Beschriftung verschwinden sie (Strg+Z holt sie zurück).
+   */
+  async function selectionToDocument(asSolution) {
+    const items = selectedItems();
+    const b = selectionBounds();
+    if (!items.length || !b) return;
+    const after = blockAt(b.y + 4)?.bid ?? null;
+    const svg = inkSvgFor(items.map((it) => moved(it, -b.x, -b.y)), 0, b.w);
+    svg.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+    svg.setAttribute('width', String(b.w));
+    svg.setAttribute('height', String(b.h));
+    svg.removeAttribute('style');
+    svg.querySelector('.ink-print-marker')?.setAttribute('opacity', '0.55'); // sonst aus dem CSS
+    let png;
+    try {
+      png = await new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => {
+          const scale = 3; // scharf im Druck
+          const canvas = document.createElement('canvas');
+          canvas.width = Math.max(1, Math.round(b.w * scale));
+          canvas.height = Math.max(1, Math.round(b.h * scale));
+          canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+          resolve(canvas.toDataURL('image/png'));
+        };
+        img.onerror = () => reject(new Error('Bild ließ sich nicht erzeugen.'));
+        img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(new XMLSerializer().serializeToString(svg))}`;
+      });
+    } catch (err) {
+      status(`⚠️ ${err.message}`);
+      return;
+    }
+    const image = { type: 'image', src: png, width: `${(b.w / CM).toFixed(2)}cm` };
+    deleteSelection();
+    runInsert(() => paper.insertBlock(after, asSolution ? { type: 'solution', blocks: [image] } : image));
+  }
+
   // ---------- Kopieren, Einfügen, Gruppieren ----------
   function selectedItems() {
     const sel = state.selection;
@@ -1439,6 +1479,11 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
       entries.push({ label: `Ausschneiden (${key}X)`, onClick: () => cutSelection() });
     }
     if (clipboard) entries.push({ label: `Einfügen (${key}V)`, onClick: () => paste() });
+    // Lehrkraft am eigenen Dokument: Beschriftung als Baustein ins Dokument (z. B. aus .xopp übernommene Lösungen).
+    if (items.length && paper?.insertBlock && doc.bg === 'paper') {
+      entries.push({ label: '💡 Als Lösung ins Dokument', onClick: () => selectionToDocument(true) });
+      entries.push({ label: '🖼 Als Bild ins Dokument', onClick: () => selectionToDocument(false) });
+    }
     if (items.length) {
       entries.push({ label: `Duplizieren (${key}D)`, onClick: () => duplicateSelection() });
       if (items.length > 1 && !groupOfSelection()) entries.push({ label: `Gruppieren (${key}G)`, onClick: () => groupSelection() });

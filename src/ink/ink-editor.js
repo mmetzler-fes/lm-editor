@@ -1186,7 +1186,22 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     box.style.color = item.color;
     box.style.fontSize = `calc(${item.size || TEXT_SIZE}px * var(--z))`;
     box.textContent = item.text || '';
-    box.addEventListener('pointerdown', (e) => { if (state.tool === 'text') e.stopPropagation(); });
+    // Erster Klick auf ein Feld markiert seinen Text, weitere setzen die Schreibmarke.
+    let fresh = false;
+    box.addEventListener('pointerdown', (e) => {
+      if (state.tool !== 'text') return;
+      e.stopPropagation();
+      fresh = document.activeElement !== box;
+    });
+    box.addEventListener('click', () => {
+      if (!fresh || state.tool !== 'text' || !window.getSelection().isCollapsed) return; // gezogene Markierung bleibt
+      fresh = false;
+      const range = document.createRange();
+      range.selectNodeContents(box);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+    });
     box.addEventListener('blur', () => {
       const text = box.innerText.replace(/\s+$/, '');
       const list = doc.pages[p.i].items;

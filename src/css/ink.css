@@ -82,7 +82,7 @@ body.ink-open { overflow: hidden; }
   border-radius: 3px;
 }
 .ink-overlay:not(.ink-tool-text) .ink-text { pointer-events: none; }
-.ink-tool-text .ink-text { outline: 1px dashed #94a3b8; background: rgba(255, 255, 255, 0.6); cursor: text; }
+.ink-tool-text .ink-text { pointer-events: auto; outline: 1px dashed #94a3b8; background: rgba(255, 255, 255, 0.6); cursor: text; }
 .ink-tool-text .ink-text:focus { outline: 1.5px solid var(--accent); }
 .ink-text.ink-selected { outline: 1.5px dashed #3b82f6; }
 .ink-tool-text .ink-page { cursor: text; }

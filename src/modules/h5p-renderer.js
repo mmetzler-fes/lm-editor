@@ -46,14 +46,21 @@ const WIDE_TYPES = new Set(['dragAndDrop', 'imageHotspots', 'video', 'worksheet'
 // Quizze sind für die App gestaltet; auf dem Blatt (11 pt, Stift-Editor)
 // wirken sie oft zu groß – oder am Beamer zu klein. A− / A+ stellt das
 // eingebettete Quiz als Ganzes kleiner oder größer (CSS zoom, Ziehen und
-// Einpassen rechnen das ein). Die Lehrkraft gibt im Dokument eine Größe vor
-// (Block `quiz`, `scale`); was jemand selbst einstellt, merkt sich das Gerät.
+// Einpassen rechnen das ein). Vorgabe der Lehrkraft: am Baustein (`scale`),
+// sonst je Modultyp aus den Dokument-Einstellungen des Ordners
+// (`spec.quizScale`, `*` für die übrigen). Was jemand selbst einstellt,
+// merkt sich das Gerät.
 
 const QUIZ_SCALES = [0.5, 0.6, 0.7, 0.8, 0.9, 1, 1.1, 1.25, 1.5];
 const quizScaleKey = (id) => `lm_quiz_scale:${id}`;
 
-function quizSizeControl(box, slot, moduleId) {
-  const preset = Number(box.dataset.scale) || 1;
+/** Vorgabe für ein Quiz: am Baustein, sonst je Typ aus dem Dokument, sonst 100 %. */
+function quizPreset(box, spec, type) {
+  const q = spec && typeof spec.quizScale === 'object' && spec.quizScale ? spec.quizScale : {};
+  return Number(box.dataset.scale) || Number(q[type]) || Number(q['*']) || 1;
+}
+
+function quizSizeControl(box, slot, moduleId, preset = 1) {
   let scale = preset;
   try { scale = Number(localStorage.getItem(quizScaleKey(moduleId))) || preset; } catch (_) { /* ohne Speicher */ }
   const nearest = (v) => QUIZ_SCALES.reduce((a, b) => (Math.abs(b - v) < Math.abs(a - v) ? b : a), 1);
@@ -1605,7 +1612,7 @@ export class H5pRenderer {
             slot.appendChild(this.createTypePreview(emb.type, embContent, { ...options, embedModule: undefined, moduleId: emb.id, title: emb.title }));
             box.classList.add('ds-quiz-live');
             box.appendChild(slot);
-            quizSizeControl(box, slot, emb.id);
+            quizSizeControl(box, slot, emb.id, quizPreset(box, spec, emb.type));
           });
         }
         // Knöpfe des Dokuments (✍️, ⬇ PDF) in einer eigenen Leiste über dem

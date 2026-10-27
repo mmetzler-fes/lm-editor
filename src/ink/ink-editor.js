@@ -157,7 +157,7 @@ const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<
  *   [{ label, run(afterBid) }] (z. B. Quiz, PDF).
  * - `store`: woanders speichern als auf diesem Gerät – { load() → Stand | null,
  *   save(stand) → true/false, label }; der Stand ist { v, bg, pages, layer, ruler }.
- * - `actions`: weitere Knöpfe in der Leiste – [{ label, title, onClick }].
+ * - `actions`: weitere Knöpfe in der Leiste – [{ label, title, onClick({ close }) }]; vorher wird gespeichert.
  * - `onClose`: nach dem Schließen (der Stand ist dann gespeichert).
  */
 export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = null, solutions = false, paper = null, store = null, actions = [], onClose = null }) {
@@ -1999,9 +1999,10 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     onClose?.();
   }
 
+  // Knöpfe des Gastgebers: erst speichern; `close` schließt den Editor (z. B. Weiter im Durchlauf).
   overlay.querySelectorAll('.ink-action').forEach((b) => b.addEventListener('click', async () => {
     await persist();
-    await actions[Number(b.dataset.action)].onClick();
+    await actions[Number(b.dataset.action)].onClick({ close });
   }));
   paintToolbar();
   await layout();

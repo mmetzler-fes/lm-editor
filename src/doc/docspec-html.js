@@ -16,7 +16,7 @@
  * Feste Block-IDs (ids.js) reisen als data-id mit – an ihnen hängen die
  * Striche der Schüler.
  */
-import { richText, renderDocSpecHtml } from './docspec.js';
+import { richText, renderDocSpecHtml, tableColgroup, tableRowAttr } from './docspec.js';
 import { isBlockId } from './ids.js';
 
 const MARKUP_CHARS = /[\\*`[\]]/g;
@@ -168,7 +168,23 @@ function tableBlock(el, warnings) {
   if (el.getAttribute('data-caption')) block.caption = el.getAttribute('data-caption');
   // Ohne Linien: z. B. Abbildungen nebeneinander mit Unterschrift.
   if (el.classList.contains('ws-table-plain')) block.border = false;
+  // Feste Spaltenbreiten (<col style="width">) und Zeilenhöhen (<tr style="height">), in cm.
+  const trim = (list) => { while (list.length && !list[list.length - 1]) list.pop(); return list; };
+  const cols = [...el.children].filter((c) => c.tagName === 'COLGROUP').flatMap((g) => [...g.children].filter((c) => c.tagName === 'COL'));
+  const widths = trim(cols.map((c) => cssCm(c.style?.width)));
+  if (widths.length) block.widths = widths;
+  const heights = trim([...(thead ? tableRows(thead).slice(0, 1) : []), ...(bodies.length ? bodies.flatMap(tableRows) : tableRows(el).filter((tr) => tr.parentNode === el))]
+    .map((tr) => cssCm(tr.style?.height)));
+  if (heights.length) block.heights = heights;
   return block;
+}
+
+/** CSS-Länge (cm, mm, px) als „3.5cm“ – leer, wenn keine. */
+function cssCm(value) {
+  const m = /^(\d+(?:\.\d+)?)(cm|mm|px)$/.exec(String(value || '').trim());
+  if (!m) return '';
+  const cm = Number(m[1]) / (m[2] === 'mm' ? 10 : m[2] === 'px' ? 96 / 2.54 : 1);
+  return cm >= 0.2 ? `${Math.round(cm * 10) / 10}cm` : '';
 }
 
 const tableRows = (el) => [...el.children].flatMap((c) => (c.tagName === 'TR' ? [c] : ['THEAD', 'TBODY', 'TFOOT'].includes(c.tagName) ? [...c.children].filter((r) => r.tagName === 'TR') : []));
@@ -423,8 +439,10 @@ export function specToEditorHtml(spec) {
         return `<p data-ds="note"${idAttr(b)}><em>${richText(b.text ?? '')}</em></p>`;
       case 'list':
         return listItemsHtml(b.items, b.ordered, idAttr(b));
-      case 'table':
-        return `<table${idAttr(b)}${b.border === false ? ' class="ws-table-plain"' : ''}${b.caption ? ` data-caption="${esc(b.caption)}"` : ''}>${Array.isArray(b.header) ? `<thead><tr>${cellsHtml('th', b.header)}</tr></thead>` : ''}<tbody>${(b.rows || []).filter(Array.isArray).map((r) => `<tr>${cellsHtml('td', r)}</tr>`).join('')}</tbody></table>`;
+      case 'table': {
+        const off = Array.isArray(b.header) ? 1 : 0;
+        return `<table${idAttr(b)}${b.border === false ? ' class="ws-table-plain"' : ''}${b.caption ? ` data-caption="${esc(b.caption)}"` : ''}>${tableColgroup(b)}${off ? `<thead><tr${tableRowAttr(b, 0)}>${cellsHtml('th', b.header)}</tr></thead>` : ''}<tbody>${(b.rows || []).filter(Array.isArray).map((r, i) => `<tr${tableRowAttr(b, i + off)}>${cellsHtml('td', r)}</tr>`).join('')}</tbody></table>`;
+      }
       case 'image': {
         if (typeof b.src !== 'string') return widgetHtml(b);
         const cls = [b.float === 'left' ? 'ws-float-left' : b.float === 'right' ? 'ws-float-right' : b.float === 'center' ? 'ws-img-center' : '', b.border ? 'ws-img-border' : ''].filter(Boolean).join(' ');

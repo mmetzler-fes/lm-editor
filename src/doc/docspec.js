@@ -25,6 +25,9 @@ const CSS_LENGTH_RE = /^\d+(\.\d+)?(cm|mm|px|%)$/;
 export const KARO_PATTERNS = ['karo', 'linien', 'leer', 'frei'];
 export const KARO_MAX_WIDTH_CM = 16.5;
 const KARO_WIDTH_RE = /^(\d+(?:\.\d+)?)\s*cm$/;
+// Spaltenbreite bzw. Zeilenhöhe einer Tabelle (`widths`, `heights`); leer = automatisch.
+const TABLE_LENGTH_RE = /^\d+(\.\d+)?\s*(cm|mm)$/;
+const tableLengthOk = (v) => v === null || v === '' || TABLE_LENGTH_RE.test(String(v).trim());
 
 /** Breite eines Schreibfelds in cm (auf 0,5 cm gerundet, 1–16,5), null = Satzbreite. */
 export function karoWidthCm(block) {
@@ -134,6 +137,8 @@ function checkBlock(block, path, errors, inSolution) {
       need(Array.isArray(block.rows) && block.rows.length > 0, 'rows: Liste der Zeilen fehlt.');
       if (Array.isArray(block.rows)) need(block.rows.every((r) => Array.isArray(r)), 'rows: Jede Zeile muss eine Liste sein, z. B. ["a", "b"].');
       if (block.header !== undefined) need(Array.isArray(block.header), 'header muss eine Liste sein.');
+      if (block.widths !== undefined) need(Array.isArray(block.widths) && block.widths.length <= 40 && block.widths.every(tableLengthOk), 'widths: Liste der Spaltenbreiten, z. B. ["4cm", "", "3cm"] (leer = automatisch).');
+      if (block.heights !== undefined) need(Array.isArray(block.heights) && block.heights.length <= 200 && block.heights.every(tableLengthOk), 'heights: Liste der Mindesthöhen je Zeile (Kopfzeile zuerst), z. B. ["", "2cm"].');
       if (block.border !== undefined) need(typeof block.border === 'boolean', 'border: true oder false (false = ohne Linien, z. B. Abbildungen nebeneinander).');
       for (const row of [...(Array.isArray(block.header) ? [block.header] : []), ...(Array.isArray(block.rows) ? block.rows : [])]) {
         if (Array.isArray(row) && !row.every(cellOk)) {
@@ -606,6 +611,24 @@ function listHtml(items, ordered) {
     : `<li>${richText(it?.text ?? '')}${Array.isArray(it?.items) ? listHtml(it.items, ordered) : ''}</li>`)).join('')}</${tag}>`;
 }
 
+/** Spaltenbreite bzw. Zeilenhöhe als CSS-Länge – leer, wenn automatisch. */
+export function tableLength(v) {
+  const t = String(v ?? '').trim().replace(/\s+/g, '');
+  return TABLE_LENGTH_RE.test(t) ? t : '';
+}
+
+/** <colgroup> mit den festen Spaltenbreiten (`widths`) – leer ohne. */
+export function tableColgroup(block) {
+  const w = Array.isArray(block?.widths) ? block.widths.map(tableLength) : [];
+  return w.some(Boolean) ? `<colgroup>${w.map((x) => `<col${x ? ` style="width:${x}"` : ''}>`).join('')}</colgroup>` : '';
+}
+
+/** style-Attribut der Zeile r (Kopfzeile zählt mit) mit ihrer Mindesthöhe (`heights`). */
+export function tableRowAttr(block, r) {
+  const h = tableLength(Array.isArray(block?.heights) ? block.heights[r] : '');
+  return h ? ` style="height:${h}"` : '';
+}
+
 function cellHtml(tag, c) {
   if (isText(c)) return `<${tag}>${richText(c)}</${tag}>`;
   const span = (name, v) => (Number.isInteger(v) && v > 1 && v <= 20 ? ` ${name}="${v}"` : '');
@@ -676,11 +699,12 @@ function renderBlockHtml(block, ctx) {
     }
     case 'table': {
       const caption = isText(block.caption) ? `<p class="ds-caption"><em>${esc(block.caption)}</em></p>` : '';
-      const head = Array.isArray(block.header)
-        ? `<thead><tr>${block.header.map((c) => cellHtml('th', c ?? '')).join('')}</tr></thead>` : '';
+      const off = Array.isArray(block.header) ? 1 : 0;
+      const head = off
+        ? `<thead><tr${tableRowAttr(block, 0)}>${block.header.map((c) => cellHtml('th', c ?? '')).join('')}</tr></thead>` : '';
       const rows = (block.rows || []).filter(Array.isArray)
-        .map((r) => `<tr>${r.map((c) => cellHtml('td', c ?? '')).join('')}</tr>`).join('');
-      return `${caption}<div class="ds-table-wrap"><table class="ds-table${block.border === false ? ' ds-table-plain' : ''}">${head}<tbody>${rows}</tbody></table></div>`;
+        .map((r, i) => `<tr${tableRowAttr(block, i + off)}>${r.map((c) => cellHtml('td', c ?? '')).join('')}</tr>`).join('');
+      return `${caption}<div class="ds-table-wrap"><table class="ds-table${block.border === false ? ' ds-table-plain' : ''}">${tableColgroup(block)}${head}<tbody>${rows}</tbody></table></div>`;
     }
     case 'formula': {
       const align = block.align === 'left' ? ' ds-formula-left' : '';

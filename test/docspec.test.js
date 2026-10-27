@@ -306,3 +306,21 @@ describe('Quiz im Dokument: Größe', () => {
     expect(ds.validateDocSpec({ content: [{ ...block, scale: 3 }] }).join(' ')).toContain('scale: Größe von 0.5 bis 1.5');
   });
 });
+
+describe('Tabelle: Spaltenbreiten und Zeilenhöhen', () => {
+  const block = { type: 'table', header: ['A', 'B'], rows: [['a', 'b']], widths: ['4cm', ''], heights: ['', '2cm'] };
+  it('widths/heights in cm oder mm, leer = automatisch', () => {
+    expect(ds.validateDocSpec({ content: [block] })).toEqual([]);
+    expect(ds.validateDocSpec({ content: [{ ...block, widths: ['4 Zoll'] }] }).join(' ')).toContain('widths:');
+    expect(ds.validateDocSpec({ content: [{ ...block, heights: 'hoch' }] }).join(' ')).toContain('heights:');
+  });
+  it('Web-Ansicht mit <col> und Zeilenhöhe (Kopfzeile zählt mit)', () => {
+    const html = ds.renderDocSpecHtml({ content: [block] });
+    expect(html).toContain('<colgroup><col style="width:4cm"><col></colgroup>');
+    expect(html).toContain('<thead><tr>');
+    expect(html).toContain('<tr style="height:2cm"><td>a</td>');
+  });
+  it('ohne Angaben kein <colgroup>', () => {
+    expect(ds.renderDocSpecHtml({ content: [{ type: 'table', rows: [['x']] }] })).not.toContain('colgroup');
+  });
+});

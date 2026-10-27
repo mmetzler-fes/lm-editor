@@ -166,6 +166,8 @@ function tableBlock(el, warnings) {
   const block = { type: 'table', rows: rows.length ? rows : [['']] };
   if (header) block.header = header;
   if (el.getAttribute('data-caption')) block.caption = el.getAttribute('data-caption');
+  // Ohne Linien: z. B. Abbildungen nebeneinander mit Unterschrift.
+  if (el.classList.contains('ws-table-plain')) block.border = false;
   return block;
 }
 
@@ -242,6 +244,7 @@ function boxOfTable(el, warnings, used) {
  * kleinen Tabellen zum Anordnen bleiben Bilder in ihrer Zelle.
  */
 function imagesBesideTable(el, warnings) {
+  if (el.classList.contains('ws-table-plain')) return [];
   const rows = tableRows(el);
   const cols = Math.max(0, ...rows.map((tr) => tableCells(tr).length));
   if (rows.length <= 6 && cols <= 3) return [];
@@ -421,7 +424,7 @@ export function specToEditorHtml(spec) {
       case 'list':
         return listItemsHtml(b.items, b.ordered, idAttr(b));
       case 'table':
-        return `<table${idAttr(b)}${b.caption ? ` data-caption="${esc(b.caption)}"` : ''}>${Array.isArray(b.header) ? `<thead><tr>${cellsHtml('th', b.header)}</tr></thead>` : ''}<tbody>${(b.rows || []).filter(Array.isArray).map((r) => `<tr>${cellsHtml('td', r)}</tr>`).join('')}</tbody></table>`;
+        return `<table${idAttr(b)}${b.border === false ? ' class="ws-table-plain"' : ''}${b.caption ? ` data-caption="${esc(b.caption)}"` : ''}>${Array.isArray(b.header) ? `<thead><tr>${cellsHtml('th', b.header)}</tr></thead>` : ''}<tbody>${(b.rows || []).filter(Array.isArray).map((r) => `<tr>${cellsHtml('td', r)}</tr>`).join('')}</tbody></table>`;
       case 'image': {
         if (typeof b.src !== 'string') return widgetHtml(b);
         const cls = [b.float === 'left' ? 'ws-float-left' : b.float === 'right' ? 'ws-float-right' : b.float === 'center' ? 'ws-img-center' : '', b.border ? 'ws-img-border' : ''].filter(Boolean).join(' ');

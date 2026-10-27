@@ -954,11 +954,86 @@ export function odtToHtml(buffer, fileName = '') {
         const head = header ? `<thead>${rowsHtml(header, 'th')}</thead>` : '';
         return `<table>${head}<tbody>${rowsHtml(n, 'td')}</tbody></table>`;
     };
+    // ---- Abbildungen nebeneinander (wie odt.ts in LearningModules) ----
+    // Jedes Bild am eigenen, sonst leeren Absatz, per Position nebeneinander,
+    // darunter „Abbildung 1 ⇥ Abbildung 2 …“ → Tabelle ohne Linien.
+    const framesOnly = (p) => {
+        if (p.name !== 'text:p')
+            return null;
+        const frames = [];
+        for (const c of p.children) {
+            if (typeof c === 'string') {
+                if (c.trim())
+                    return null;
+                continue;
+            }
+            if (SKIP.has(c.name) || c.name === 'text:soft-page-break' || c.name === 'text:bookmark')
+                continue;
+            if (c.name === 'draw:frame' && anchored(c) && isImageFrame(c) && !isTextFrame(c))
+                frames.push(c);
+            else
+                return null;
+        }
+        return frames;
+    };
+    const tabText = (n) => typeof n === 'string' ? n : n.name === 'text:tab' ? '\t' : n.name === 'text:s' ? ' ' : n.children.map(tabText).join('');
+    const figureRow = (list, start) => {
+        const LINE = 19;
+        const placed = [];
+        let i = start;
+        for (; i < list.length; i++) {
+            const frames = framesOnly(list[i]);
+            if (!frames)
+                break;
+            if (placed.length && (i - start) * LINE >= Math.max(...placed.map((p) => p.bottom)))
+                break;
+            for (const f of frames) {
+                const top = (i - start) * LINE + (toPx(f.attrs['svg:y']) ?? 0);
+                placed.push({ f, x: toPx(f.attrs['svg:x']) ?? 0, top, bottom: top + (toPx(f.attrs['svg:height']) ?? 0) });
+            }
+        }
+        while (i > start && !framesOnly(list[i - 1])?.length)
+            i--;
+        if (placed.length < 2)
+            return null;
+        if (Math.max(...placed.map((p) => p.top)) >= Math.min(...placed.map((p) => p.bottom)))
+            return null;
+        placed.sort((a, b) => a.x - b.x);
+        const cells = placed.map((p) => image(p.f)).filter((img) => !!img);
+        if (cells.length < 2)
+            return null;
+        let j = i;
+        while (j < list.length && list[j].name === 'text:p' && !textOf(list[j]).trim() && framesOnly(list[j])?.length === 0)
+            j++;
+        let captions = null;
+        if (j < list.length && list[j].name === 'text:p') {
+            const texts = tabText(list[j]).split('\t').map((s) => s.replace(/\s+/g, ' ').trim()).filter(Boolean);
+            if (texts.length === cells.length) {
+                const style = list[j].attrs['text:style-name'];
+                captions = texts.map((t) => wrap(esc(t), style));
+                j++;
+            }
+        }
+        stats.tables++;
+        const row = (items) => `<tr>${items.map((x) => `<td>${x}</td>`).join('')}</tr>`;
+        return {
+            html: `<table class="ws-table-plain"><tbody>${row(cells)}${captions ? row(captions) : ''}</tbody></table>`,
+            used: (captions ? j : i) - start,
+        };
+    };
     function blocks(n) {
         const parts = [];
-        for (const c of elements(n)) {
+        const kids = elements(n);
+        for (let k = 0; k < kids.length; k++) {
+            const c = kids[k];
             if (SKIP.has(c.name))
                 continue;
+            const figures = c.name === 'text:p' ? figureRow(kids, k) : null;
+            if (figures) {
+                parts.push(figures.html);
+                k += figures.used - 1;
+                continue;
+            }
             if (c.name === 'text:p' || c.name === 'text:h') {
                 const tag = c.name === 'text:h' ? headingTag(c)
                     : styles.inherits(c.attrs['text:style-name'], /^Title$/i) ? 'h2'

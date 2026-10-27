@@ -285,3 +285,15 @@ describe('Block quiz', () => {
     expect(html).toContain('Kurzquiz');
   });
 });
+
+describe('Tabelle ohne Linien (Abbildungen nebeneinander)', () => {
+  const block = { type: 'table', border: false, rows: [[{ text: '', images: [{ src: 'data:image/png;base64,AA==', width: '5cm' }] }], ['**Abbildung 1**']] };
+  it('ist gültig und bekommt die Klasse ds-table-plain', () => {
+    expect(ds.validateDocSpec({ content: [block] })).toEqual([]);
+    expect(ds.renderDocSpecHtml({ content: [block] })).toContain('class="ds-table ds-table-plain"');
+  });
+  it('border nur als true/false', () => {
+    expect(ds.validateDocSpec({ content: [{ ...block, border: 'nein' }] }).join(' ')).toContain('border: true oder false');
+    expect(ds.renderDocSpecHtml({ content: [{ ...block, border: undefined }] })).not.toContain('ds-table-plain');
+  });
+});

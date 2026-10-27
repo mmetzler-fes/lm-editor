@@ -134,6 +134,7 @@ function checkBlock(block, path, errors, inSolution) {
       need(Array.isArray(block.rows) && block.rows.length > 0, 'rows: Liste der Zeilen fehlt.');
       if (Array.isArray(block.rows)) need(block.rows.every((r) => Array.isArray(r)), 'rows: Jede Zeile muss eine Liste sein, z. B. ["a", "b"].');
       if (block.header !== undefined) need(Array.isArray(block.header), 'header muss eine Liste sein.');
+      if (block.border !== undefined) need(typeof block.border === 'boolean', 'border: true oder false (false = ohne Linien, z. B. Abbildungen nebeneinander).');
       for (const row of [...(Array.isArray(block.header) ? [block.header] : []), ...(Array.isArray(block.rows) ? block.rows : [])]) {
         if (Array.isArray(row) && !row.every(cellOk)) {
           errors.push(`${at}: Zelle ist ein Text oder { text, colspan, rowspan } mit Zahlen von 1 bis 20.`);
@@ -678,7 +679,7 @@ function renderBlockHtml(block, ctx) {
         ? `<thead><tr>${block.header.map((c) => cellHtml('th', c ?? '')).join('')}</tr></thead>` : '';
       const rows = (block.rows || []).filter(Array.isArray)
         .map((r) => `<tr>${r.map((c) => cellHtml('td', c ?? '')).join('')}</tr>`).join('');
-      return `${caption}<div class="ds-table-wrap"><table class="ds-table">${head}<tbody>${rows}</tbody></table></div>`;
+      return `${caption}<div class="ds-table-wrap"><table class="ds-table${block.border === false ? ' ds-table-plain' : ''}">${head}<tbody>${rows}</tbody></table></div>`;
     }
     case 'formula': {
       const align = block.align === 'left' ? ' ds-formula-left' : '';

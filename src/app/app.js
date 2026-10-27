@@ -5,7 +5,7 @@
 // „Dokument“; jede Änderung landet als Entwurf in diesem Browser (IndexedDB),
 // „💾 Speichern“ schreibt die .zlm-Datei.
 
-import { createZlm, readZlm, writeZlm, editorStateOf, layerOf, ZlmError } from '../zlm/zlm.js';
+import { createZlm, readZlm, writeZlm, editorStateOf, layerOf, specForView, ZlmError } from '../zlm/zlm.js';
 import { stampBlockIds } from '../doc/ids.js';
 import { openInkEditor } from '../ink/ink-editor.js';
 import { H5pRenderer } from '../modules/h5p-renderer.js';
@@ -136,27 +136,6 @@ function notice(title, lines) {
 }
 
 // ---------- Dokument öffnen ----------
-
-const MIME = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', svg: 'image/svg+xml' };
-
-function dataUrl(bytes, name) {
-  let bin = '';
-  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
-  return `data:${MIME[name.split('.').pop().toLowerCase()] || 'application/octet-stream'};base64,${btoa(bin)}`;
-}
-
-/** Spec zum Anzeigen: Bilder aus media/ als data:-Adresse (die Anzeige nimmt nur data: und https). */
-function specForView(doc) {
-  const spec = structuredClone(doc.spec);
-  const walk = (blocks) => (Array.isArray(blocks) ? blocks : []).forEach((b) => {
-    if (b && typeof b === 'object') {
-      if (b.type === 'image' && typeof b.src === 'string' && b.src.startsWith('media/') && doc.media[b.src.slice(6)]) b.src = dataUrl(doc.media[b.src.slice(6)], b.src);
-      walk(b.blocks);
-    }
-  });
-  walk(spec.content);
-  return spec;
-}
 
 async function openSession(doc, { fileName = null, handle = null } = {}) {
   // Feste IDs, damit die Striche auch nach Änderungen beim richtigen Baustein bleiben

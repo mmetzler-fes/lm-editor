@@ -119,6 +119,29 @@ export function readZlm(bytes) {
   return doc;
 }
 
+// ---------- Anzeige ----------
+
+const MIME = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', svg: 'image/svg+xml' };
+
+function dataUrl(bytes, name) {
+  let bin = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return `data:${MIME[name.split('.').pop().toLowerCase()] || 'application/octet-stream'};base64,${btoa(bin)}`;
+}
+
+/** Spec zum Anzeigen: Bilder aus media/ als data:-Adresse (die Anzeige nimmt nur data: und https). */
+export function specForView(doc) {
+  const spec = structuredClone(doc.spec);
+  const walk = (blocks) => (Array.isArray(blocks) ? blocks : []).forEach((b) => {
+    if (b && typeof b === 'object') {
+      if (b.type === 'image' && typeof b.src === 'string' && b.src.startsWith('media/') && doc.media[b.src.slice(6)]) b.src = dataUrl(doc.media[b.src.slice(6)], b.src);
+      walk(b.blocks);
+    }
+  });
+  walk(spec.content);
+  return spec;
+}
+
 // ---------- Stift-Ebene ↔ Stand des Stift-Editors ----------
 //
 // In der Datei liegt die Ebene je Baustein (layers/<id>.json); der Editor

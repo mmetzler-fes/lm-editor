@@ -936,7 +936,11 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
       m.dataset.after = after ?? '';
       m.innerHTML = '<span>+</span>';
       m.addEventListener('pointerdown', (e) => { e.stopPropagation(); });
-      m.addEventListener('click', (e) => { e.stopPropagation(); openInsertMenu(m, after); });
+      m.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const r = m.getBoundingClientRect();
+        showContextMenu(r.right + 4, r.top, insertEntries(after));
+      });
       paperView.el.appendChild(m);
       return m;
     };
@@ -965,8 +969,8 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     });
   }
 
-  function openInsertMenu(mark, after) {
-    const r = mark.getBoundingClientRect();
+  /** Einträge zum Einfügen hinter dem Baustein `after` (⊕ am Rand, Kontextmenü). */
+  function insertEntries(after) {
     const field = (pattern, label) => ({ label, onClick: () => insertField(after, pattern) });
     const entries = [
       field('frei', '◌ Schreibfeld (unsichtbar, eine Zeile – ziehbar)'),
@@ -976,7 +980,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     for (const item of paper.insertItems?.() || []) {
       entries.push({ label: item.label, onClick: () => runInsert(() => item.run(after)) });
     }
-    showContextMenu(r.right + 4, r.top, entries);
+    return entries;
   }
 
   async function runInsert(fn) {
@@ -1544,7 +1548,8 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
       if (p.paper && (e.target.closest?.('.ink-karo-handle, .ink-karo-tools, .ink-insert-mark') || state.tool === 'interact'
         || (state.tool === 'text' && e.target.closest?.('.ink-text')))) return;
       if (e.pointerType === 'pen') penDown = true;
-      if (e.button > 0 && e.button !== 5) return;
+      // Rechte Taste, Stift-Seitentaste, Ctrl+Klick (Mac): Kontextmenü, nicht zeichnen.
+      if ((e.button > 0 && e.button !== 5) || (e.buttons & 2) || (e.ctrlKey && e.pointerType === 'mouse')) return;
       if (e.pointerType === 'touch' && state.fingerDraws && !rulerDrag) {
         touches.set(e.pointerId, [e.clientX, e.clientY]);
         if (pan) return;
@@ -1645,7 +1650,19 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
       p.busy = !!gesture;
     }, { capture: !!p.paper });
 
+    // Begonnene Geste verwerfen (etwa wenn mitten im Strich die rechte Taste dazukommt).
+    const cancelGesture = () => {
+      if (!gesture) return;
+      clearTimeout(gesture.press);
+      clearTimeout(gesture.hold);
+      if (gesture.kind === 'stroke') gesture.el?.remove();
+      if (gesture.kind === 'rect') showSvg(p.svg.querySelector('.ink-sel-rect'), false);
+      gesture = null;
+      p.busy = false;
+    };
+
     const move = (e) => {
+      if (gesture?.kind === 'stroke' && (e.buttons & 2)) { cancelGesture(); return; }
       if (touches.has(e.pointerId)) touches.set(e.pointerId, [e.clientX, e.clientY]);
       if (pan) {
         if (touches.size >= 2) {
@@ -1794,18 +1811,41 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
       const hit = itemAt(doc.pages[p.i].items, x, y, 6 / state.zoom);
       if (hit?.type === 'text') { e.preventDefault(); editText(hit.id); }
     });
-    // Rechtsklick beim Auswählen: Menü der Auswahl (ein Element darunter wird zuerst gewählt).
+    // Rechtsklick (auch Ctrl+Klick am Mac) – in jedem Werkzeug ein Menü, nie ein Strich:
+    // auf einem Strich oder Textfeld das Menü der Auswahl, sonst Werkzeuge, Rückgängig, Einfügen.
     p.el.addEventListener('contextmenu', (e) => {
-      if (state.tool !== 'select') return;
+      // In einem Quiz oder Textfeld bleibt das Menü des Browsers (Kopieren, Rechtschreibung).
+      if (e.target.closest?.('.ds-quiz-live input, .ds-quiz-live textarea, .ink-text[contenteditable="true"]:focus')) return;
       e.preventDefault();
+      cancelGesture();
       const [x, y] = toPage(e);
       const hit = itemAt(doc.pages[p.i].items, x, y, 6 / state.zoom);
-      if (hit && !(state.selection?.page === p.i && state.selection.ids.has(hit.id))) {
-        state.selection = { page: p.i, ids: withGroups(p.i, new Set([hit.id])) };
+      const selected = state.selection?.page === p.i && state.selection.ids.size;
+      if (hit || (selected && state.tool === 'select')) {
+        if (hit && !(state.selection?.page === p.i && state.selection.ids.has(hit.id))) {
+          state.selection = { page: p.i, ids: withGroups(p.i, new Set([hit.id])) };
+        }
+        state.tool = 'select';
         paintSelection();
         paintToolbar();
+        selectionMenu(e.clientX, e.clientY);
+        return;
       }
-      selectionMenu(e.clientX, e.clientY);
+      const tool = (name, label) => ({ label: `${state.tool === name ? '✓ ' : ''}${label}`, onClick: () => { state.tool = name; clearSelection(); paintToolbar(); } });
+      const key = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Strg+';
+      const entries = [
+        tool('pen', '✏️ Stift'), tool('marker', '🖍 Textmarker'), tool('eraser', '🧽 Radierer'),
+        tool('text', 'T Textfeld'), tool('select', '⬚ Auswählen'),
+      ];
+      if (state.undo.length) entries.push({ label: `↶ Rückgängig (${key}Z)`, onClick: () => history(state.undo, state.redo) });
+      if (state.redo.length) entries.push({ label: '↷ Wiederholen', onClick: () => history(state.redo, state.undo) });
+      if (clipboard) entries.push({ label: `Einfügen (${key}V)`, onClick: () => paste() });
+      // Im Dokument: hinter dem Baustein an dieser Stelle einfügen (wie das ⊕ am Rand).
+      if (p.paper && paper.insert !== false) {
+        const above = [...topBlocks()].reverse().find((b) => b.top <= y);
+        for (const it of insertEntries(above ? above.bid : null)) entries.push({ ...it, label: `➕ ${it.label}` });
+      }
+      showContextMenu(e.clientX, e.clientY, entries);
     });
   }
 

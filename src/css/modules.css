@@ -813,6 +813,8 @@ body {
 .docspec .ds-table td { border: 1px solid var(--border); padding: 4px 8px; vertical-align: top; }
 /* Leere Zellen eine Zeile hoch – wie im Druck (Wertetabellen zum Ausfüllen) */
 .docspec .ds-table td:empty, .docspec .ds-table th:empty { height: 1.6em; }
+/* Feste Zeilenhöhe (heights) gilt auch, wenn sie kleiner ist als eine Textzeile */
+.docspec .ds-table tr[style*="height"] > td:empty, .docspec .ds-table tr[style*="height"] > th:empty { height: auto; }
 /* Zelle mit beside: Bilder neben dem Text */
 .docspec .ds-cell-beside { display: flex; align-items: center; gap: 8px; }
 .docspec .ds-cell-beside .ds-cell-image { margin: 0; }

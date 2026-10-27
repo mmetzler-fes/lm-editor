@@ -456,9 +456,10 @@ function cellsHtml(tag, row, blocksHtml = () => '') {
         return `<img src="${esc(b.src)}"${px ? ` width="${Math.round(px)}" data-width="${esc(b.width)}"` : ''}${b.alt ? ` alt="${esc(b.alt)}"` : ''}${b.source ? ` data-source="${esc(b.source)}"` : ''}>`;
       }).join('');
       const inner = Array.isArray(c.blocks) ? blocksHtml(c.blocks) : '';
-      return `<${tag}${span('colspan', c.colspan)}${span('rowspan', c.rowspan)}${c.beside ? ' class="ws-cell-beside"' : ''}>${richText(c.text ?? '')}${images}${inner}</${tag}>`;
+      // Leere Zelle mit <br>: Sonst nimmt sie keine Schreibmarke an (der Klick landete daneben).
+      return `<${tag}${span('colspan', c.colspan)}${span('rowspan', c.rowspan)}${c.beside ? ' class="ws-cell-beside"' : ''}>${richText(c.text ?? '')}${images}${inner}${!c.text && !images && !inner ? '<br>' : ''}</${tag}>`;
     }
-    return `<${tag}>${richText(c ?? '')}</${tag}>`;
+    return `<${tag}>${richText(c ?? '') || '<br>'}</${tag}>`;
   }).join('');
 }
 

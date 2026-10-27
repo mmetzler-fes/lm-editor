@@ -178,6 +178,13 @@ class Styles {
             info.align = align === 'center' ? 'center' : align === 'end' || align === 'right' ? 'right'
                 : align === 'justify' ? 'justify' : 'left';
         }
+        const cp = elements(n).find((c) => c.name === 'style:table-column-properties');
+        if (cp?.attrs['style:column-width'])
+            info.columnWidth = cp.attrs['style:column-width'];
+        const rp = elements(n).find((c) => c.name === 'style:table-row-properties');
+        const height = rp?.attrs['style:row-height'] || rp?.attrs['style:min-row-height'];
+        if (height)
+            info.rowHeight = height;
         this.styles.set(name, { ...this.styles.get(name), ...info });
     }
     readList(n) {
@@ -246,6 +253,12 @@ const IMAGE_TYPES = {
 const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
 const MAX_TOTAL_IMAGE_BYTES = 20 * 1024 * 1024;
 /** Länge wie "8.5cm", "3in" oder "120pt" in CSS-Pixel. */
+/** Länge in cm, auf 0,1 gerundet – null ohne brauchbare Angabe. */
+function lengthCm(value) {
+    const m = /^([\d.]+)\s*(cm|mm|in|pt|pc|px)$/.exec(String(value || '').trim());
+    const cm = m ? parseFloat(m[1]) * ({ cm: 1, mm: 0.1, in: 2.54, pt: 2.54 / 72, pc: 2.54 / 6, px: 2.54 / 96 }[m[2]] ?? 1) : 0;
+    return cm > 0 ? Math.round(cm * 10) / 10 : null;
+}
 function toPx(value) {
     const m = /^([\d.]+)\s*(cm|mm|in|pt|pc|px)?$/.exec(String(value || '').trim());
     if (!m)
@@ -924,6 +937,37 @@ export function odtToHtml(buffer, fileName = '') {
             .join('');
         return items ? `<${tag}>${items}</${tag}>` : '';
     };
+    // Spaltenbreiten und Zeilenhöhen (wie odt.ts in LearningModules).
+    const columnWidths = (n) => {
+        const out = [];
+        const visit = (x) => {
+            for (const c of elements(x)) {
+                if (c.name === 'table:table-column') {
+                    const repeat = Math.min(Number(c.attrs['table:number-columns-repeated'] || 1), 50);
+                    const cm = lengthCm(styles.prop(c.attrs['table:style-name'], 'columnWidth'));
+                    for (let i = 0; i < repeat; i++)
+                        out.push(cm ? `${cm}cm` : '');
+                }
+                else if (['table:table-columns', 'table:table-header-columns', 'table:table-column-group'].includes(c.name))
+                    visit(c);
+            }
+        };
+        visit(n);
+        return out;
+    };
+    const rowHeight = (row) => {
+        const fixed = lengthCm(styles.prop(row.attrs['table:style-name'], 'rowHeight'));
+        if (fixed && fixed >= 0.6)
+            return `${fixed}cm`;
+        let lines = 0;
+        for (const cell of elements(row).filter((c) => c.name === 'table:table-cell')) {
+            const kids = elements(cell);
+            const empty = kids.length > 1 && kids.every((k) => k.name === 'text:p' && !textOf(k).trim() && !elements(k).length);
+            if (empty)
+                lines = Math.max(lines, kids.length);
+        }
+        return lines >= 2 ? `${Math.round(lines * 0.55 * 10) / 10}cm` : '';
+    };
     const table = (n) => {
         stats.tables++;
         const rowsHtml = (container, cellTag) => {
@@ -942,7 +986,8 @@ export function odtToHtml(buffer, fileName = '') {
                         return `<${cellTag}${attrs}>${inner}</${cellTag}>`.repeat(repeatCols);
                     })
                         .join('');
-                    html += `<tr>${cells}</tr>`.repeat(repeat);
+                    const h = rowHeight(c);
+                    html += `<tr${h ? ` style="height:${h}"` : ''}>${cells}</tr>`.repeat(repeat);
                 }
                 else if (c.name === 'table:table-rows' || c.name === 'table:table-row-group') {
                     html += rowsHtml(c, cellTag);
@@ -952,7 +997,9 @@ export function odtToHtml(buffer, fileName = '') {
         };
         const header = elements(n).find((c) => c.name === 'table:table-header-rows');
         const head = header ? `<thead>${rowsHtml(header, 'th')}</thead>` : '';
-        return `<table>${head}<tbody>${rowsHtml(n, 'td')}</tbody></table>`;
+        const widths = columnWidths(n);
+        const cols = widths.length && widths.every(Boolean) ? `<colgroup>${widths.map((w) => `<col style="width:${w}">`).join('')}</colgroup>` : '';
+        return `<table>${cols}${head}<tbody>${rowsHtml(n, 'td')}</tbody></table>`;
     };
     // ---- Abbildungen nebeneinander (wie odt.ts in LearningModules) ----
     // Jedes Bild am eigenen, sonst leeren Absatz, per Position nebeneinander,

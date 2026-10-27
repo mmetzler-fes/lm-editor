@@ -257,13 +257,15 @@ function boxOfTable(el, warnings, used) {
  * Bilder einer großen Tabelle (über 6 Zeilen oder 3 Spalten): Dort hängt ein
  * Bild meist nur an einer Zelle und steht in Wahrheit neben der Tabelle (z. B.
  * der Baustein neben der Deklarationstabelle) – es folgt der Tabelle. In
- * kleinen Tabellen zum Anordnen bleiben Bilder in ihrer Zelle.
+ * kleinen Tabellen zum Anordnen bleiben Bilder in ihrer Zelle, ebenso wenn
+ * mehrere Zellen Bilder haben (z. B. eine Zeile „Schaltung“ mit drei Schaltbildern).
  */
 function imagesBesideTable(el, warnings) {
   if (el.classList.contains('ws-table-plain')) return [];
   const rows = tableRows(el);
   const cols = Math.max(0, ...rows.map((tr) => tableCells(tr).length));
   if (rows.length <= 6 && cols <= 3) return [];
+  if (rows.flatMap(tableCells).filter((td) => td.querySelector('img')).length > 1) return [];
   const imgs = [...el.querySelectorAll('img')];
   const blocks = imgs.map((img) => imageBlock(img, warnings)).filter(Boolean);
   imgs.forEach((img) => img.remove());

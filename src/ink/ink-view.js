@@ -1,4 +1,5 @@
 import { strokeOutline, polyline, bounds, moved, MM } from './ink-geometry.js';
+import { shapeCenter, arrowHead, dashArray } from './ink-shapes.js';
 
 // ==================== BESCHRIFTUNG ANZEIGEN ====================
 //
@@ -24,6 +25,35 @@ export function itemSvg(item) {
     return svgEl('path', { d: polyline(item.points), stroke: item.color, 'stroke-width': item.width, fill: 'none', 'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'data-id': item.id });
   }
   return svgEl('path', { d: strokeOutline(item.points, item.width), fill: item.color, 'data-id': item.id });
+}
+
+/** Form (ink-shapes.js): Rechteck, Ellipse, Vieleck, Linie, Pfeil – gedreht um ihre Mitte. */
+export function shapeSvg(item) {
+  const width = item.width ?? 2;
+  const stroke = item.color && width > 0 ? { stroke: item.color, 'stroke-width': width, 'stroke-linejoin': 'round', 'stroke-linecap': item.dash === 'dot' ? 'round' : 'butt' } : { stroke: 'none' };
+  const dash = dashArray(item.dash, width);
+  if (dash) stroke['stroke-dasharray'] = dash;
+  const fill = item.fill && item.kind !== 'line' && item.kind !== 'arrow'
+    ? { fill: item.fill, 'fill-opacity': String(item.opacity ?? 1) } : { fill: 'none' };
+  const g = svgEl('g', { 'data-id': item.id, class: 'ink-shape' });
+  const r2 = (v) => Math.round(v * 100) / 100;
+  if (item.kind === 'rect' || item.kind === 'ellipse') {
+    const [cx, cy] = shapeCenter(item);
+    if (item.rot) g.setAttribute('transform', `rotate(${item.rot} ${r2(cx)} ${r2(cy)})`);
+    g.appendChild(item.kind === 'rect'
+      ? svgEl('rect', { x: r2(item.x), y: r2(item.y), width: r2(item.w), height: r2(item.h), ...fill, ...stroke })
+      : svgEl('ellipse', { cx: r2(cx), cy: r2(cy), rx: r2(item.w / 2), ry: r2(item.h / 2), ...fill, ...stroke }));
+    return g;
+  }
+  const pts = (item.points || []).map(([x, y]) => `${r2(x)},${r2(y)}`).join(' ');
+  g.appendChild(item.kind === 'polygon' ? svgEl('polygon', { points: pts, ...fill, ...stroke }) : svgEl('polyline', { points: pts, fill: 'none', ...stroke }));
+  if (item.kind === 'arrow' && item.points?.length >= 2 && item.color) {
+    const p = item.points;
+    const heads = [arrowHead(p[p.length - 2], p[p.length - 1], width)];
+    if (item.heads === 'both') heads.push(arrowHead(p[1], p[0], width));
+    for (const h of heads) g.appendChild(svgEl('polygon', { points: h.map(([x, y]) => `${r2(x)},${r2(y)}`).join(' '), fill: item.color, stroke: item.color, 'stroke-width': width / 2, 'stroke-linejoin': 'round' }));
+  }
+  return g;
 }
 
 /** Feld: weiße Fläche, darauf Karo (5 mm) oder Linien (10 mm) – oder nur weiß. */
@@ -77,12 +107,13 @@ export function inkSvgBox(items) {
   return { svg: new XMLSerializer().serializeToString(svg), x, y, w, h };
 }
 
-/** Felder, Textmarker, Stift und Textfelder – in dieser Stapelfolge. */
+/** Felder, Formen, Textmarker, Stift und Textfelder – in dieser Stapelfolge. */
 function inkGroups(items) {
-  const groups = ['fields', 'marker', 'pen', 'texts'].map((name) => svgEl('g', { class: `ink-print-${name}` }));
+  const groups = ['fields', 'shapes', 'marker', 'pen', 'texts'].map((name) => svgEl('g', { class: `ink-print-${name}` }));
   for (const it of items) {
     if (it.type === 'field') groups[0].appendChild(fieldSvg(it));
-    else if (it.type === 'stroke') groups[it.tool === 'marker' ? 1 : 2].appendChild(itemSvg(it));
+    else if (it.type === 'shape') groups[1].appendChild(shapeSvg(it));
+    else if (it.type === 'stroke') groups[it.tool === 'marker' ? 2 : 3].appendChild(itemSvg(it));
     else if (it.type === 'text' && it.text) {
       const size = it.size || TEXT_SIZE;
       const t = svgEl('text', { x: it.x + 3, y: it.y + 1 + size, fill: it.color || '#1e293b', 'font-size': size, 'font-family': 'LM Sans, Liberation Sans, Arial, sans-serif' });
@@ -91,7 +122,7 @@ function inkGroups(items) {
         span.textContent = line || ' ';
         t.appendChild(span);
       });
-      groups[3].appendChild(t);
+      groups[4].appendChild(t);
     }
   }
   return groups;

@@ -4,7 +4,11 @@ import {
   isBox, resizedBox, corners, MM,
 } from './ink-geometry.js';
 import { rulerSvg, rulerHandles } from './ink-ruler.js';
-import { svgEl, itemSvg, fieldSvg, inkSvgFor, inkSvgBox } from './ink-view.js';
+import { svgEl, itemSvg, fieldSvg, shapeSvg, inkSvgFor, inkSvgBox } from './ink-view.js';
+import {
+  FILL_COLORS, DASHES, SHAPE_WIDTHS, usesPoints, shapeCorners, rotateHandle, resizedShape, rotatedShape,
+  normalizedAngle, toPolygon, shapeFromDrag, shapeCenter,
+} from './ink-shapes.js';
 import { showContextMenu } from '../util/dom.js';
 import { FONT_SIZES } from '../doc/docspec.js';
 
@@ -58,12 +62,17 @@ const ICON_PATHS = {
   trash: 'M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3',
   pointer: 'M6 3l13 8-6 1.5L9.5 19z',
   field: 'M4 5h16v14H4zM4 9.7h16M4 14.3h16M9.3 5v14M14.7 5v14',
+  shape: 'M3.5 3.5h9v9h-9zM16.5 11a4.5 4.5 0 110 9 4.5 4.5 0 010-9z',
   print: 'M7 9V3h10v6M7 17H4v-7h16v7h-3M7 14h10v7H7z',
   head: 'M4 3h16v6H4zM7 6h4M4 13h16M4 17h12M4 21h14',
   save: 'M5 4h11l3 3v13H5zM8 4v5h7V4M8 20v-6h8v6',
 };
 // Feld (Abdeckung): Raster wie im Dokument – Karo 5 mm, Linien 10 mm.
 const FIELD_PATTERNS = { karo: '▦ Karo', linien: '☰ Linien', leer: '▢ Leer (weiß)' };
+// Formen (ink-shapes.js): Art, Strichart.
+const SHAPE_KIND_LABELS = { rect: ['▭', 'Rechteck'], ellipse: ['◯', 'Ellipse'], polygon: ['⬠', 'Vieleck – Punkte setzen, Doppelklick oder Klick auf den ersten Punkt schließt'], line: ['╱', 'Linie'], arrow: ['➝', 'Pfeil'] };
+const DASH_LABELS = { solid: ['—', 'durchgezogen'], dash: ['┄', 'gestrichelt'], dot: ['⋯', 'gepunktet'] };
+const ROT_GAP = 22;         // Abstand des Dreh-Anfassers über der Form, Bildschirm-Pixel
 const icon = (name) => `<svg class="ink-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="${ICON_PATHS[name]}"/></svg>`;
 const MAX_PIXELS = 12e6;    // Obergrenze je Hintergrund-Leinwand (iPad Safari: ~16 Mio.)
 const RULER_REACH = 12;     // So nah (Bildschirmpunkte) muss der Stift an die Kante des Geodreiecks
@@ -181,6 +190,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
 
   const state = {
     tool: 'pen', color: COLORS[0], marker: MARKERS[0], widthIdx: 1, textSize: NEW_TEXT_SIZE, fieldPattern: 'karo',
+    shapeKind: 'rect', shapeDash: 'solid', shapeFill: null, shapeOpacity: 1,
     zoom: 1, fingerDraws: false, variant: 'blatt',
     selection: null,          // { page, ids: Set }
     undo: [], redo: [],
@@ -212,6 +222,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
         ${tool('eraser', 'eraser', 'Radierer – löscht ganze Striche')}
         ${tool('text', 'text', 'Textfeld: auf die Seite tippen und schreiben')}
         ${tool('field', 'field', 'Feld: ein Rechteck aufziehen – deckt ab, was darunter liegt, mit Karo, Linien oder weiß')}
+        ${tool('shape', 'shape', 'Formen: Rechteck, Ellipse, Vieleck, Linie, Pfeil – mit Füllung und Deckkraft, drehbar')}
         <span class="ink-sep"></span>
         ${btn('ink-ruler-toggle', 'ruler', 'Geodreieck ein- und ausblenden – drehen am ⟳ (Umschalt: 5°), mit zwei Fingern oder dem Mausrad; vergrößern am ⤢')}
       </span>
@@ -249,6 +260,18 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
         <span class="ink-group ink-sizes">
           <select class="ink-tsize" title="Schriftgröße (wie im Dokument-Editor)" aria-label="Schriftgröße">${FONT_SIZES.map((pt) => `<option value="${pt}">${pt} pt</option>`).join('')}</select>
         </span>
+        <span class="ink-group ink-shape-kinds">
+          ${Object.entries(SHAPE_KIND_LABELS).map(([k, [ico, label]]) => `<button type="button" class="ink-btn ink-shape-kind" data-kind="${k}" title="${label}" aria-label="${label}">${ico}</button>`).join('')}
+        </span>
+        <span class="ink-group ink-shape-style">
+          ${Object.entries(DASH_LABELS).map(([k, [ico, label]]) => `<button type="button" class="ink-btn ink-dash" data-dash="${k}" title="Linie ${label}" aria-label="Linie ${label}">${ico}</button>`).join('')}
+          <span class="ink-sep"></span>
+          <button type="button" class="ink-btn ink-fill ink-fill-none" data-fill="" title="Keine Füllung" aria-label="Keine Füllung"></button>
+          ${FILL_COLORS.map((c) => `<button type="button" class="ink-btn ink-fill" data-fill="${c}" style="--c:${c}" title="Füllung" aria-label="Füllung ${c}"></button>`).join('')}
+          <label class="ink-opacity" title="Deckkraft der Füllung">Deckkraft
+            <input type="range" class="ink-op-range" min="0" max="100" step="1" aria-label="Deckkraft">
+            <input type="number" class="ink-op-num" min="0" max="100" step="1" aria-label="Deckkraft in Prozent">%</label>
+        </span>
         <span class="ink-group ink-patterns">
           ${Object.entries(FIELD_PATTERNS).map(([p, label]) => `<button type="button" class="ink-btn ink-pattern" data-pattern="${p}" title="${label.slice(2)}" aria-label="${label.slice(2)}">${label.slice(0, 1)}</button>`).join('')}
         </span>
@@ -270,8 +293,12 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
   // ---------- Werkzeugleiste ----------
   const paintToolbar = () => {
     overlay.querySelectorAll('[data-tool]').forEach((b) => b.classList.toggle('active', b.dataset.tool === state.tool));
+    // Ein begonnenes Vieleck endet, sobald ein anderes Werkzeug (oder eine andere Form) gewählt ist.
+    if (state.poly && (state.tool !== 'shape' || state.shapeKind !== 'polygon')) finishPolygon();
+    const shapes = state.tool === 'select' ? selectedItems().filter((it) => it.type === 'shape') : [];
+    const shaping = state.tool === 'shape' || shapes.length > 0;
     const list = state.tool === 'marker' ? MARKERS : COLORS;
-    const current = state.tool === 'marker' ? state.marker : state.color;
+    const current = state.tool === 'marker' ? state.marker : shapes.length ? shapes[0].color : state.color;
     // Nur bei anderer Palette neu bauen: Ersetzte Knöpfe verschlucken sonst einen Klick,
     // wenn zwischen Drücken und Loslassen gespeichert wird (z. B. Textfeld verliert den Fokus).
     if ($('.ink-colors').dataset.list !== list.join()) {
@@ -280,8 +307,20 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     }
     $('.ink-colors').querySelectorAll('[data-color]').forEach((b) => b.classList.toggle('active', b.dataset.color === current));
     const drawing = ['pen', 'marker'].includes(state.tool);
-    $('.ink-colors').hidden = !drawing && state.tool !== 'text';
-    $('.ink-widths').hidden = !drawing;
+    $('.ink-colors').hidden = !drawing && state.tool !== 'text' && !shaping;
+    $('.ink-widths').hidden = !drawing && !shaping;
+    // Formen: Art (nur beim Zeichnen), Strichart, Füllung, Deckkraft – für neue oder die gewählten.
+    $('.ink-shape-kinds').hidden = state.tool !== 'shape';
+    overlay.querySelectorAll('.ink-shape-kind').forEach((b) => b.classList.toggle('active', b.dataset.kind === state.shapeKind));
+    $('.ink-shape-style').hidden = !shaping;
+    const look = shapes[0] ? { dash: shapes[0].dash || 'solid', fill: shapes[0].fill || null, opacity: shapes[0].opacity ?? 1 }
+      : { dash: state.shapeDash, fill: state.shapeFill, opacity: state.shapeOpacity };
+    overlay.querySelectorAll('.ink-dash').forEach((b) => b.classList.toggle('active', b.dataset.dash === look.dash));
+    overlay.querySelectorAll('.ink-fill').forEach((b) => b.classList.toggle('active', (b.dataset.fill || null) === look.fill));
+    const pct = String(Math.round(look.opacity * 100));
+    if (document.activeElement !== $('.ink-op-num')) $('.ink-op-num').value = pct;
+    if (document.activeElement !== $('.ink-op-range')) $('.ink-op-range').value = pct;
+    $('.ink-opacity').classList.toggle('ink-muted', !look.fill);
     const texts = state.tool === 'select' ? selectedItems().filter((it) => it.type === 'text') : [];
     $('.ink-sizes').hidden = state.tool !== 'text' && !texts.length;
     const shown = texts.length && texts.every((t) => (t.size || TEXT_SIZE) === (texts[0].size || TEXT_SIZE)) ? texts[0].size || TEXT_SIZE : state.textSize;
@@ -298,11 +337,13 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
       b.classList.toggle('active', Number(b.dataset.width) === state.widthIdx);
       b.querySelector('i').style.background = state.tool === 'marker' ? state.marker : state.color;
     });
-    overlay.querySelectorAll('.ink-size').forEach((b) => b.classList.toggle('active', Number(b.dataset.size) === state.textSizeIdx));
     $('.ink-subhint').textContent = {
       interact: 'Quizze im Blatt ausfüllen – neben einem Quiz wird wieder ausgewählt; zum Schreiben den Stift wählen.',
       field: 'Rechteck aufziehen – das Feld deckt ab, was darunter liegt.',
-      eraser: 'Über einen Strich wischen – er wird ganz gelöscht.',
+      eraser: 'Über einen Strich oder eine Form wischen – sie wird ganz gelöscht.',
+      shape: state.shapeKind === 'polygon'
+        ? (state.poly ? 'Weitere Punkte setzen – Doppelklick, Enter oder Klick auf den ersten Punkt schließt, Esc bricht ab' : 'Ersten Punkt setzen')
+        : 'Aufziehen – mit Umschalt Quadrat bzw. Kreis, Linien in 15°-Schritten',
       select: state.selection?.ids.size
         ? `${state.selection.ids.size} gewählt${groupOfSelection() ? ' (Gruppe)' : ''} – ziehen zum Verschieben`
         : 'Strich antippen oder Rechteck aufziehen',
@@ -340,6 +381,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     const b = e.target.closest('[data-color]');
     if (!b) return;
     if (state.tool === 'marker') state.marker = b.dataset.color; else state.color = b.dataset.color;
+    if (applyToShapes({ color: b.dataset.color })) { paintToolbar(); return; }
     const box = document.activeElement?.closest?.('.ink-text');
     if (box && overlay.contains(box)) {
       box.style.color = b.dataset.color;
@@ -366,8 +408,44 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
   });
   $('.ink-widths').addEventListener('click', (e) => {
     const b = e.target.closest('[data-width]');
-    if (b) { state.widthIdx = Number(b.dataset.width); paintToolbar(); }
+    if (!b) return;
+    state.widthIdx = Number(b.dataset.width);
+    applyToShapes({ width: SHAPE_WIDTHS[state.widthIdx] });
+    paintToolbar();
   });
+  // Formen: Art, Strichart, Füllung, Deckkraft.
+  $('.ink-shape-kinds').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-kind]');
+    if (!b) return;
+    state.shapeKind = b.dataset.kind;
+    paintToolbar();
+  });
+  $('.ink-shape-style').addEventListener('click', (e) => {
+    const dash = e.target.closest('[data-dash]');
+    const fill = e.target.closest('[data-fill]');
+    if (dash) {
+      state.shapeDash = dash.dataset.dash;
+      applyToShapes({ dash: dash.dataset.dash === 'solid' ? undefined : dash.dataset.dash });
+    } else if (fill) {
+      state.shapeFill = fill.dataset.fill || null;
+      applyToShapes({ fill: fill.dataset.fill || undefined });
+    } else return;
+    paintToolbar();
+  });
+  // Deckkraft: Schieberegler und Prozentfeld – ein Zug am Regler ist ein Schritt zum Rückgängigmachen.
+  let opacityEdit = false;
+  const setOpacity = (value, final) => {
+    const v = Math.max(0, Math.min(100, Math.round(Number(String(value).replace(',', '.')) || 0))) / 100;
+    state.shapeOpacity = v;
+    applyToShapes({ opacity: v === 1 ? undefined : v }, { undoStep: !opacityEdit });
+    opacityEdit = !final;
+    $('.ink-op-range').value = String(Math.round(v * 100));
+    $('.ink-op-num').value = String(Math.round(v * 100));
+    if (final) paintToolbar();
+  };
+  $('.ink-op-range').addEventListener('input', (e) => setOpacity(e.target.value, false));
+  $('.ink-op-range').addEventListener('change', (e) => setOpacity(e.target.value, true));
+  $('.ink-op-num').addEventListener('change', (e) => setOpacity(e.target.value, true));
   // Schriftgröße: für neue Texte – und für gewählte Textfelder sofort.
   $('.ink-tsize').addEventListener('change', (e) => {
     const size = Number(e.target.value);
@@ -618,7 +696,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     el.dataset.i = i;
     el.innerHTML = `<canvas class="ink-bg"></canvas>
       <svg class="ink-svg" viewBox="0 0 ${w} ${h}" xmlns="http://www.w3.org/2000/svg">
-        <g class="ink-fields"></g><g class="ink-marker"></g><g class="ink-pen"></g><g class="ink-live"></g>
+        <g class="ink-fields"></g><g class="ink-shapes"></g><g class="ink-marker"></g><g class="ink-pen"></g><g class="ink-live"></g>
         <rect class="ink-sel-rect" display="none"></rect><rect class="ink-sel-box" display="none"></rect>
       </svg>
       <div class="ink-texts"></div>
@@ -663,7 +741,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     el.dataset.i = 0;
     el.innerHTML = `<div class="ink-paper-host"><div class="lm-paper${paper.landscape ? ' lm-landscape' : ''}"></div></div>
       <svg class="ink-svg" xmlns="http://www.w3.org/2000/svg">
-        <g class="ink-fields"></g><g class="ink-marker"></g><g class="ink-pen"></g><g class="ink-live"></g>
+        <g class="ink-fields"></g><g class="ink-shapes"></g><g class="ink-marker"></g><g class="ink-pen"></g><g class="ink-live"></g>
         <rect class="ink-sel-rect" display="none"></rect><rect class="ink-sel-box" display="none"></rect>
       </svg>
       <div class="ink-texts"></div>
@@ -1194,9 +1272,11 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     if (!p) return;
     const items = doc.pages[i]?.items || [];
     const fields = p.svg.querySelector('.ink-fields');
+    const shapeLayer = p.svg.querySelector('.ink-shapes');
     const marker = p.svg.querySelector('.ink-marker');
     const pen = p.svg.querySelector('.ink-pen');
     fields.innerHTML = '';
+    shapeLayer.innerHTML = '';
     marker.innerHTML = '';
     pen.innerHTML = '';
     p.texts.innerHTML = '';
@@ -1204,6 +1284,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
       if (item.type === 'stroke') (item.tool === 'marker' ? marker : pen).appendChild(itemSvg(item));
       else if (item.type === 'text') p.texts.appendChild(textBox(p, item));
       else if (item.type === 'field') fields.appendChild(fieldSvg(item));
+      else if (item.type === 'shape') shapeLayer.appendChild(shapeSvg(item));
     }
     paintSelection();
   }
@@ -1284,7 +1365,139 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
       }
       const f = selectedField(p.i);
       if (f) for (const [x, y] of corners(f)) handles.appendChild(svgEl('circle', { cx: x, cy: y, r: HANDLE / state.zoom, class: 'ink-handle' }));
+      // Form: Ecken (Größe), Dreh-Anfasser, bei Vieleck und Linie die Punkte einzeln.
+      const s = selectedShape(p.i);
+      if (s) {
+        const r = HANDLE / state.zoom;
+        const twoPoints = s.kind === 'line' || s.kind === 'arrow';
+        if (!twoPoints) for (const [x, y] of shapeCorners(s)) handles.appendChild(svgEl('circle', { cx: x, cy: y, r, class: 'ink-handle' }));
+        if (usesPoints(s)) for (const [x, y] of s.points) handles.appendChild(svgEl('rect', { x: x - r * 0.8, y: y - r * 0.8, width: r * 1.6, height: r * 1.6, class: 'ink-handle ink-vertex' }));
+        const [rx, ry] = rotateHandle(s, ROT_GAP / state.zoom);
+        const [cx, cy] = shapeCenter(s);
+        const top = twoPoints ? [cx, cy] : rotateHandle(s, 0);
+        handles.appendChild(svgEl('line', { x1: top[0], y1: top[1], x2: rx, y2: ry, class: 'ink-rot-line' }));
+        handles.appendChild(svgEl('circle', { cx: rx, cy: ry, r, class: 'ink-handle ink-rot-handle' }));
+      }
     }
+  }
+
+  /** Die Form, wenn genau eine Form gewählt ist (dann mit Anfassern). */
+  function selectedShape(page) {
+    const sel = state.selection;
+    if (!sel || sel.page !== page || sel.ids.size !== 1) return null;
+    const it = (doc.pages[page]?.items || []).find((x) => sel.ids.has(x.id));
+    return it?.type === 'shape' ? it : null;
+  }
+
+  /** Eigenschaften auf die gewählten Formen anwenden (ein Schritt zum Rückgängigmachen); true, wenn es welche gab. */
+  function applyToShapes(patch, { undoStep = true } = {}) {
+    const shapes = state.tool === 'select' ? selectedItems().filter((it) => it.type === 'shape') : [];
+    if (!shapes.length) return false;
+    if (undoStep) snapshot();
+    const ids = new Set(shapes.map((it) => it.id));
+    const sel = state.selection;
+    doc.pages[sel.page].items = doc.pages[sel.page].items.map((it) => {
+      if (!ids.has(it.id)) return it;
+      const next = { ...it, ...patch };
+      for (const [k, v] of Object.entries(patch)) if (v === undefined) delete next[k];
+      if ((next.kind === 'line' || next.kind === 'arrow')) delete next.fill;
+      return next;
+    });
+    changed();
+    drawItems(sel.page);
+    return true;
+  }
+
+  /** Stil für eine neue Form aus den Einstellungen der Leiste. */
+  function newShapeStyle(kind) {
+    const style = { color: state.color, width: SHAPE_WIDTHS[state.widthIdx] };
+    if (state.shapeDash !== 'solid') style.dash = state.shapeDash;
+    if (state.shapeFill && kind !== 'line' && kind !== 'arrow') {
+      style.fill = state.shapeFill;
+      if (state.shapeOpacity !== 1) style.opacity = state.shapeOpacity;
+    }
+    if (kind === 'arrow') style.heads = 'end';
+    return style;
+  }
+
+  /** Fertige Form ablegen und gleich wählen (Anfasser zum Nachziehen und Drehen). */
+  function addShape(page, geom) {
+    const item = { id: uid(), type: 'shape', ...geom, ...newShapeStyle(geom.kind) };
+    snapshot();
+    doc.pages[page].items.push(item);
+    state.tool = 'select';
+    state.selection = { page, ids: new Set([item.id]) };
+    changed();
+    drawItems(page);
+    paintToolbar();
+  }
+
+  // Vieleck: Punkte nacheinander setzen (state.poly = { page, points, el }).
+  function polygonPreview(pointer) {
+    const poly = state.poly;
+    const p = poly && pages[poly.page];
+    if (!p) return;
+    poly.el?.remove();
+    const pts = pointer ? [...poly.points, pointer] : poly.points;
+    poly.el = shapeSvg({ id: 'live', kind: pts.length > 2 ? 'polygon' : 'line', points: pts, ...newShapeStyle('polygon') });
+    poly.el.classList.add('ink-shape-live');
+    p.svg.querySelector('.ink-live').appendChild(poly.el);
+  }
+  function finishPolygon() {
+    const poly = state.poly;
+    if (!poly) return;
+    state.poly = null;
+    poly.el?.remove();
+    if (poly.points.length >= 3) addShape(poly.page, { kind: 'polygon', points: poly.points });
+  }
+  function cancelPolygon() {
+    state.poly?.el?.remove();
+    state.poly = null;
+    paintToolbar();
+  }
+  function polygonClick(page, x, y) {
+    if (state.poly && state.poly.page !== page) finishPolygon();
+    const reach = 8 / state.zoom;
+    const now = Date.now();
+    if (!state.poly) {
+      state.poly = { page, points: [[x, y]], last: now };
+      state.tool = 'shape';
+    } else {
+      const pts = state.poly.points;
+      const [fx, fy] = pts[0];
+      const [lx, ly] = pts[pts.length - 1];
+      if (pts.length >= 3 && Math.hypot(x - fx, y - fy) <= reach) { finishPolygon(); return; }
+      if (now - state.poly.last < 400 && Math.hypot(x - lx, y - ly) <= reach) { finishPolygon(); return; } // Doppelklick
+      pts.push([x, y]);
+      state.poly.last = now;
+    }
+    polygonPreview(null);
+    paintToolbar();
+  }
+
+  /** Gewählte Elemente ganz nach vorn bzw. hinten (Reihenfolge der Seite). */
+  function restack(front) {
+    const sel = state.selection;
+    if (!sel?.ids.size) return;
+    snapshot();
+    const items = doc.pages[sel.page].items;
+    const chosen = items.filter((it) => sel.ids.has(it.id));
+    const rest = items.filter((it) => !sel.ids.has(it.id));
+    doc.pages[sel.page].items = front ? [...rest, ...chosen] : [...chosen, ...rest];
+    changed();
+    drawItems(sel.page);
+  }
+
+  /** Die gewählte Form durch `fn(form)` ersetzen (ein Schritt zum Rückgängigmachen). */
+  function replaceShape(fn) {
+    const sel = state.selection;
+    const s = sel && selectedShape(sel.page);
+    if (!s) return;
+    snapshot();
+    doc.pages[sel.page].items = doc.pages[sel.page].items.map((it) => (it.id === s.id ? fn(it) : it));
+    changed();
+    drawItems(sel.page);
+    paintToolbar();
   }
 
   /** Gewählte gerade Linien auf der Seite. */
@@ -1305,6 +1518,19 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
   /** Anfasser unter dem Punkt: { id, idx } (Linie) bzw. { id, corner } (Feld) oder null. */
   function handleAt(page, x, y) {
     const reach = (HANDLE * 1.6) / state.zoom;
+    const s = selectedShape(page);
+    if (s) {
+      const [rx, ry] = rotateHandle(s, ROT_GAP / state.zoom);
+      if (Math.hypot(x - rx, y - ry) <= reach) return { id: s.id, rotate: true };
+      if (usesPoints(s)) {
+        const idx = s.points.findIndex(([px, py]) => Math.hypot(x - px, y - py) <= reach);
+        if (idx >= 0) return { id: s.id, idx };
+      }
+      if (s.kind !== 'line' && s.kind !== 'arrow') {
+        const corner = shapeCorners(s).findIndex(([cx, cy]) => Math.hypot(x - cx, y - cy) <= reach);
+        if (corner >= 0) return { id: s.id, corner };
+      }
+    }
     const f = selectedField(page);
     if (f) {
       const corner = corners(f).findIndex(([cx, cy]) => Math.hypot(x - cx, y - cy) <= reach);
@@ -1537,6 +1763,18 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
       entries.push({ label: '💡 Als Lösung ins Dokument', onClick: () => selectionToDocument(true) });
       entries.push({ label: '🖼 Als Bild ins Dokument', onClick: () => selectionToDocument(false) });
     }
+    const shape = items.length === 1 && items[0].type === 'shape' ? items[0] : null;
+    if (shape && !usesPoints(shape)) entries.push({ label: '⬠ In Vieleck umwandeln (Punkte einzeln ziehen)', onClick: () => replaceShape(toPolygon) });
+    if (shape && shape.rot) entries.push({ label: '↻ Drehung zurücksetzen', onClick: () => replaceShape((it) => ({ ...it, rot: 0 })) });
+    if (shape?.kind === 'arrow') {
+      entries.push(shape.heads === 'both'
+        ? { label: '➝ Pfeilspitze nur am Ende', onClick: () => replaceShape((it) => ({ ...it, heads: 'end' })) }
+        : { label: '⟷ Pfeilspitzen an beiden Enden', onClick: () => replaceShape((it) => ({ ...it, heads: 'both' })) });
+    }
+    if (items.length) {
+      entries.push({ label: '⬆ Ganz nach vorn', onClick: () => restack(true) });
+      entries.push({ label: '⬇ Ganz nach hinten', onClick: () => restack(false) });
+    }
     if (items.length) {
       entries.push({ label: `Duplizieren (${key}D)`, onClick: () => duplicateSelection() });
       if (items.length > 1 && !groupOfSelection()) entries.push({ label: `Gruppieren (${key}G)`, onClick: () => groupSelection() });
@@ -1668,7 +1906,13 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
         const b = state.selection?.page === p.i ? selectionBounds() : null;
         const hit = itemAt(doc.pages[p.i].items, x, y, 6 / state.zoom);
         if (handle) {
-          gesture = { kind: 'handle', id: e.pointerId, item: handle.id, idx: handle.idx, corner: handle.corner, base: base() };
+          gesture = { kind: 'handle', id: e.pointerId, item: handle.id, idx: handle.idx, corner: handle.corner, rotate: handle.rotate, base: base() };
+          if (handle.rotate) {
+            const s = doc.pages[p.i].items.find((it) => it.id === handle.id);
+            const c = shapeCenter(s);
+            gesture.center = c;
+            gesture.a0 = Math.atan2(y - c[1], x - c[0]);
+          }
         } else if (b && x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) {
           gesture = { kind: 'move', id: e.pointerId, from: [x, y], base: base() };
           pressForMenu(e);
@@ -1686,6 +1930,10 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
       } else if (tool === 'field') {
         clearSelection();
         gesture = { kind: 'rect', id: e.pointerId, from: [x, y], field: true };
+      } else if (tool === 'shape') {
+        clearSelection();
+        if (state.shapeKind === 'polygon') polygonClick(p.i, x, y);
+        else gesture = { kind: 'shape', id: e.pointerId, from: [x, y] };
       } else if (tool === 'text') {
         snapshot();
         const size = state.textSize;
@@ -1704,7 +1952,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
       if (!gesture) return;
       clearTimeout(gesture.press);
       clearTimeout(gesture.hold);
-      if (gesture.kind === 'stroke') gesture.el?.remove();
+      if (gesture.kind === 'stroke' || gesture.kind === 'shape') gesture.el?.remove();
       if (gesture.kind === 'rect') showSvg(p.svg.querySelector('.ink-sel-rect'), false);
       gesture = null;
       p.busy = false;
@@ -1722,6 +1970,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
         return;
       }
       if (rulerDrag?.pointers.has(e.pointerId)) { const [x, y] = toPage(e); rulerMove(e, x, y); return; }
+      if (!gesture && state.poly?.page === p.i) { polygonPreview(toPage(e)); return; }
       if (!gesture || e.pointerId !== gesture.id) return;
       const events = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
       if (gesture.kind === 'stroke') {
@@ -1762,6 +2011,24 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
         const [fx, fy] = gesture.from;
         for (const [k, v] of Object.entries({ x: Math.min(fx, x), y: Math.min(fy, y), width: Math.abs(x - fx), height: Math.abs(y - fy) })) r.setAttribute(k, v);
         gesture.to = [x, y];
+      } else if (gesture.kind === 'shape') {
+        const geom = shapeFromDrag(state.shapeKind, gesture.from, toPage(e), e.shiftKey);
+        gesture.geom = geom;
+        gesture.el?.remove();
+        gesture.el = shapeSvg({ id: 'live', ...geom, ...newShapeStyle(geom.kind) });
+        gesture.el.classList.add('ink-shape-live');
+        p.svg.querySelector('.ink-live').appendChild(gesture.el);
+      } else if (gesture.kind === 'handle' && gesture.rotate) {
+        const [x, y] = toPage(e);
+        const [cx, cy] = gesture.center;
+        const delta = ((Math.atan2(y - cy, x - cx) - gesture.a0) * 180) / Math.PI;
+        doc.pages[p.i].items = gesture.base.map((it) => {
+          if (it.id !== gesture.item) return it;
+          if (usesPoints(it)) return rotatedShape(it, normalizedAngle(delta, 3));
+          return { ...it, rot: normalizedAngle((it.rot || 0) + delta, 3) }; // nahe 0°, 15°, 30° … rastet es ein
+        });
+        gesture.moved = true;
+        drawItems(p.i);
       } else if (gesture.kind === 'handle') {
         let [x, y] = toPage(e);
         // Am Geodreieck rastet das Ende auf der Kante ein.
@@ -1770,6 +2037,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
         if (edge) [x, y] = projectOnSegment(x, y, edge[0], edge[1]);
         doc.pages[p.i].items = gesture.base.map((it) => {
           if (it.id !== gesture.item) return it;
+          if (it.type === 'shape' && gesture.corner !== undefined) return resizedShape(it, gesture.corner, x, y, 4 / state.zoom);
           if (gesture.corner !== undefined) return resizedBox(it, gesture.corner, x, y);
           const points = it.points.map((q) => q.slice());
           points[gesture.idx] = [x, y, points[gesture.idx][2]];
@@ -1818,6 +2086,13 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
         doc.pages[p.i].items.push(g.item);
         changed();
         drawItems(p.i);
+      } else if (g.kind === 'shape') {
+        g.el?.remove();
+        const geom = g.geom;
+        const big = geom && (geom.points
+          ? Math.hypot(geom.points[1][0] - geom.points[0][0], geom.points[1][1] - geom.points[0][1]) >= 4
+          : geom.w >= 4 && geom.h >= 4);
+        if (big) addShape(p.i, geom);
       } else if (g.kind === 'erase') {
         if (g.removed) changed();
       } else if (g.kind === 'rect' && g.field) {
@@ -2104,7 +2379,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     const list = doc.pages[page]?.items || [];
     // Auf dem Bildschirm gleich groß, egal wie weit hineingezoomt ist.
     const radius = ERASER / Math.max(0.6, state.zoom);
-    const keep = list.filter((it) => !(it.type === 'stroke' && hitsStroke(it, x, y, radius)));
+    const keep = list.filter((it) => !((it.type === 'stroke' && hitsStroke(it, x, y, radius)) || (it.type === 'shape' && itemAt([it], x, y, radius))));
     if (keep.length === list.length) return;
     if (!g.removed) snapshot();
     g.removed = true;
@@ -2121,6 +2396,8 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     const k = e.key.toLowerCase();
     const sel = !!state.selection?.ids.size;
     if ((e.key === 'Delete' || e.key === 'Backspace') && sel) { e.preventDefault(); deleteSelection(); }
+    else if (e.key === 'Escape' && state.poly) cancelPolygon();
+    else if (e.key === 'Enter' && state.poly) { e.preventDefault(); finishPolygon(); }
     else if (e.key === 'Escape') clearSelection();
     else if (mod && k === 'z') { e.preventDefault(); history(e.shiftKey ? state.redo : state.undo, e.shiftKey ? state.undo : state.redo); }
     else if (mod && k === 'c' && sel) { e.preventDefault(); copySelection(); }

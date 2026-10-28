@@ -6,6 +6,8 @@
 // (A4 = 595 × 842), Punkte als [x, y, Druck 0…1].
 
 /** A4 in PDF-Punkten; 1 mm = 72 / 25,4 pt. */
+import { shapeBounds, hitShape, movedShape } from './ink-shapes.js';
+
 export const A4 = { w: 595.28, h: 841.89 };
 export const MM = 72 / 25.4;
 
@@ -91,8 +93,9 @@ export function hitsStroke(item, x, y, radius) {
 /** Rechteckige Elemente: Textfeld und Feld (Abdeckung mit Karo, Linien oder leer). */
 export const isBox = (item) => item.type === 'text' || item.type === 'field';
 
-/** Umgebendes Rechteck eines Elements (Strich, Textfeld oder Feld). */
+/** Umgebendes Rechteck eines Elements (Strich, Textfeld, Feld oder Form). */
 export function bounds(item) {
+  if (item.type === 'shape') return shapeBounds(item);
   if (item.type === 'field') return { x: item.x, y: item.y, w: item.w, h: item.h };
   if (item.type === 'text') return { x: item.x, y: item.y, w: item.w || 160, h: item.h || (item.size || 14) * 1.4 };
   const pts = item.points || [];
@@ -127,7 +130,7 @@ export function inSelection(item, rect) {
   const x1 = Math.max(rect.x, rect.x + rect.w);
   const y0 = Math.min(rect.y, rect.y + rect.h);
   const y1 = Math.max(rect.y, rect.y + rect.h);
-  if (isBox(item)) {
+  if (isBox(item) || item.type === 'shape') {
     const b = bounds(item);
     return b.x < x1 && b.x + b.w > x0 && b.y < y1 && b.y + b.h > y0;
   }
@@ -141,7 +144,9 @@ export function inSelection(item, rect) {
 export function itemAt(items, x, y, radius) {
   for (let i = items.length - 1; i >= 0; i--) {
     const it = items[i];
-    if (isBox(it)) {
+    if (it.type === 'shape') {
+      if (hitShape(it, x, y, radius)) return it;
+    } else if (isBox(it)) {
       const b = bounds(it);
       if (x >= b.x - radius && x <= b.x + b.w + radius && y >= b.y - radius && y <= b.y + b.h + radius) return it;
     } else if (hitsStroke(it, x, y, radius)) return it;
@@ -179,6 +184,7 @@ export function extremesAlong(points, a, b) {
 
 /** Element verschieben (neue Kopie). */
 export function moved(item, dx, dy) {
+  if (item.type === 'shape') return movedShape(item, dx, dy);
   if (isBox(item)) return { ...item, x: item.x + dx, y: item.y + dy };
   return { ...item, points: item.points.map(([x, y, p]) => [x + dx, y + dy, p]) };
 }

@@ -55,6 +55,16 @@ body.ink-open { overflow: hidden; }
 .ink-color { min-width: 30px; width: 30px; height: 30px; border-radius: 50%; background: var(--c); margin: 0 3px; }
 .ink-color:hover { background: var(--c); filter: brightness(0.92); }
 .ink-btn.ink-color.active { background: var(--c); box-shadow: 0 0 0 2px var(--bg-secondary), 0 0 0 4px var(--accent); }
+.ink-shape-kind, .ink-dash { font-size: 1.05rem; min-width: 30px; }
+.ink-fill { min-width: 24px; width: 24px; height: 24px; border-radius: 5px; background: var(--c); border: 1px solid #94a3b8; margin: 0 2px; }
+.ink-fill:hover { background: var(--c); filter: brightness(0.95); }
+.ink-btn.ink-fill.active { background: var(--c); box-shadow: 0 0 0 2px var(--bg-secondary), 0 0 0 4px var(--accent); }
+.ink-fill-none { background: linear-gradient(to top right, #fff calc(50% - 1px), #dc2626 50%, #fff calc(50% + 1px)); }
+.ink-fill-none:hover, .ink-btn.ink-fill-none.active { background: linear-gradient(to top right, #fff calc(50% - 1px), #dc2626 50%, #fff calc(50% + 1px)); }
+.ink-opacity { display: inline-flex; align-items: center; gap: 4px; margin-left: 6px; font-size: 0.82rem; white-space: nowrap; }
+.ink-opacity input[type="range"] { width: 90px; }
+.ink-op-num { width: 4.2em; font: inherit; padding: 1px 3px; }
+.ink-opacity.ink-muted { opacity: 0.5; }
 .ink-labeled { gap: 6px; padding: 0 12px; color: #dc2626; font-weight: 600; }
 .ink-subhint { font-size: 0.85em; color: var(--text-secondary); white-space: nowrap; padding: 0 6px; }
 .ink-subhint:empty { display: none; }
@@ -75,6 +85,11 @@ body.ink-open { overflow: hidden; }
 .ink-sel-box { fill: none; stroke: #3b82f6; stroke-width: 1; stroke-dasharray: 5 3; }
 .ink-svg .ink-selected { filter: drop-shadow(0 0 1.5px #3b82f6); }
 .ink-handle { fill: #fff; stroke: #3b82f6; stroke-width: 1.2; vector-effect: non-scaling-stroke; cursor: move; }
+/* Formen (ink-shapes.js): Dreh-Anfasser, Eckpunkte, Vorschau beim Zeichnen */
+.ink-rot-handle { fill: #3b82f6; cursor: grab; }
+.ink-rot-line { stroke: #3b82f6; stroke-width: 1; vector-effect: non-scaling-stroke; }
+.ink-vertex { fill: #fff; cursor: crosshair; }
+.ink-shape-live { pointer-events: none; opacity: 0.85; }
 .ink-text {
   position: absolute; min-width: 2em; max-width: 70%;
   padding: 1px 3px; line-height: 1.3; white-space: pre-wrap; outline: none;

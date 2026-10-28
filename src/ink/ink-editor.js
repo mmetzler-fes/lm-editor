@@ -908,7 +908,6 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     karo.classList.toggle('ds-karo-linien', pattern === 'linien');
     karo.classList.toggle('ds-karo-leer', pattern === 'leer');
     karo.classList.toggle('ds-karo-frei', pattern === 'frei');
-    karo.querySelectorAll('.ink-karo-tools [data-pattern]').forEach((b) => b.classList.toggle('active', b.dataset.pattern === pattern));
   }
 
   /** Aktuelle Maße: Dokument, überschrieben von der Ebene. */
@@ -960,9 +959,32 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     changed();
   }
 
+  /** Schreibfeld des Dokuments unter dem Bildschirmpunkt (das Blatt liegt unter der Zeichenebene) – oder null. */
+  function karoAt(clientX, clientY) {
+    if (!paperView || paper?.karoResize === false) return null;
+    for (const n of document.elementsFromPoint(clientX, clientY)) {
+      const el = n.closest?.('[data-btype="karo"]');
+      if (el && paperView.el.contains(el) && el.querySelector('.ds-karo')) return el;
+    }
+    return null;
+  }
+
+  /** Menüeinträge eines Schreibfelds: Muster (✓ das aktuelle), bei selbst eingefügten Entfernen. */
+  function fieldEntries(el) {
+    const karo = el.querySelector('.ds-karo');
+    const now = fieldNow(el, karo);
+    const entries = Object.entries(BLOCK_PATTERNS).map(([pattern, label]) => ({
+      label: `${now.pattern === pattern ? '✓ ' : ''}Feld: ${label}`,
+      onClick: () => setField(el, karo, { ...fieldNow(el, karo), pattern }, stateJson()),
+    }));
+    if (el.dataset.inserted) entries.push({ label: '✕ Eingefügtes Feld entfernen', danger: true, onClick: () => removeInsert(el.dataset.bid) });
+    return entries;
+  }
+
   /**
    * Anfasser am Schreibfeld: unten die Höhe (immer – auch beim Schreiben),
-   * mit „Auswählen“ dazu rechts die Breite, an der Ecke beides, oben das Muster.
+   * mit „Auswählen“ dazu rechts die Breite, an der Ecke beides. Das Muster steht
+   * im Kontextmenü des Felds (Rechtsklick bzw. lange drücken) – auf der Fläche störte es.
    */
   function addKaroHandles() {
     if (paper.karoResize === false) return;
@@ -1007,17 +1029,6 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
       drag(handle('ink-karo-h', 'Feld länger oder kürzer ziehen'), { y: true });
       drag(handle('ink-karo-w', 'Feld breiter oder schmaler ziehen'), { x: true });
       drag(handle('ink-karo-c', 'Feld größer oder kleiner ziehen'), { x: true, y: true });
-      const tools = document.createElement('div');
-      tools.className = 'ink-karo-tools';
-      tools.innerHTML = Object.entries(BLOCK_PATTERNS).map(([p, label]) => `<button type="button" data-pattern="${p}" title="${label.slice(2)}">${label.slice(0, 1)}</button>`).join('')
-        + (el.dataset.inserted ? '<button type="button" data-remove="1" title="Eingefügtes Feld entfernen">✕</button>' : '');
-      tools.addEventListener('pointerdown', (e) => e.stopPropagation());
-      tools.addEventListener('click', (e) => {
-        if (e.target.closest('[data-remove]')) { removeInsert(el.dataset.bid); return; }
-        const b = e.target.closest('[data-pattern]');
-        if (b) setField(el, karo, { ...fieldNow(el, karo), pattern: b.dataset.pattern }, stateJson());
-      });
-      karo.appendChild(tools);
       paintField(karo, fieldNow(el, karo));
     }
   }
@@ -1989,7 +2000,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
       }
       // Im Dokument: Karo-Anfasser, „Bedienen“ und Textfelder (mit dem Text-
       // Werkzeug) gehen an das Blatt; alles andere fängt der Editor vorher ab.
-      if (p.paper && (e.target.closest?.('.ink-karo-handle, .ink-karo-tools, .ink-insert-mark') || state.tool === 'interact'
+      if (p.paper && (e.target.closest?.('.ink-karo-handle, .ink-insert-mark') || state.tool === 'interact'
         || (state.tool === 'text' && e.target.closest?.('.ink-text')))) return;
       if (e.pointerType === 'pen') penDown = true;
       // Rechte Taste, Stift-Seitentaste, Ctrl+Klick (Mac): Kontextmenü, nicht zeichnen.
@@ -2086,6 +2097,17 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
         } else {
           clearSelection();
           gesture = { kind: 'rect', id: e.pointerId, from: [x, y] };
+          // Lange auf ein Schreibfeld drücken (iPad): sein Menü – Muster, Entfernen.
+          const field = p.paper && e.pointerType !== 'mouse' ? karoAt(e.clientX, e.clientY) : null;
+          if (field) {
+            const g = gesture;
+            g.press = setTimeout(() => {
+              if (gesture !== g || g.to) return;
+              gesture = null;
+              p.busy = false;
+              showContextMenu(e.clientX, e.clientY, fieldEntries(field));
+            }, PRESS_MS);
+          }
         }
       } else if (tool === 'field') {
         clearSelection();
@@ -2330,7 +2352,10 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
       }
       const tool = (name, label) => ({ label: `${state.tool === name ? '✓ ' : ''}${label}`, onClick: () => { state.tool = name; clearSelection(); paintToolbar(); } });
       const key = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Strg+';
+      // Auf einem Schreibfeld zuerst dessen Muster.
+      const field = p.paper ? karoAt(e.clientX, e.clientY) : null;
       const entries = [
+        ...(field ? [...fieldEntries(field), '-'] : []),
         tool('pen', '✏️ Stift'), tool('marker', '🖍 Textmarker'), tool('eraser', '🧽 Radierer'),
         tool('text', 'T Textfeld'), tool('select', '⬚ Auswählen'),
       ];
@@ -2482,7 +2507,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     const css = getComputedStyle(paperView.el);
     const padLeft = parseFloat(css.paddingLeft) * PX_PT;
     const copy = paperView.el.cloneNode(true);
-    copy.querySelectorAll('.ink-karo-handle, .ink-karo-tools, .ink-insert-mark').forEach((el) => el.remove());
+    copy.querySelectorAll('.ink-karo-handle, .ink-insert-mark').forEach((el) => el.remove());
     copy.querySelector('.docspec')?.classList.toggle('ds-hide-solutions', !withSolutions);
     if (ink) {
       for (const [bid, entry] of Object.entries(layerNow.blocks || {})) {

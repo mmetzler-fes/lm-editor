@@ -856,6 +856,11 @@ body {
 .docspec .ds-image { margin: 0.6em 0; text-align: center; }
 .docspec .ds-image img { max-width: 100%; height: auto; }
 .docspec .ds-image figcaption { font-size: 0.85em; font-weight: 600; margin-top: 0.3em; }
+/* Bildgruppe: Bilder an fester Stelle in einem Rahmen mit festem Seitenverhältnis */
+.docspec .ds-group { margin: 0.6em 0; }
+.docspec .ds-group-box { position: relative; max-width: 100%; margin: 0 auto; }
+.docspec .ds-group-box img { position: absolute; display: block; max-width: none; object-fit: fill; }
+.docspec .ds-group figcaption { font-size: 0.85em; font-weight: 600; margin-top: 0.3em; text-align: center; }
 .docspec .ds-karo {
   margin: 0.4em 0 0.8em;
   border: 1px solid var(--text-secondary);

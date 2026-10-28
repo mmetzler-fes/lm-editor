@@ -54,7 +54,8 @@ mit dem Hinweis, das Programm zu aktualisieren.
   bzw. `p:2.0` gespeichert sind, sonst eine neue zufällige.
 - **`orientation`** auf oberster Ebene: `portrait` (A4 hoch, Vorgabe) oder
   `landscape` (A4 quer). Die Satzbreite ist dann 17 cm bzw. 25,7 cm.
-- **Verweise ins Archiv**: `image.src: "media/schaltung.png"`,
+- **Verweise ins Archiv**: `image.src: "media/schaltung.png"` (ebenso
+  `group.items[].src` einer Bildgruppe),
   `quiz.module: "<id>"` → `modules/<id>.json`.
 
 ## modules/&lt;id&gt;.json

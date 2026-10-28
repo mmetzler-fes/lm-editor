@@ -512,7 +512,7 @@ const esc = (v) => String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replac
 export function widgetHtml(block) {
   const preview = renderDocSpecHtml({ content: [block] }, { showSolutions: true, showPageBreaks: true });
   const field = { linien: 'Linien', leer: 'Feld', frei: 'Platz (unsichtbar)' }[block?.pattern];
-  const label = { karo: field || 'Karo', solution: 'Lösung', formula: 'Formel', code: 'Code', spacer: 'Platz', pagebreak: 'Seitenumbruch', quiz: 'Quiz' }[block?.type] || block?.type || 'Baustein';
+  const label = { karo: field || 'Karo', solution: 'Lösung', formula: 'Formel', code: 'Code', spacer: 'Platz', pagebreak: 'Seitenumbruch', quiz: 'Quiz', group: 'Bildgruppe' }[block?.type] || block?.type || 'Baustein';
   return `<div class="ds-widget" contenteditable="false" data-block="${encodeURIComponent(JSON.stringify(block))}" title="${esc(label)} – Doppelklick zum Bearbeiten"><span class="ds-widget-label">${esc(label)}</span>${preview}</div>`;
 }
 

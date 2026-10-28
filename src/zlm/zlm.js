@@ -134,7 +134,9 @@ export function specForView(doc) {
   const spec = structuredClone(doc.spec);
   const walk = (blocks) => (Array.isArray(blocks) ? blocks : []).forEach((b) => {
     if (b && typeof b === 'object') {
-      if (b.type === 'image' && typeof b.src === 'string' && b.src.startsWith('media/') && doc.media[b.src.slice(6)]) b.src = dataUrl(doc.media[b.src.slice(6)], b.src);
+      const view = (it) => { if (typeof it?.src === 'string' && it.src.startsWith('media/') && doc.media[it.src.slice(6)]) it.src = dataUrl(doc.media[it.src.slice(6)], it.src); };
+      if (b.type === 'image') view(b);
+      if (b.type === 'group' && Array.isArray(b.items)) b.items.forEach(view);
       walk(b.blocks);
     }
   });

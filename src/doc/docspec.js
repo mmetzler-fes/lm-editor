@@ -10,7 +10,7 @@
 // Gliederungsnummern 1. / 1.1 / 1.1.1, gewollte Zeilenumbrüche im Fließtext,
 // `n_S` mit tiefgestelltem S, Lösungen zunächst ausgeblendet.
 
-export const DOC_BLOCK_TYPES = ['section', 'task', 'subtask', 'heading', 'text', 'list', 'code', 'image', 'table',
+export const DOC_BLOCK_TYPES = ['section', 'task', 'subtask', 'heading', 'text', 'list', 'code', 'image', 'group', 'table',
   'formula', 'note', 'solution', 'box', 'karo', 'spacer', 'pagebreak', 'quiz', 'columns', 'column'];
 
 const HEADING_TYPES = ['section', 'task', 'subtask'];
@@ -126,6 +126,20 @@ function cellImageOk(i) {
     && (i.width === undefined || CSS_LENGTH_RE.test(String(i.width)));
 }
 
+/**
+ * Bildgruppe: Bilder an fester Stelle zueinander (wie eine Gruppe in Draw).
+ * `items`: { src, x, y, w, h, alt? } – Lage und Größe in Prozent der Gruppe
+ * (x, w der Breite; y, h der Höhe); `ratio`: Höhe ÷ Breite der Gruppe.
+ */
+export const GROUP_MAX_ITEMS = 40;
+const pct = (v, min = 0) => typeof v === 'number' && Number.isFinite(v) && v >= min && v <= 100;
+export function groupItemOk(it) {
+  return !!it && typeof it === 'object' && isText(it.src) && IMAGE_SRC_RE.test(String(it.src))
+    && pct(it.x) && pct(it.y) && pct(it.w, 0.5) && pct(it.h, 0.5)
+    && it.x + it.w <= 100.5 && it.y + it.h <= 100.5;
+}
+export const groupRatioOk = (r) => typeof r === 'number' && Number.isFinite(r) && r >= 0.05 && r <= 20;
+
 function cellOk(c) {
   if (isText(c)) return true;
   if (!c || typeof c !== 'object' || Array.isArray(c)) return false;
@@ -211,6 +225,16 @@ function checkBlock(block, path, errors, inSolution, parent = '') {
       if (isText(block.src)) need(IMAGE_SRC_RE.test(String(block.src)), 'src: nur Bilder als data:image/… oder https://.');
       if (block.width !== undefined) need(CSS_LENGTH_RE.test(String(block.width)), 'width: z. B. 9cm.');
       if (block.float !== undefined) need(FLOATS.includes(block.float), `float: ${FLOATS.join(', ')}.`);
+      break;
+    case 'group':
+      need(Array.isArray(block.items) && block.items.length > 0 && block.items.length <= GROUP_MAX_ITEMS,
+        `items: Liste der Bilder (1 bis ${GROUP_MAX_ITEMS}) fehlt.`);
+      if (Array.isArray(block.items)) {
+        block.items.forEach((it, i) => need(groupItemOk(it),
+          `items[${i}]: { src: data:image/… oder https://, x, y, w, h in Prozent der Gruppe (0–100) }.`));
+      }
+      need(groupRatioOk(block.ratio), 'ratio: Höhe ÷ Breite der Gruppe, z. B. 0.6.');
+      if (block.width !== undefined) need(CSS_LENGTH_RE.test(String(block.width)), 'width: z. B. 16.5cm.');
       break;
     case 'table':
       need(Array.isArray(block.rows) && block.rows.length > 0, 'rows: Liste der Zeilen fehlt.');
@@ -841,6 +865,15 @@ function renderBlockHtml(block, ctx) {
       const caption = isText(block.caption) ? `<figcaption>${richText(block.caption)}</figcaption>` : '';
       const cls = `ds-image${block.border ? ' ds-image-border' : ''}${FLOATS.includes(block.float) ? ` ds-image-${block.float}` : ''}`;
       return `<figure class="${cls}">${img}${caption}</figure>`;
+    }
+    case 'group': {
+      const width = CSS_LENGTH_RE.test(String(block.width ?? '')) ? `width:${block.width};` : '';
+      const ratio = groupRatioOk(block.ratio) ? block.ratio : 0.6;
+      const r = (v) => Math.round(Number(v) * 1000) / 1000;
+      const imgs = (Array.isArray(block.items) ? block.items : []).filter(groupItemOk)
+        .map((it) => `<img src="${esc(it.src)}" alt="${esc(it.alt ?? '')}" style="left:${r(it.x)}%;top:${r(it.y)}%;width:${r(it.w)}%;height:${r(it.h)}%">`).join('');
+      const caption = isText(block.caption) ? `<figcaption>${richText(block.caption)}</figcaption>` : '';
+      return `<figure class="ds-group"><div class="ds-group-box" style="${width}aspect-ratio:1 / ${r(ratio)}">${imgs}</div>${caption}</figure>`;
     }
     case 'table': {
       const caption = isText(block.caption) ? `<p class="ds-caption"><em>${esc(block.caption)}</em></p>` : '';

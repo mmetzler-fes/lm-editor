@@ -6,6 +6,7 @@ import {
 import { rulerSvg, rulerHandles } from './ink-ruler.js';
 import { svgEl, itemSvg, fieldSvg, inkSvgFor, inkSvgBox } from './ink-view.js';
 import { showContextMenu } from '../util/dom.js';
+import { FONT_SIZES } from '../doc/docspec.js';
 
 // ==================== STIFT-EDITOR ====================
 //
@@ -34,8 +35,8 @@ const COLORS = ['#1e293b', '#2563eb', '#dc2626', '#16a34a', '#ea580c', '#9333ea'
 const MARKERS = ['#fde047', '#86efac', '#f9a8d4', '#93c5fd', '#fdba74'];
 const WIDTHS = { pen: [1.1, 1.9, 3.2], marker: [9, 14, 20] };
 const ERASER = 7;           // Radius des Radierers in Punkten
-const TEXT_SIZE = 13;       // Schriftgröße der Textfelder in Punkten (mittel)
-const TEXT_SIZES = [10, 13, 18];
+const TEXT_SIZE = 13;       // Schriftgröße älterer Textfelder ohne Angabe, in Punkten
+const NEW_TEXT_SIZE = 12;   // Vorgabe für neue Textfelder – Größen wie im Dokument-Editor (FONT_SIZES)
 
 // Symbole der Werkzeugleiste (selbst gezeichnet, 24 × 24, Linienstil).
 const ICON_PATHS = {
@@ -179,7 +180,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
   if (doc.bg === 'paper') doc.pages = [{ items: [] }];
 
   const state = {
-    tool: 'pen', color: COLORS[0], marker: MARKERS[0], widthIdx: 1, textSizeIdx: 1, fieldPattern: 'karo',
+    tool: 'pen', color: COLORS[0], marker: MARKERS[0], widthIdx: 1, textSize: NEW_TEXT_SIZE, fieldPattern: 'karo',
     zoom: 1, fingerDraws: false, variant: 'blatt',
     selection: null,          // { page, ids: Set }
     undo: [], redo: [],
@@ -246,7 +247,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
           ${[0, 1, 2].map((i) => `<button type="button" class="ink-btn ink-width" data-width="${i}" title="${['dünn', 'mittel', 'dick'][i]}" aria-label="${['dünn', 'mittel', 'dick'][i]}"><i style="--h:${[1.5, 3, 5][i]}px"></i></button>`).join('')}
         </span>
         <span class="ink-group ink-sizes">
-          ${[0, 1, 2].map((i) => `<button type="button" class="ink-btn ink-size" data-size="${i}" title="Schrift ${['klein', 'mittel', 'groß'][i]}" style="font-size:${[12, 16, 21][i]}px">A</button>`).join('')}
+          <select class="ink-tsize" title="Schriftgröße (wie im Dokument-Editor)" aria-label="Schriftgröße">${FONT_SIZES.map((pt) => `<option value="${pt}">${pt} pt</option>`).join('')}</select>
         </span>
         <span class="ink-group ink-patterns">
           ${Object.entries(FIELD_PATTERNS).map(([p, label]) => `<button type="button" class="ink-btn ink-pattern" data-pattern="${p}" title="${label.slice(2)}" aria-label="${label.slice(2)}">${label.slice(0, 1)}</button>`).join('')}
@@ -281,7 +282,12 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     const drawing = ['pen', 'marker'].includes(state.tool);
     $('.ink-colors').hidden = !drawing && state.tool !== 'text';
     $('.ink-widths').hidden = !drawing;
-    $('.ink-sizes').hidden = state.tool !== 'text';
+    const texts = state.tool === 'select' ? selectedItems().filter((it) => it.type === 'text') : [];
+    $('.ink-sizes').hidden = state.tool !== 'text' && !texts.length;
+    const shown = texts.length && texts.every((t) => (t.size || TEXT_SIZE) === (texts[0].size || TEXT_SIZE)) ? texts[0].size || TEXT_SIZE : state.textSize;
+    const tsize = $('.ink-tsize');
+    if (![...tsize.options].some((o) => Number(o.value) === shown)) tsize.add(new Option(`${shown} pt`, String(shown))); // ältere Größe (13 pt)
+    tsize.value = String(shown);
     $('.ink-sub-sep').hidden = $('.ink-colors').hidden;
     // Muster: fürs neue Feld – oder, beim Auswählen, für die gewählten Felder.
     const fields = selectedItems().filter((it) => it.type === 'field');
@@ -362,9 +368,19 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     const b = e.target.closest('[data-width]');
     if (b) { state.widthIdx = Number(b.dataset.width); paintToolbar(); }
   });
-  $('.ink-sizes').addEventListener('click', (e) => {
-    const b = e.target.closest('[data-size]');
-    if (b) { state.textSizeIdx = Number(b.dataset.size); paintToolbar(); }
+  // Schriftgröße: für neue Texte – und für gewählte Textfelder sofort.
+  $('.ink-tsize').addEventListener('change', (e) => {
+    const size = Number(e.target.value);
+    const texts = state.tool === 'select' ? selectedItems().filter((it) => it.type === 'text') : [];
+    if (texts.length) {
+      snapshot();
+      const ids = new Set(texts.map((t) => t.id));
+      const sel = state.selection;
+      doc.pages[sel.page].items = doc.pages[sel.page].items.map((it) => (ids.has(it.id) ? { ...it, size, h: Math.max(it.h || 0, size * 1.4) } : it));
+      changed();
+      drawItems(sel.page);
+    } else state.textSize = size;
+    paintToolbar();
   });
   $('.ink-undo').addEventListener('click', () => history(state.undo, state.redo));
   $('.ink-redo').addEventListener('click', () => history(state.redo, state.undo));
@@ -1672,7 +1688,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
         gesture = { kind: 'rect', id: e.pointerId, from: [x, y], field: true };
       } else if (tool === 'text') {
         snapshot();
-        const size = TEXT_SIZES[state.textSizeIdx];
+        const size = state.textSize;
         const item = { id: uid(), type: 'text', x, y: y - size * 0.7, w: 160, h: size * 1.4, text: '', color: state.color, size };
         doc.pages[p.i].items.push(item);
         const box = textBox(p, item);

@@ -16,7 +16,7 @@
  * Feste Block-IDs (ids.js) reisen als data-id mit – an ihnen hängen die
  * Striche der Schüler.
  */
-import { richText, renderDocSpecHtml, tableColgroup, tableRowAttr, tableLineStyle, TABLE_LINE_STYLES, TEXT_COLORS, HIGHLIGHTS, LINE_HEIGHTS, LIST_MARKERS, LIST_NUMBERINGS, LINE_COLORS, CELL_BACKGROUNDS, CELL_VALIGNS, paraStyle } from './docspec.js';
+import { richText, renderDocSpecHtml, tableColgroup, tableRowAttr, tableLineStyle, TABLE_LINE_STYLES, TEXT_COLORS, HIGHLIGHTS, FONT_SIZES, BASE_FONT_PT, LINE_HEIGHTS, LIST_MARKERS, LIST_NUMBERINGS, LINE_COLORS, CELL_BACKGROUNDS, CELL_VALIGNS, paraStyle } from './docspec.js';
 import { isBlockId } from './ids.js';
 
 const MARKUP_CHARS = /[\\*`[\]]/g;
@@ -79,14 +79,44 @@ function inline(node, images, warnings) {
       const href = c.getAttribute('href') || '';
       out += /^(https?:|mailto:)/i.test(href) && inner.trim() ? `[${inner.trim()}](${href})` : inner;
     } else if (['SPAN', 'FONT', 'MARK'].includes(tag)) {
-      // Farbe und Hervorhebung: [Text]{blau,hl-gelb} – nur Farben der Palette.
+      // Farbe, Hervorhebung, Größe: [Text]{blau,hl-gelb,14pt} – nur Farben der Palette und Größen der Liste.
       const color = TEXT_COLORS[c.dataset?.color] ? c.dataset.color : paletteName(c.style?.color || c.getAttribute('color'), TEXT_COLORS);
       const hl = HIGHLIGHTS[c.dataset?.hl] ? c.dataset.hl : paletteName(c.style?.backgroundColor, HIGHLIGHTS) || (tag === 'MARK' ? 'gelb' : null);
-      const spec = [color, hl ? `hl-${hl}` : ''].filter(Boolean).join(',');
-      out += spec && inner.trim() && !inner.includes('\\\n') ? `[${inner}]{${spec}}` : inner;
+      const size = fontSizeOf(c);
+      const own = [color, hl ? `hl-${hl}` : '', size ? `${size}pt` : ''].filter(Boolean);
+      if (!own.length) { out += inner; continue; }
+      // Je Kind einzeln auszeichnen: Eine innere Angabe (Größe in einem farbigen Text …) gilt für
+      // ihr Stück, die äußere für den Rest – geschachtelt ([a [b]{8pt}]{blau}) kennt das Format nicht.
+      for (const ch of c.childNodes) {
+        const piece = inline({ childNodes: [ch] }, images, warnings);
+        const m = /^(\s*)([\s\S]*?)(\s*)$/.exec(piece);
+        if (!m[2] || m[2].includes('\\\n')) { out += piece; continue; }
+        const nested = /^\[([^\]\n]+)\]\{([a-z0-9,-]+)\}$/.exec(m[2]);
+        out += m[1] + (nested ? `[${nested[1]}]{${mergeSpec(own, nested[2])}}` : `[${m[2]}]{${own.join(',')}}`) + m[3];
+      }
     } else out += inner;
   }
   return out;
+}
+
+/** Angaben zusammenführen: Die innere (`inner`, „blau,14pt“) gilt vor der äußeren je Art (Farbe, Hervorhebung, Größe). */
+function mergeSpec(outer, inner) {
+  const kind = (p) => (/pt$/.test(p) ? 'pt' : p.startsWith('hl-') ? 'hl' : 'c');
+  const parts = inner.split(',');
+  for (const p of outer) if (!parts.some((q) => kind(q) === kind(p))) parts.push(p);
+  return parts.join(',');
+}
+
+/** Schriftgröße eines Elements (data-size, style in pt/px/em) → nächste Größe der Liste in pt – oder null. */
+function fontSizeOf(el) {
+  const own = Number(el.dataset?.size);
+  if (FONT_SIZES.includes(own)) return own;
+  const m = /^([\d.]+)(pt|px|em|rem)$/.exec(String(el.style?.fontSize || '').trim());
+  if (!m) return null;
+  const v = Number(m[1]);
+  const pt = m[2] === 'pt' ? v : m[2] === 'px' ? v * 0.75 : v * BASE_FONT_PT;
+  if (Math.abs(pt - BASE_FONT_PT) < 0.3 && m[2] !== 'pt') return null; // Grundschrift
+  return FONT_SIZES.reduce((best, s) => (Math.abs(s - pt) < Math.abs(best - pt) ? s : best), FONT_SIZES[0]);
 }
 
 function cleanText(text) {

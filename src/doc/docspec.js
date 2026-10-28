@@ -364,12 +364,19 @@ export function textLines(text) {
 export const TEXT_COLORS = { blau: '#1d4ed8', gruen: '#15803d', orange: '#c2410c', lila: '#7e22ce', grau: '#6b7280' };
 export const HIGHLIGHTS = { gelb: '#fef08a', gruen: '#bbf7d0', blau: '#bfdbfe', rosa: '#fbcfe8' };
 
-/** `blau,hl-gelb` → { color, hl } (nur bekannte Namen). */
+/** Schriftgrößen im Text ([Text]{14pt}) – wie im Druck; ohne Angabe die Größe der Vorlage. */
+export const FONT_SIZES = [8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 28, 32, 36];
+/** Grundschrift der Vorlage in pt – die Ansicht rechnet Größen relativ dazu (em), damit A−/A+ mitgeht. */
+export const BASE_FONT_PT = 11;
+
+/** `blau,hl-gelb,14pt` → { color, hl, size } (nur bekannte Namen und Größen). */
 export function parseColorSpec(spec) {
   const out = {};
   for (const part of String(spec || '').split(',')) {
+    const pt = /^(\d{1,2})pt$/.exec(part);
     if (part.startsWith('hl-') && HIGHLIGHTS[part.slice(3)]) out.hl = part.slice(3);
     else if (TEXT_COLORS[part]) out.color = part;
+    else if (pt && FONT_SIZES.includes(Number(pt[1]))) out.size = Number(pt[1]);
   }
   return out;
 }
@@ -385,7 +392,7 @@ const INLINE_RE = new RegExp([
   '\\^\\{(?<sup>[^}]{1,40})\\}',
   '_\\{(?<sub>[^}]{1,24})\\}',
   '\\[(?<atext>[^\\]\\n]+)\\]\\((?<href>(?:https?://|mailto:)[^)\\s]+)\\)',
-  '\\[(?<ctext>[^\\]\\n]+)\\]\\{(?<color>[a-z-]+(?:,[a-z-]+)?)\\}',
+  '\\[(?<ctext>[^\\]\\n]+)\\]\\{(?<color>[a-z0-9-]+(?:,[a-z0-9-]+){0,2})\\}',
 ].join('|'), 'g');
 
 /** Unbeschriebener Text: `n_S`-Indizes wie bisher. */
@@ -422,10 +429,11 @@ export function inlineHtml(line) {
     else if (g.sub !== undefined) html += `<sub>${esc(g.sub)}</sub>`;
     else if (g.href !== undefined) html += `<a href="${esc(g.href)}" target="_blank" rel="noopener noreferrer">${inlineHtml(g.atext)}</a>`;
     else if (g.color !== undefined) {
-      const { color, hl } = parseColorSpec(g.color);
-      const style = [color ? `color:${TEXT_COLORS[color]}` : '', hl ? `background:${HIGHLIGHTS[hl]}` : ''].filter(Boolean).join(';');
+      const { color, hl, size } = parseColorSpec(g.color);
+      const em = size ? Math.round((size / BASE_FONT_PT) * 1000) / 1000 : 0;
+      const style = [color ? `color:${TEXT_COLORS[color]}` : '', hl ? `background:${HIGHLIGHTS[hl]}` : '', em ? `font-size:${em}em` : ''].filter(Boolean).join(';');
       html += style
-        ? `<span class="ds-color"${color ? ` data-color="${color}"` : ''}${hl ? ` data-hl="${hl}"` : ''} style="${style}">${inlineHtml(g.ctext)}</span>`
+        ? `<span class="ds-color"${color ? ` data-color="${color}"` : ''}${hl ? ` data-hl="${hl}"` : ''}${size ? ` data-size="${size}"` : ''} style="${style}">${inlineHtml(g.ctext)}</span>`
         : plainText(m[0]); // unbekannte Farbe: wörtlich
     }
   }

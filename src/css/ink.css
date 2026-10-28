@@ -51,7 +51,7 @@ body.ink-open { overflow: hidden; }
 }
 .ink-subbar::-webkit-scrollbar { display: none; }
 .ink-width i { display: block; width: 26px; height: var(--h); border-radius: 3px; background: currentColor; }
-.ink-size { font-weight: 600; font-family: Georgia, serif; }
+.ink-tsize { font: inherit; font-size: 0.85rem; padding: 2px 4px; border-radius: 6px; border: 1px solid var(--border, #ccc); background: var(--bg-secondary, #fff); color: inherit; }
 .ink-color { min-width: 30px; width: 30px; height: 30px; border-radius: 50%; background: var(--c); margin: 0 3px; }
 .ink-color:hover { background: var(--c); filter: brightness(0.92); }
 .ink-btn.ink-color.active { background: var(--c); box-shadow: 0 0 0 2px var(--bg-secondary), 0 0 0 4px var(--accent); }

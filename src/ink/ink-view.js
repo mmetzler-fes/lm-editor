@@ -67,7 +67,9 @@ function appendShapeText(g, item, ownRotation) {
     x: r2(t.cx), y: r2(t.firstY), 'text-anchor': 'middle', 'font-size': t.size, fill: item.textColor || item.color || '#1e293b',
     'font-family': 'LM Sans, Liberation Sans, Arial, sans-serif', class: 'ink-shape-text',
   });
-  if (ownRotation && t.rot) text.setAttribute('transform', `rotate(${t.rot} ${r2(t.cx)} ${r2(t.cy)})`);
+  // Rechteck, Ellipse: Die Gruppe ist schon um die Form gedreht – dazu nur die eigene Drehung des Texts.
+  const turn = ownRotation ? t.rot : (item.textTurn || 0);
+  if (turn) text.setAttribute('transform', `rotate(${turn} ${r2(t.cx)} ${r2(t.cy)})`);
   t.lines.forEach((line, i) => {
     const span = svgEl('tspan', { x: r2(t.cx), dy: i ? r2(t.lh) : 0 });
     span.textContent = line || ' ';
@@ -137,6 +139,12 @@ function inkGroups(items) {
     else if (it.type === 'text' && it.text) {
       const size = it.size || TEXT_SIZE;
       const t = svgEl('text', { x: it.x + 3, y: it.y + 1 + size, fill: it.color || '#1e293b', 'font-size': size, 'font-family': 'LM Sans, Liberation Sans, Arial, sans-serif' });
+      if (it.rot) {
+        // Gedreht um die Mitte des Felds – wie im Editor.
+        const cx = it.x + (it.w || 160) / 2;
+        const cy = it.y + (it.h || size * 1.4) / 2;
+        t.setAttribute('transform', `rotate(${it.rot} ${Math.round(cx * 100) / 100} ${Math.round(cy * 100) / 100})`);
+      }
       it.text.split('\n').forEach((line, i) => {
         const span = svgEl('tspan', { x: it.x + 3, dy: i ? size * 1.3 : 0 });
         span.textContent = line || ' ';

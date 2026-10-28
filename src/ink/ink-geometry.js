@@ -6,7 +6,7 @@
 // (A4 = 595 × 842), Punkte als [x, y, Druck 0…1].
 
 /** A4 in PDF-Punkten; 1 mm = 72 / 25,4 pt. */
-import { shapeBounds, hitShape, movedShape } from './ink-shapes.js';
+import { shapeBounds, hitShape, movedShape, rotatePoint } from './ink-shapes.js';
 
 export const A4 = { w: 595.28, h: 841.89 };
 export const MM = 72 / 25.4;
@@ -93,11 +93,25 @@ export function hitsStroke(item, x, y, radius) {
 /** Rechteckige Elemente: Textfeld und Feld (Abdeckung mit Karo, Linien oder leer). */
 export const isBox = (item) => item.type === 'text' || item.type === 'field';
 
+/** Ungedrehter Rahmen eines Textfelds. */
+export function textBox(item) {
+  return { x: item.x, y: item.y, w: item.w || 160, h: item.h || (item.size || 14) * 1.4 };
+}
+
 /** Umgebendes Rechteck eines Elements (Strich, Textfeld, Feld oder Form). */
 export function bounds(item) {
   if (item.type === 'shape') return shapeBounds(item);
   if (item.type === 'field') return { x: item.x, y: item.y, w: item.w, h: item.h };
-  if (item.type === 'text') return { x: item.x, y: item.y, w: item.w || 160, h: item.h || (item.size || 14) * 1.4 };
+  if (item.type === 'text') {
+    const b = textBox(item);
+    if (!item.rot) return b;
+    // Gedreht (um die Mitte): Rahmen um die gedrehten Ecken.
+    const c = [b.x + b.w / 2, b.y + b.h / 2];
+    const pts = [[b.x, b.y], [b.x + b.w, b.y], [b.x + b.w, b.y + b.h], [b.x, b.y + b.h]].map((q) => rotatePoint(q, c, item.rot));
+    const xs = pts.map((q) => q[0]);
+    const ys = pts.map((q) => q[1]);
+    return { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) };
+  }
   const pts = item.points || [];
   if (!pts.length) return { x: 0, y: 0, w: 0, h: 0 };
   let x0 = Infinity; let y0 = Infinity; let x1 = -Infinity; let y1 = -Infinity;
@@ -146,6 +160,11 @@ export function itemAt(items, x, y, radius) {
     const it = items[i];
     if (it.type === 'shape') {
       if (hitShape(it, x, y, radius)) return it;
+    } else if (it.type === 'text' && it.rot) {
+      // Gedrehtes Textfeld: im eigenen Rahmen prüfen.
+      const b = textBox(it);
+      const [lx, ly] = rotatePoint([x, y], [b.x + b.w / 2, b.y + b.h / 2], -it.rot);
+      if (lx >= b.x - radius && lx <= b.x + b.w + radius && ly >= b.y - radius && ly <= b.y + b.h + radius) return it;
     } else if (isBox(it)) {
       const b = bounds(it);
       if (x >= b.x - radius && x <= b.x + b.w + radius && y >= b.y - radius && y <= b.y + b.h + radius) return it;

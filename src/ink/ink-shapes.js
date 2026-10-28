@@ -9,7 +9,8 @@
 //   Drehen dreht die Punkte selbst, rot bleibt 0
 //   arrow: heads 'end' | 'both'
 //   Rechteck, Ellipse, Vieleck: text (Zeilen mit \n), textSize (pt) – mittig, dreht mit
-//   (beim Vieleck über textRot, weil seine Drehung in den Punkten steckt)
+//   (beim Vieleck über textRot, weil seine Drehung in den Punkten steckt); textTurn: Text
+//   zusätzlich gedreht (0, 90, 180, 270), z. B. senkrecht in einem geraden Rechteck
 
 export const SHAPE_KINDS = ['rect', 'ellipse', 'polygon', 'line', 'arrow'];
 /** Hellere Farben für Flächen. */
@@ -31,7 +32,9 @@ export function shapeTextLayout(item) {
   const lines = String(item.text).split('\n');
   const lh = size * 1.25;
   const [cx, cy] = shapeCenter(item);
-  return { cx, cy, size, lines, lh, firstY: cy - ((lines.length - 1) * lh) / 2 + size * 0.35, rot: usesPoints(item) ? item.textRot || 0 : item.rot || 0 };
+  // textTurn: eigene Drehung des Texts in der Form (90°-Schritte), zur Drehung der Form dazu.
+  const rot = ((usesPoints(item) ? item.textRot || 0 : item.rot || 0) + (item.textTurn || 0)) % 360;
+  return { cx, cy, size, lines, lh, firstY: cy - ((lines.length - 1) * lh) / 2 + size * 0.35, rot };
 }
 
 /** Punkt um die Mitte (cx, cy) drehen. */

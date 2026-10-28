@@ -1,13 +1,13 @@
 import {
   A4, CM, strokeOutline, polyline, hitsStroke, bounds, inSelection, moved, ruling,
   pageToRuler, inRuler, nearEdge, projectOnSegment, snapAngle, itemAt, extremesAlong,
-  isBox, resizedBox, corners, MM,
+  isBox, resizedBox, corners, MM, textBox as textFrame,
 } from './ink-geometry.js';
 import { rulerSvg, rulerHandles } from './ink-ruler.js';
 import { svgEl, itemSvg, fieldSvg, shapeSvg, inkSvgFor, inkSvgBox } from './ink-view.js';
 import {
   FILL_COLORS, DASHES, SHAPE_WIDTHS, usesPoints, shapeCorners, rotateHandle, resizedShape, rotatedShape,
-  normalizedAngle, toPolygon, shapeFromDrag, shapeCenter, shapeBox, isClosed, SHAPE_TEXT_SIZE,
+  normalizedAngle, toPolygon, shapeFromDrag, shapeCenter, shapeBox, isClosed, SHAPE_TEXT_SIZE, rotatePoint,
 } from './ink-shapes.js';
 import { showContextMenu } from '../util/dom.js';
 import { FONT_SIZES } from '../doc/docspec.js';
@@ -1310,6 +1310,11 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     box.style.top = `${(item.y / p.h) * 100}%`;
     box.style.color = item.color;
     box.style.fontSize = `calc(${item.size || TEXT_SIZE}px * var(--z))`;
+    if (item.rot) {
+      // Gedreht um die Mitte (wie in Ansicht und Druck).
+      box.style.transformOrigin = '50% 50%';
+      box.style.transform = `rotate(${item.rot}deg)`;
+    }
     box.textContent = item.text || '';
     // Erster Klick auf ein Feld markiert seinen Text, weitere setzen die Schreibmarke.
     let fresh = false;
@@ -1375,6 +1380,14 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
       }
       const f = selectedField(p.i);
       if (f) for (const [x, y] of corners(f)) handles.appendChild(svgEl('circle', { cx: x, cy: y, r: HANDLE / state.zoom, class: 'ink-handle' }));
+      // Textfeld: Dreh-Anfasser über der Mitte der Oberkante.
+      const t = selectedText(p.i);
+      if (t) {
+        const [hx, hy] = textRotateHandle(t, ROT_GAP / state.zoom);
+        const top = textRotateHandle(t, 0);
+        handles.appendChild(svgEl('line', { x1: top[0], y1: top[1], x2: hx, y2: hy, class: 'ink-rot-line' }));
+        handles.appendChild(svgEl('circle', { cx: hx, cy: hy, r: HANDLE / state.zoom, class: 'ink-handle ink-rot-handle' }));
+      }
       // Form: Ecken (Größe), Dreh-Anfasser, bei Vieleck und Linie die Punkte einzeln.
       const s = selectedShape(p.i);
       if (s) {
@@ -1431,6 +1444,25 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
       dot.setAttribute('cy', at[1]);
       dot.setAttribute('r', String(6 / Math.max(0.5, state.zoom)));
     }
+  }
+
+  /** Das Textfeld, wenn genau eins gewählt ist (dann mit Dreh-Anfasser). */
+  function selectedText(page) {
+    const sel = state.selection;
+    if (!sel || sel.page !== page || sel.ids.size !== 1) return null;
+    const it = (doc.pages[page]?.items || []).find((x) => sel.ids.has(x.id));
+    return it?.type === 'text' ? it : null;
+  }
+  /** Dreh-Anfasser eines Textfelds: `gap` über der Mitte seiner (gedrehten) Oberkante. */
+  function textRotateHandle(t, gap) {
+    const b = textFrame(t);
+    const c = [b.x + b.w / 2, b.y + b.h / 2];
+    return rotatePoint([c[0], b.y - gap], c, t.rot || 0);
+  }
+  /** Mitte, um die ein Element gedreht wird. */
+  function centerOf(it) {
+    if (it.type === 'text') { const b = textFrame(it); return [b.x + b.w / 2, b.y + b.h / 2]; }
+    return shapeCenter(it);
   }
 
   /** Die Form, wenn genau eine Form gewählt ist (dann mit Anfassern). */
@@ -1630,6 +1662,11 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
   /** Anfasser unter dem Punkt: { id, idx } (Linie) bzw. { id, corner } (Feld) oder null. */
   function handleAt(page, x, y) {
     const reach = (HANDLE * 1.6) / state.zoom;
+    const t = selectedText(page);
+    if (t) {
+      const [hx, hy] = textRotateHandle(t, ROT_GAP / state.zoom);
+      if (Math.hypot(x - hx, y - hy) <= reach) return { id: t.id, rotate: true };
+    }
     const s = selectedShape(page);
     if (s) {
       const [rx, ry] = rotateHandle(s, ROT_GAP / state.zoom);
@@ -1877,6 +1914,12 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     }
     const shape = items.length === 1 && items[0].type === 'shape' ? items[0] : null;
     if (shape && isClosed(shape)) entries.push({ label: shape.text ? '✏️ Text in der Form bearbeiten' : '✏️ Text in die Form', onClick: () => editShapeText(shape.id) });
+    if (shape?.text) {
+      entries.push({ label: '⟳ Text um 90° drehen', onClick: () => replaceShape((it) => ({ ...it, textTurn: ((it.textTurn || 0) + 90) % 360 })) });
+      if (shape.textTurn) entries.push({ label: '⟲ Text wieder gerade (wie die Form)', onClick: () => replaceShape((it) => { const n = { ...it }; delete n.textTurn; return n; }) });
+    }
+    const textItem = items.length === 1 && items[0].type === 'text' ? items[0] : null;
+    if (textItem?.rot) entries.push({ label: '↻ Drehung zurücksetzen', onClick: () => { snapshot(); const sel = state.selection; doc.pages[sel.page].items = doc.pages[sel.page].items.map((it) => (it.id === textItem.id ? { ...it, rot: 0 } : it)); changed(); drawItems(sel.page); } });
     if (shape && !usesPoints(shape)) entries.push({ label: '⬠ In Vieleck umwandeln (Punkte einzeln ziehen)', onClick: () => replaceShape(toPolygon) });
     if (shape && shape.rot) entries.push({ label: '↻ Drehung zurücksetzen', onClick: () => replaceShape((it) => ({ ...it, rot: 0 })) });
     if (shape?.kind === 'arrow') {
@@ -2026,7 +2069,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
           gesture = { kind: 'handle', id: e.pointerId, item: handle.id, idx: handle.idx, corner: handle.corner, rotate: handle.rotate, base: base() };
           if (handle.rotate) {
             const s = doc.pages[p.i].items.find((it) => it.id === handle.id);
-            const c = shapeCenter(s);
+            const c = centerOf(s);
             gesture.center = c;
             gesture.a0 = Math.atan2(y - c[1], x - c[0]);
           }
@@ -2150,7 +2193,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
         const delta = ((Math.atan2(y - cy, x - cx) - gesture.a0) * 180) / Math.PI;
         doc.pages[p.i].items = gesture.base.map((it) => {
           if (it.id !== gesture.item) return it;
-          if (usesPoints(it)) return rotatedShape(it, normalizedAngle(delta, 3));
+          if (it.type === 'shape' && usesPoints(it)) return rotatedShape(it, normalizedAngle(delta, 3));
           return { ...it, rot: normalizedAngle((it.rot || 0) + delta, 3) }; // nahe 0°, 15°, 30° … rastet es ein
         });
         gesture.moved = true;

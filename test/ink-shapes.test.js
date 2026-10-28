@@ -104,3 +104,19 @@ describe('Text in Formen', () => {
     expect(turn(p, 15).textRot).toBe(45);
   });
 });
+
+describe('Gedrehte Texte', () => {
+  it('Textfeld: Rahmen und Treffen im gedrehten Feld', () => {
+    const t = { id: 't', type: 'text', x: 0, y: 0, w: 100, h: 20, text: 'Hallo', rot: 90 };
+    const b = bounds(t);
+    close(b.w, 20); close(b.h, 100); close(b.x, 40); close(b.y, -40);
+    expect(itemAt([t], 50, -30, 1)?.id).toBe('t');  // oben im gedrehten Feld
+    expect(itemAt([t], 5, 10, 1)).toBe(null);       // links – dort war es ungedreht
+  });
+
+  it('Text in der Form: eigene Drehung zusätzlich zur Form', async () => {
+    const { shapeTextLayout } = await import('../src/ink/ink-shapes.js');
+    expect(shapeTextLayout({ type: 'shape', kind: 'rect', x: 0, y: 0, w: 40, h: 100, rot: 0, text: 'x', textTurn: 90 }).rot).toBe(90);
+    expect(shapeTextLayout({ type: 'shape', kind: 'rect', x: 0, y: 0, w: 40, h: 100, rot: 300, text: 'x', textTurn: 90 }).rot).toBe(30);
+  });
+});

@@ -267,7 +267,7 @@ function tableBlock(el, warnings, used = new Set()) {
   if (LINE_COLORS[el.dataset.lineColor]) block.lineColor = el.dataset.lineColor;
   // Tabelle als Ganzes (Tabelleneigenschaften …).
   const tnum = (k) => (el.dataset[k] !== undefined && el.dataset[k] !== '' ? Number(el.dataset[k]) : NaN);
-  if (tnum('width') >= 2 && tnum('width') <= 17) block.width = tnum('width');
+  if (tnum('width') >= 2 && tnum('width') <= 25.5) block.width = tnum('width');
   if (['left', 'center', 'right'].includes(el.dataset.position)) block.position = el.dataset.position;
   if (tnum('sb') >= 0 && tnum('sb') <= 3) block.spaceBefore = tnum('sb');
   if (tnum('sa') >= 0 && tnum('sa') <= 3) block.spaceAfter = tnum('sa');

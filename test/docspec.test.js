@@ -435,7 +435,7 @@ describe('Absatz und Tabelle als Ganzes', () => {
   it('Breite, Lage, Abstand, Innenabstand der Tabelle', () => {
     const block = { type: 'table', width: 9, position: 'center', spaceBefore: 0.5, padding: 0.3, rows: [['a']] };
     expect(ds.validateDocSpec({ content: [block] })).toEqual([]);
-    expect(ds.renderDocSpecHtml({ content: [block] })).toContain('style="width:9cm;margin-left:auto;margin-right:auto;margin-top:0.5cm;--ds-cell-pad:0.3cm"');
+    expect(ds.renderDocSpecHtml({ content: [block] })).toContain('style="width:9cm;max-width:100%;margin-left:auto;margin-right:auto;margin-top:0.5cm;--ds-cell-pad:0.3cm"');
     expect(ds.validateDocSpec({ content: [{ ...block, width: 30 }] }).join(' ')).toContain('width:');
   });
 });

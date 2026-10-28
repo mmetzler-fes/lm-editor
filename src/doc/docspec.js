@@ -58,7 +58,8 @@ export const CELL_BACKGROUNDS = { grau: '#e5e7eb', gelb: '#fef08a', gruen: '#bbf
 
 // Tabelle als Ganzes: Breite (cm), Lage auf der Seite, Abstand oben/unten, Innenabstand der Zellen.
 export const TABLE_POSITIONS = ['left', 'center', 'right'];
-const tableWidthOk = (v) => typeof v === 'number' && v >= 2 && v <= 17;
+// Bis zur Satzbreite von A4 quer; im Hochformat druckt der Renderer höchstens die Satzbreite.
+const tableWidthOk = (v) => typeof v === 'number' && v >= 2 && v <= 25.5;
 const paddingOk = (v) => typeof v === 'number' && v >= 0 && v <= 1;
 
 /**
@@ -71,7 +72,7 @@ export function tableLineStyle(block) {
   const s = TABLE_LINE_STYLES.includes(block?.lineStyle) ? block.lineStyle : null;
   const c = LINE_COLORS[block?.lineColor] || null;
   if (w || s || c) css.push(`--ds-line-w:${w ?? 0.75}pt`, `--ds-line-s:${s ?? 'solid'}`, `--ds-line-c:${c ?? LINE_COLORS.schwarz}`);
-  if (tableWidthOk(block?.width)) css.push(`width:${block.width}cm`);
+  if (tableWidthOk(block?.width)) css.push(`width:${block.width}cm`, 'max-width:100%');
   if (block?.position === 'center') css.push('margin-left:auto', 'margin-right:auto');
   if (block?.position === 'right') css.push('margin-left:auto');
   if (spaceOk(block?.spaceBefore)) css.push(`margin-top:${block.spaceBefore}cm`);
@@ -220,7 +221,7 @@ function checkBlock(block, path, errors, inSolution, parent = '') {
       if (block.lineWidth !== undefined) need(lineWidthOk(block.lineWidth), 'lineWidth: Liniendicke in pt von 0.25 bis 6, z. B. 1.5.');
       if (block.lineStyle !== undefined) need(TABLE_LINE_STYLES.includes(block.lineStyle), `lineStyle: ${TABLE_LINE_STYLES.join(', ')}.`);
       if (block.lineColor !== undefined) need(!!LINE_COLORS[block.lineColor], `lineColor: ${Object.keys(LINE_COLORS).join(', ')}.`);
-      if (block.width !== undefined) need(tableWidthOk(block.width), 'width: Breite der Tabelle in cm, 2 bis 17.');
+      if (block.width !== undefined) need(tableWidthOk(block.width), 'width: Breite der Tabelle in cm, 2 bis 25.5.');
       if (block.position !== undefined) need(TABLE_POSITIONS.includes(block.position), `position: ${TABLE_POSITIONS.join(', ')} (Lage auf der Seite).`);
       if (block.spaceBefore !== undefined) need(spaceOk(block.spaceBefore), 'spaceBefore: Abstand über der Tabelle in cm, 0 bis 3.');
       if (block.spaceAfter !== undefined) need(spaceOk(block.spaceAfter), 'spaceAfter: Abstand unter der Tabelle in cm, 0 bis 3.');

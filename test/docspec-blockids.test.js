@@ -36,8 +36,10 @@ test('Schreibfeld: Breite und Muster', async () => {
     { type: 'karo', lines: 1, pattern: 'frei' },
   ] });
   assert.match(html, /<div class="ds-karo" style="height:2cm"/);
-  assert.match(html, /<div class="ds-karo ds-karo-linien" style="height:3cm;width:8cm"/);
-  assert.match(html, /<div class="ds-karo ds-karo-leer" style="height:1cm"/); // breiter als die Satzbreite: volle Breite
+  assert.match(html, /<div class="ds-karo ds-karo-linien" style="height:3cm;width:8cm;max-width:100%"/);
+  // Breiter als A4 quer: auf 25,5 cm begrenzt (im Hochformat begrenzt der Druck auf die Satzbreite).
+  assert.match(html, /<div class="ds-karo ds-karo-leer" style="height:1cm;width:25.5cm;max-width:100%"/);
+  assert.equal(karoWidthCm({ width: '20cm' }), 20);
   assert.match(html, /<div class="ds-karo ds-karo-frei" style="height:0.5cm"/);
   assert.equal(karoWidthCm({ width: '7.3cm' }), 7.5);
   assert.equal(karoWidthCm({}), null);

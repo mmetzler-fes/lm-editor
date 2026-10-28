@@ -41,7 +41,8 @@ const IMAGE_SRC_RE = /^(data:image\/(png|jpeg|gif|webp|svg\+xml);base64,|https:\
 const CSS_LENGTH_RE = /^\d+(\.\d+)?(cm|mm|px|%)$/;
 // Schreibfeld (Block `karo`): Muster und Breite in cm, wie im Renderer.
 export const KARO_PATTERNS = ['karo', 'linien', 'leer', 'frei'];
-export const KARO_MAX_WIDTH_CM = 16.5;
+// Satzbreite A4 quer; im Hochformat (16,5 cm) beschränkt der Druck selbst auf die Satzbreite.
+export const KARO_MAX_WIDTH_CM = 25.5;
 const KARO_WIDTH_RE = /^(\d+(?:\.\d+)?)\s*cm$/;
 // Spaltenbreite bzw. Zeilenhöhe einer Tabelle (`widths`, `heights`); leer = automatisch.
 const TABLE_LENGTH_RE = /^\d+(\.\d+)?\s*(cm|mm)$/;
@@ -80,12 +81,12 @@ export function tableLineStyle(block) {
 }
 const tableLengthOk = (v) => v === null || v === '' || TABLE_LENGTH_RE.test(String(v).trim());
 
-/** Breite eines Schreibfelds in cm (auf 0,5 cm gerundet, 1–16,5), null = Satzbreite. */
+/** Breite eines Schreibfelds in cm (auf 0,5 cm gerundet, 1–25,5), null = Satzbreite. */
 export function karoWidthCm(block) {
   const m = KARO_WIDTH_RE.exec(String(block?.width ?? '').trim());
   if (!m) return null;
   const cm = Math.round(Number(m[1]) * 2) / 2;
-  return cm >= KARO_MAX_WIDTH_CM ? null : Math.max(1, cm);
+  return Math.min(KARO_MAX_WIDTH_CM, Math.max(1, cm));
 }
 
 function esc(s) {
@@ -865,7 +866,8 @@ function renderBlockHtml(block, ctx) {
       const width = karoWidthCm(block);
       // Klassen ds-karo-linien, ds-karo-leer, ds-karo-frei (ausgeschrieben, damit tools/extract-css.mjs sie findet)
       const pattern = KARO_PATTERNS.includes(block.pattern) && block.pattern !== 'karo' ? ` ds-karo-${block.pattern}` : '';
-      return `<div class="ds-karo${pattern}" style="height:${lines * 0.5}cm${width ? `;width:${width}cm` : ''}" aria-hidden="true"></div>`;
+      // Mit Breite auch über 16,5 cm (Querformat) – aber nie breiter als das Blatt, auf dem es steht.
+      return `<div class="ds-karo${pattern}" style="height:${lines * 0.5}cm${width ? `;width:${width}cm;max-width:100%` : ''}" aria-hidden="true"></div>`;
     }
     case 'spacer': {
       const lines = Number.isInteger(block.lines) ? block.lines : 3;

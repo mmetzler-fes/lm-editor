@@ -1051,16 +1051,16 @@ export class H5pRenderer {
         if (wordsCheckBtn) {
           wordsCheckBtn.addEventListener('click', () => {
             const allSpans = wordsArea.querySelectorAll('span');
-            let correct = 0;
+            let correct = 0; let wrong = 0;
             allSpans.forEach((s) => {
               const isCorrect = s.dataset.correct === 'true';
               const isSelected = s.classList.contains('selected');
               if (isSelected && isCorrect) { s.style.background = '#dcfce7'; correct++; }
-              else if (isSelected && !isCorrect) { s.style.background = '#fef2f2'; }
+              else if (isSelected && !isCorrect) { s.style.background = '#fef2f2'; wrong++; }
               else if (!isSelected && isCorrect) { s.style.background = '#fef9c3'; }
               s.style.borderColor = 'transparent';
             });
-            div.querySelector('#wordsFeedback').innerHTML = `<span style="font-weight:600;">${correct} von ${correctWords.length} korrekte Wörter markiert</span>`;
+            div.querySelector('#wordsFeedback').innerHTML = `<span style="font-weight:600;">${correct} von ${correctWords.length} korrekte Wörter markiert${wrong ? `, ${wrong} falsch` : ''}</span>`;
           });
         }
         break;

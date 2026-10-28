@@ -235,16 +235,21 @@ export function collectAnswer(mod, root) {
       break;
     }
     case 'markTheWords': {
-      const spans = root.querySelectorAll('#wordsArea span');
-      let correct = 0; let total = 0; const ua = []; const ca = [];
+      const spans = root.querySelectorAll('#wordsArea span[data-correct]');
+      let correct = 0; let wrong = 0; let total = 0; const ua = []; const ca = [];
       spans.forEach((s) => {
         const isTarget = s.dataset.correct === 'true'; const isSel = s.classList.contains('selected');
         if (isTarget) { total++; ca.push(s.textContent); }
-        if (isSel) { ua.push(s.textContent); if (isTarget) correct++; }
+        if (isSel) { ua.push(s.textContent); if (isTarget) correct++; else wrong++; }
       });
       result.userAnswer = ua.length ? ua.join(', ') : 'Keine markiert';
       result.correctAnswer = ca.join(', ');
-      result.isCorrect = correct === total && total > 0;
+      result.isCorrect = correct === total && wrong === 0 && total > 0;
+      // Jedes falsch markierte Wort hebt ein richtiges auf – sonst brächte „alles markieren“ 100 %.
+      if (total > 0) {
+        result.points = Math.max(0, correct - wrong) / total;
+        result.score = `${correct} von ${total} richtig markiert${wrong ? `, ${wrong} falsch` : ''}`;
+      }
       break;
     }
     case 'dragTheWords': {

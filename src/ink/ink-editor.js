@@ -734,7 +734,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
   const karoOf = (l) => Object.fromEntries(Object.entries(l?.blocks || {})
     .filter(([, e]) => e.karoLines || e.karoWidth || e.karoPattern)
     .map(([bid, e]) => [bid, { lines: e.karoLines, width: e.karoWidth, pattern: e.karoPattern }]));
-  const anchorY = (it) => (isBox(it) ? it.y : it.points[0][1]);
+  const anchorY = (it) => (it.points ? it.points[0][1] : it.y);
 
   function leavePaper() {
     paperView?.observer?.disconnect();

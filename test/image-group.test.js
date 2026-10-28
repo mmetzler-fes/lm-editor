@@ -1,5 +1,6 @@
 import { describe, it, expect } from './expect.js';
 import { validateDocSpec, renderDocSpecHtml } from '../src/doc/docspec.js';
+import { specToEditorHtml } from '../src/doc/docspec-html.js';
 import { groupRow, toCm, fromCm, ungroup } from '../src/doc/image-group.js';
 
 const A = 'data:image/png;base64,AAAA';
@@ -44,5 +45,34 @@ describe('Bildgruppe', () => {
   it('Gruppierung lösen: Bilder in ihrer Größe, Unterschrift am letzten', () => {
     const g = { type: 'group', width: '10cm', ratio: 0.5, caption: 'K', items: [{ src: B, x: 50, y: 0, w: 50, h: 100 }, { src: A, x: 0, y: 0, w: 40, h: 80 }] };
     expect(ungroup(g)).toEqual([{ type: 'image', src: A, width: '4cm' }, { type: 'image', src: B, width: '5cm', caption: 'K' }]);
+  });
+
+  it('Zeichenrahmen: Textfenster gültig, falsche Farbe fällt auf; Ansicht mit Schrift relativ zur Breite', () => {
+    const g = { type: 'group', width: '12cm', ratio: 0.5, align: 'center', border: true, items: [
+      { src: A, x: 0, y: 0, w: 50, h: 100 },
+      { text: 'Hallo **Welt**\nZeile 2', x: 55, y: 0, w: 40, h: 30, size: 17, align: 'center', fill: 'gelb', color: 'blau', border: true }] };
+    expect(validateDocSpec({ content: [g] })).toEqual([]);
+    expect(validateDocSpec({ content: [{ ...g, items: [{ text: 'x', x: 0, y: 0, w: 10, h: 10, color: 'rot' }] }] }).join(' ')).toMatch('items[0]');
+    expect(validateDocSpec({ content: [{ ...g, align: 'mitte' }] }).join(' ')).toMatch('align');
+    const html = renderDocSpecHtml({ content: [g] });
+    expect(html).toContain('class="ds-group ds-align-center ds-group-border"');
+    // 17 pt bei 12 cm (340,157 pt) Breite → knapp 5 % der Rahmenbreite
+    expect(html).toContain('font-size:4.998cqw');
+    expect(html).toContain('<strong>Welt</strong><br>Zeile 2');
+    expect(html).toContain('background:#fef08a;color:#1d4ed8');
+  });
+
+  it('Textfenster bleiben beim Umrechnen; Lösen macht Absätze daraus', () => {
+    const g = { type: 'group', width: '10cm', ratio: 0.5, items: [{ src: A, x: 0, y: 0, w: 50, h: 100 }, { text: 'a\nb', size: 12, color: 'weiss', x: 60, y: 20, w: 40, h: 20 }] };
+    const back = fromCm(toCm(g).items, g);
+    expect(back.items[1]).toEqual({ text: 'a\nb', size: 12, color: 'weiss', x: 60, y: 20, w: 40, h: 20 });
+    expect(ungroup(g)).toEqual([{ type: 'image', src: A, width: '5cm' }, { type: 'text', text: 'a\n\nb' }]);
+  });
+
+  it('Bild: ohne Angabe wie die Vorlage (links), eigene Zeile rechts – im Editor als ws-img-right', () => {
+    expect(renderDocSpecHtml({ content: [{ type: 'image', src: A }] })).toContain('class="ds-image"');
+    expect(renderDocSpecHtml({ content: [{ type: 'image', src: A, align: 'right' }] })).toContain('class="ds-image ds-align-right"');
+    const html = specToEditorHtml({ content: [{ type: 'image', src: A, align: 'right' }] });
+    expect(html).toContain('class="ws-img-right"');
   });
 });

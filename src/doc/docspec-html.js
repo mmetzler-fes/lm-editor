@@ -112,6 +112,7 @@ function imageBlock(img, warnings) {
   if (/\bws-float-left\b/.test(cls)) block.float = 'left';
   else if (/\bws-float-right\b/.test(cls)) block.float = 'right';
   else if (/\bws-img-center\b/.test(cls)) block.float = 'center';
+  else if (/\bws-img-right\b/.test(cls)) block.align = 'right';
   if (/\bws-img-border\b/.test(cls)) block.border = true;
   const alt = img.getAttribute('alt');
   if (alt && alt !== 'Zeichnung') block.alt = alt;
@@ -512,7 +513,7 @@ const esc = (v) => String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replac
 export function widgetHtml(block) {
   const preview = renderDocSpecHtml({ content: [block] }, { showSolutions: true, showPageBreaks: true });
   const field = { linien: 'Linien', leer: 'Feld', frei: 'Platz (unsichtbar)' }[block?.pattern];
-  const label = { karo: field || 'Karo', solution: 'Lösung', formula: 'Formel', code: 'Code', spacer: 'Platz', pagebreak: 'Seitenumbruch', quiz: 'Quiz', group: 'Bildgruppe' }[block?.type] || block?.type || 'Baustein';
+  const label = { karo: field || 'Karo', solution: 'Lösung', formula: 'Formel', code: 'Code', spacer: 'Platz', pagebreak: 'Seitenumbruch', quiz: 'Quiz', group: 'Zeichenrahmen' }[block?.type] || block?.type || 'Baustein';
   return `<div class="ds-widget" contenteditable="false" data-block="${encodeURIComponent(JSON.stringify(block))}" title="${esc(label)} – Doppelklick zum Bearbeiten"><span class="ds-widget-label">${esc(label)}</span>${preview}</div>`;
 }
 
@@ -583,7 +584,7 @@ export function specToEditorHtml(spec) {
       }
       case 'image': {
         if (typeof b.src !== 'string') return widgetHtml(b);
-        const cls = [b.float === 'left' ? 'ws-float-left' : b.float === 'right' ? 'ws-float-right' : b.float === 'center' ? 'ws-img-center' : '', b.border ? 'ws-img-border' : ''].filter(Boolean).join(' ');
+        const cls = [b.float === 'left' ? 'ws-float-left' : b.float === 'right' ? 'ws-float-right' : b.float === 'center' || (!b.float && b.align === 'center') ? 'ws-img-center' : !b.float && b.align === 'right' ? 'ws-img-right' : '', b.border ? 'ws-img-border' : ''].filter(Boolean).join(' ');
         const px = cssPx(b.width);
         return `<p><img${idAttr(b)} src="${esc(b.src)}"${cls ? ` class="${cls}"` : ''}${px ? ` width="${Math.round(px)}" data-width="${esc(b.width)}"` : ''}${b.alt ? ` alt="${esc(b.alt)}"` : ''}${b.caption ? ` data-caption="${esc(b.caption)}"` : ''}${b.source ? ` data-source="${esc(b.source)}"` : ''}></p>`;
       }

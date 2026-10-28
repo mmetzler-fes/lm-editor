@@ -1,9 +1,9 @@
-// Bildgruppe (Baustein `group`, docspec.js): Bilder an fester Stelle
-// zueinander – im Druck eine echte Gruppe in LibreOffice. Hier die Rechnung
-// dazu: Bilder zu einer Reihe gruppieren, die Gruppe in cm zum Anordnen,
-// zurück in Prozent, Gruppierung lösen.
+// Zeichenrahmen (Baustein `group`, docspec.js): Bilder und Textfenster an
+// fester Stelle zueinander – im Druck eine echte Gruppe in LibreOffice. Hier
+// die Rechnung dazu: Bilder zu einer Reihe gruppieren, der Rahmen in cm zum
+// Anordnen, zurück in Prozent, Gruppierung lösen.
 
-import { GROUP_MAX_ITEMS } from './docspec.js';
+import { GROUP_MAX_ITEMS, isTextItem } from './docspec.js';
 
 /** Breite einer Gruppe ohne Angabe: die Satzbreite von A4 hoch. */
 export const GROUP_DEFAULT_WIDTH_CM = 16.5;
@@ -54,12 +54,18 @@ export function toCm(block) {
   return { widthCm, heightCm, items };
 }
 
+/** Felder eines Teils außer der Lage: Bild (src, alt, source) bzw. Textfenster (text, size, align, border, fill, color). */
+function looks(it) {
+  const keys = isTextItem(it) ? ['text', 'size', 'align', 'border', 'fill', 'color'] : ['src', 'alt', 'source'];
+  return Object.fromEntries(keys.filter((k) => it[k] !== undefined && it[k] !== '' && it[k] !== false).map((k) => [k, it[k]]));
+}
+
 /**
- * Lage in cm → Gruppe. Die Gruppe ist so groß wie ihre Bilder zusammen –
- * Leerraum am Rand fällt weg. `base`: übrige Felder (id, caption …).
+ * Lage in cm → Gruppe. Die Gruppe ist so groß wie ihre Teile zusammen –
+ * Leerraum am Rand fällt weg. `base`: übrige Felder (id, caption, align …).
  */
 export function fromCm(items, base = {}) {
-  const list = items.filter((it) => it && it.src && it.w > 0 && it.h > 0);
+  const list = items.filter((it) => it && (it.src || isTextItem(it)) && it.w > 0 && it.h > 0);
   const x0 = Math.min(...list.map((it) => it.x));
   const y0 = Math.min(...list.map((it) => it.y));
   const widthCm = Math.max(...list.map((it) => it.x + it.w)) - x0;
@@ -71,31 +77,34 @@ export function fromCm(items, base = {}) {
     type: 'group',
     width: `${round(Math.min(GROUP_MAX_WIDTH_CM, widthCm), 2)}cm`,
     ratio: round(heightCm / widthCm, 4),
-    items: list.map(({ src, alt, source, x, y, w, h }) => {
-      const px = pct(x - x0, widthCm);
-      const py = pct(y - y0, heightCm);
+    items: list.map((it) => {
+      const px = pct(it.x - x0, widthCm);
+      const py = pct(it.y - y0, heightCm);
       return {
-        src,
-        ...(alt ? { alt } : {}),
-        ...(source ? { source } : {}),
+        ...looks(it),
         x: px,
         y: py,
-        w: Math.max(0.5, Math.min(round(100 - px), pct(w, widthCm))),
-        h: Math.max(0.5, Math.min(round(100 - py), pct(h, heightCm))),
+        w: Math.max(0.5, Math.min(round(100 - px), pct(it.w, widthCm))),
+        h: Math.max(0.5, Math.min(round(100 - py), pct(it.h, heightCm))),
       };
     }),
   };
 }
 
 /**
- * Gruppierung lösen: jedes Bild ein eigener Bild-Baustein in seiner Größe, von
- * oben nach unten, links nach rechts; die Unterschrift kommt ans letzte Bild.
+ * Gruppierung lösen: jedes Bild ein eigener Bild-Baustein in seiner Größe, jedes
+ * Textfenster ein Absatz – von oben nach unten, links nach rechts; die
+ * Unterschrift kommt ans letzte Bild.
  */
 export function ungroup(block) {
   const { items } = toCm(block);
-  const images = [...items]
+  const out = [...items]
     .sort((a, b) => a.y - b.y || a.x - b.x)
-    .map((it) => ({ type: 'image', src: it.src, ...(it.alt ? { alt: it.alt } : {}), width: `${round(it.w, 2)}cm`, ...(it.source ? { source: it.source } : {}) }));
+    .map((it) => (isTextItem(it)
+      ? { type: 'text', text: String(it.text).split('\n').join('\n\n') }
+      : { type: 'image', src: it.src, ...(it.alt ? { alt: it.alt } : {}), width: `${round(it.w, 2)}cm`, ...(it.source ? { source: it.source } : {}) }))
+    .filter((b) => b.type !== 'text' || b.text.trim());
+  const images = out.filter((b) => b.type === 'image');
   if (block.caption && images.length) images[images.length - 1].caption = block.caption;
-  return images;
+  return out;
 }

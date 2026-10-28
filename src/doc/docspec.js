@@ -127,16 +127,30 @@ function cellImageOk(i) {
 }
 
 /**
- * Bildgruppe: Bilder an fester Stelle zueinander (wie eine Gruppe in Draw).
- * `items`: { src, x, y, w, h, alt? } – Lage und Größe in Prozent der Gruppe
- * (x, w der Breite; y, h der Höhe); `ratio`: Höhe ÷ Breite der Gruppe.
+ * Zeichenrahmen (`group`, früher „Bildgruppe“): Bilder und Textfenster an fester
+ * Stelle zueinander (wie eine Gruppe in Draw). `items`: Bilder { src, alt?, source? }
+ * und Textfenster { text, size? (pt), align?, border?, fill?, color? } – jeweils mit x, y, w, h
+ * in Prozent des Rahmens (x, w der Breite; y, h der Höhe); `ratio`: Höhe ÷ Breite.
+ * Am Rahmen: `align` (ohne: wie der Text der Vorlage), `border`, `caption`.
  */
-export const GROUP_MAX_ITEMS = 40;
+export const GROUP_MAX_ITEMS = 60;
+export const FRAME_FILLS = { weiss: '#ffffff', grau: '#e5e7eb', gelb: '#fef08a', gruen: '#bbf7d0', blau: '#bfdbfe', rosa: '#fbcfe8' };
+export const BLOCK_ALIGNS = ['left', 'center', 'right'];
+/** Schriftfarben eines Textfensters (ohne: schwarz) – weiß für Beschriftungen auf dunklen Fotos. */
+export const FRAME_TEXT_COLORS = { weiss: '#ffffff', blau: '#1d4ed8', gruen: '#15803d', orange: '#c2410c', lila: '#7e22ce', grau: '#6b7280' };
 const pct = (v, min = 0) => typeof v === 'number' && Number.isFinite(v) && v >= min && v <= 100;
+const placed = (it) => pct(it.x) && pct(it.y) && pct(it.w, 0.5) && pct(it.h, 0.5) && it.x + it.w <= 100.5 && it.y + it.h <= 100.5;
+export const isTextItem = (it) => !!it && typeof it === 'object' && typeof it.text === 'string';
 export function groupItemOk(it) {
-  return !!it && typeof it === 'object' && isText(it.src) && IMAGE_SRC_RE.test(String(it.src))
-    && pct(it.x) && pct(it.y) && pct(it.w, 0.5) && pct(it.h, 0.5)
-    && it.x + it.w <= 100.5 && it.y + it.h <= 100.5;
+  if (!it || typeof it !== 'object' || !placed(it)) return false;
+  if (isTextItem(it)) {
+    return (it.size === undefined || (typeof it.size === 'number' && it.size >= 4 && it.size <= 72))
+      && (it.align === undefined || BLOCK_ALIGNS.includes(it.align))
+      && (it.border === undefined || typeof it.border === 'boolean')
+      && (it.fill === undefined || !!FRAME_FILLS[it.fill])
+      && (it.color === undefined || !!FRAME_TEXT_COLORS[it.color]);
+  }
+  return isText(it.src) && IMAGE_SRC_RE.test(String(it.src));
 }
 export const groupRatioOk = (r) => typeof r === 'number' && Number.isFinite(r) && r >= 0.05 && r <= 20;
 
@@ -225,16 +239,19 @@ function checkBlock(block, path, errors, inSolution, parent = '') {
       if (isText(block.src)) need(IMAGE_SRC_RE.test(String(block.src)), 'src: nur Bilder als data:image/… oder https://.');
       if (block.width !== undefined) need(CSS_LENGTH_RE.test(String(block.width)), 'width: z. B. 9cm.');
       if (block.float !== undefined) need(FLOATS.includes(block.float), `float: ${FLOATS.join(', ')}.`);
+      if (block.align !== undefined) need(BLOCK_ALIGNS.includes(block.align), `align: ${BLOCK_ALIGNS.join(', ')} (eigene Zeile).`);
       break;
     case 'group':
       need(Array.isArray(block.items) && block.items.length > 0 && block.items.length <= GROUP_MAX_ITEMS,
         `items: Liste der Bilder (1 bis ${GROUP_MAX_ITEMS}) fehlt.`);
       if (Array.isArray(block.items)) {
         block.items.forEach((it, i) => need(groupItemOk(it),
-          `items[${i}]: { src: data:image/… oder https://, x, y, w, h in Prozent der Gruppe (0–100) }.`));
+          `items[${i}]: Bild { src: data:image/… oder https:// } oder Textfenster { text, size (4–72 pt), align, border, fill: ${Object.keys(FRAME_FILLS).join('/')}, color: ${Object.keys(FRAME_TEXT_COLORS).join('/')} } – mit x, y, w, h in Prozent des Rahmens (0–100).`));
       }
-      need(groupRatioOk(block.ratio), 'ratio: Höhe ÷ Breite der Gruppe, z. B. 0.6.');
+      need(groupRatioOk(block.ratio), 'ratio: Höhe ÷ Breite des Rahmens, z. B. 0.6.');
       if (block.width !== undefined) need(CSS_LENGTH_RE.test(String(block.width)), 'width: z. B. 16.5cm.');
+      if (block.align !== undefined) need(BLOCK_ALIGNS.includes(block.align), `align: ${BLOCK_ALIGNS.join(', ')}.`);
+      if (block.border !== undefined) need(typeof block.border === 'boolean', 'border: true oder false.');
       break;
     case 'table':
       need(Array.isArray(block.rows) && block.rows.length > 0, 'rows: Liste der Zeilen fehlt.');
@@ -863,17 +880,28 @@ function renderBlockHtml(block, ctx) {
         ? `<img src="${esc(block.src)}" alt="${esc(block.alt ?? block.caption ?? '')}"${width}>`
         : `<span class="ds-missing">Bild ${esc(block.file ?? '')}</span>`;
       const caption = isText(block.caption) ? `<figcaption>${richText(block.caption)}</figcaption>` : '';
-      const cls = `ds-image${block.border ? ' ds-image-border' : ''}${FLOATS.includes(block.float) ? ` ds-image-${block.float}` : ''}`;
+      const align = block.float === undefined && BLOCK_ALIGNS.includes(block.align) && block.align !== 'left' ? ` ds-align-${block.align}` : '';
+      const cls = `ds-image${block.border ? ' ds-image-border' : ''}${FLOATS.includes(block.float) ? ` ds-image-${block.float}` : ''}${align}`;
       return `<figure class="${cls}">${img}${caption}</figure>`;
     }
     case 'group': {
       const width = CSS_LENGTH_RE.test(String(block.width ?? '')) ? `width:${block.width};` : '';
       const ratio = groupRatioOk(block.ratio) ? block.ratio : 0.6;
       const r = (v) => Math.round(Number(v) * 1000) / 1000;
-      const imgs = (Array.isArray(block.items) ? block.items : []).filter(groupItemOk)
-        .map((it) => `<img src="${esc(it.src)}" alt="${esc(it.alt ?? '')}" style="left:${r(it.x)}%;top:${r(it.y)}%;width:${r(it.w)}%;height:${r(it.h)}%">`).join('');
+      // Schrift und Innenabstand der Textfenster wachsen mit dem Rahmen (cqw: Prozent seiner Breite).
+      const widthCm = /^(\d+(?:\.\d+)?)cm$/.test(String(block.width ?? '')) ? parseFloat(block.width) : 16.5;
+      const cqw = (pt) => `${r((pt / ((widthCm / 2.54) * 72)) * 100)}cqw`;
+      const pos = (it) => `left:${r(it.x)}%;top:${r(it.y)}%;width:${r(it.w)}%;height:${r(it.h)}%`;
+      const items = (Array.isArray(block.items) ? block.items : []).filter(groupItemOk).map((it) => {
+        if (!isTextItem(it)) return `<img src="${esc(it.src)}" alt="${esc(it.alt ?? '')}" style="${pos(it)}">`;
+        const look = [`font-size:${cqw(it.size ?? 11)}`, `padding:${cqw(2)} ${cqw(4)}`,
+          it.align && it.align !== 'left' ? `text-align:${it.align}` : '',
+          it.fill ? `background:${FRAME_FILLS[it.fill]}` : '', it.color || it.fill ? `color:${it.color ? FRAME_TEXT_COLORS[it.color] : '#000'}` : '', it.border ? 'border:1px solid #000' : ''].filter(Boolean).join(';');
+        return `<div class="ds-group-text" style="${pos(it)};${look}">${String(it.text).split('\n').map((l) => richText(l) || '&nbsp;').join('<br>')}</div>`;
+      }).join('');
       const caption = isText(block.caption) ? `<figcaption>${richText(block.caption)}</figcaption>` : '';
-      return `<figure class="ds-group"><div class="ds-group-box" style="${width}aspect-ratio:1 / ${r(ratio)}">${imgs}</div>${caption}</figure>`;
+      const cls = `ds-group${BLOCK_ALIGNS.includes(block.align) && block.align !== 'left' ? ` ds-align-${block.align}` : ''}${block.border ? ' ds-group-border' : ''}`;
+      return `<figure class="${cls}"><div class="ds-group-box" style="${width}aspect-ratio:1 / ${r(ratio)}">${items}</div>${caption}</figure>`;
     }
     case 'table': {
       const caption = isText(block.caption) ? `<p class="ds-caption"><em>${esc(block.caption)}</em></p>` : '';

@@ -59,7 +59,7 @@ export function sanitizeModuleDescriptionHtml(html) {
  * Textrahmen (div.ws-box) – das, was der .odt-Import erzeugt.
  */
 /** Erlaubte Klassen an Bildern im Arbeitsblatt (siehe .worksheet-content in styles.css). */
-export const WORKSHEET_IMAGE_CLASSES = new Set(['ws-float-left', 'ws-float-right', 'ws-img-center', 'ws-img-border']);
+export const WORKSHEET_IMAGE_CLASSES = new Set(['ws-float-left', 'ws-float-right', 'ws-img-center', 'ws-img-right', 'ws-img-border']);
 
 export function sanitizeWorksheetHtml(html) {
   return sanitizeRichHtml(html, true);

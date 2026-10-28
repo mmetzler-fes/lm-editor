@@ -7,7 +7,7 @@ import { rulerSvg, rulerHandles } from './ink-ruler.js';
 import { svgEl, itemSvg, fieldSvg, shapeSvg, inkSvgFor, inkSvgBox } from './ink-view.js';
 import {
   FILL_COLORS, DASHES, SHAPE_WIDTHS, usesPoints, shapeCorners, rotateHandle, resizedShape, rotatedShape,
-  normalizedAngle, toPolygon, shapeFromDrag, shapeCenter,
+  normalizedAngle, toPolygon, shapeFromDrag, shapeCenter, shapeBox, isClosed, SHAPE_TEXT_SIZE,
 } from './ink-shapes.js';
 import { showContextMenu } from '../util/dom.js';
 import { FONT_SIZES } from '../doc/docspec.js';
@@ -322,8 +322,10 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     if (document.activeElement !== $('.ink-op-range')) $('.ink-op-range').value = pct;
     $('.ink-opacity').classList.toggle('ink-muted', !look.fill);
     const texts = state.tool === 'select' ? selectedItems().filter((it) => it.type === 'text') : [];
-    $('.ink-sizes').hidden = state.tool !== 'text' && !texts.length;
-    const shown = texts.length && texts.every((t) => (t.size || TEXT_SIZE) === (texts[0].size || TEXT_SIZE)) ? texts[0].size || TEXT_SIZE : state.textSize;
+    const boxed = shapes.filter(isClosed);
+    $('.ink-sizes').hidden = state.tool !== 'text' && !texts.length && !boxed.length;
+    const shown = texts.length && texts.every((t) => (t.size || TEXT_SIZE) === (texts[0].size || TEXT_SIZE)) ? texts[0].size || TEXT_SIZE
+      : !texts.length && boxed.length ? boxed[0].textSize || SHAPE_TEXT_SIZE : state.textSize;
     const tsize = $('.ink-tsize');
     if (![...tsize.options].some((o) => Number(o.value) === shown)) tsize.add(new Option(`${shown} pt`, String(shown))); // ältere Größe (13 pt)
     tsize.value = String(shown);
@@ -450,6 +452,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
   $('.ink-tsize').addEventListener('change', (e) => {
     const size = Number(e.target.value);
     const texts = state.tool === 'select' ? selectedItems().filter((it) => it.type === 'text') : [];
+    if (!texts.length && applyToShapes({ textSize: size === SHAPE_TEXT_SIZE ? undefined : size })) { paintToolbar(); return; }
     if (texts.length) {
       snapshot();
       const ids = new Set(texts.map((t) => t.id));
@@ -1488,6 +1491,66 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     drawItems(sel.page);
   }
 
+  /**
+   * Text in einer Form schreiben: ein Eingabefeld über der Form (ungedreht, mittig);
+   * beim Verlassen, mit Strg+Enter oder Esc übernommen. Leer heißt: kein Text.
+   */
+  function editShapeText(id) {
+    const page = doc.pages.findIndex((pg) => (pg.items || []).some((it) => it.id === id));
+    const p = pages[page];
+    const s = page >= 0 ? doc.pages[page].items.find((it) => it.id === id) : null;
+    if (!p || !s) return;
+    state.tool = 'select';
+    state.selection = { page, ids: new Set([id]) };
+    paintSelection();
+    paintToolbar();
+    const svgRect = p.svg.getBoundingClientRect();
+    const hostRect = p.el.getBoundingClientRect();
+    const scale = svgRect.width / p.w;
+    const b = shapeBox(s);
+    const w = Math.max(b.w, 60);
+    const h = Math.max(b.h, (s.textSize || SHAPE_TEXT_SIZE) * 2);
+    const [cx, cy] = shapeCenter(s);
+    const ta = document.createElement('textarea');
+    ta.className = 'ink-shape-text-edit';
+    ta.value = s.text || '';
+    ta.placeholder = 'Text';
+    Object.assign(ta.style, {
+      left: `${svgRect.left - hostRect.left + (cx - w / 2) * scale}px`,
+      top: `${svgRect.top - hostRect.top + (cy - h / 2) * scale}px`,
+      width: `${w * scale}px`,
+      height: `${h * scale}px`,
+      fontSize: `${(s.textSize || SHAPE_TEXT_SIZE) * scale}px`,
+      color: s.textColor || s.color || '#1e293b',
+    });
+    p.el.appendChild(ta);
+    let done = false;
+    const commit = (keep) => {
+      if (done) return;
+      done = true;
+      const text = ta.value.replace(/\s+$/, '');
+      ta.remove();
+      if (!keep || text === (s.text || '')) return;
+      snapshot();
+      doc.pages[page].items = doc.pages[page].items.map((it) => {
+        if (it.id !== id) return it;
+        const next = { ...it, text };
+        if (!text) { delete next.text; delete next.textRot; }
+        return next;
+      });
+      changed();
+      drawItems(page);
+      paintToolbar();
+    };
+    ta.addEventListener('blur', () => commit(true));
+    ta.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') { e.preventDefault(); commit(false); }
+      else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); commit(true); }
+    });
+    ta.addEventListener('pointerdown', (e) => e.stopPropagation());
+    setTimeout(() => { ta.focus(); ta.select(); }, 0);
+  }
+
   /** Die gewählte Form durch `fn(form)` ersetzen (ein Schritt zum Rückgängigmachen). */
   function replaceShape(fn) {
     const sel = state.selection;
@@ -1764,6 +1827,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
       entries.push({ label: '🖼 Als Bild ins Dokument', onClick: () => selectionToDocument(false) });
     }
     const shape = items.length === 1 && items[0].type === 'shape' ? items[0] : null;
+    if (shape && isClosed(shape)) entries.push({ label: shape.text ? '✏️ Text in der Form bearbeiten' : '✏️ Text in die Form', onClick: () => editShapeText(shape.id) });
     if (shape && !usesPoints(shape)) entries.push({ label: '⬠ In Vieleck umwandeln (Punkte einzeln ziehen)', onClick: () => replaceShape(toPolygon) });
     if (shape && shape.rot) entries.push({ label: '↻ Drehung zurücksetzen', onClick: () => replaceShape((it) => ({ ...it, rot: 0 })) });
     if (shape?.kind === 'arrow') {
@@ -1813,6 +1877,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     };
 
     p.el.addEventListener('pointerdown', (e) => {
+      if (e.target.closest?.('.ink-shape-text-edit')) return; // Schreiben in einer Form
       // Handballen: Solange der Stift schreibt, zählt kein Finger.
       if (e.pointerType === 'touch' && penDown) return;
       const onQuiz = p.paper && !!e.target.closest?.('.ds-quiz-live');
@@ -2134,6 +2199,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
       const [x, y] = toPage(e);
       const hit = itemAt(doc.pages[p.i].items, x, y, 6 / state.zoom);
       if (hit?.type === 'text') { e.preventDefault(); editText(hit.id); }
+      else if (hit?.type === 'shape' && isClosed(hit)) { e.preventDefault(); editShapeText(hit.id); }
     });
     // Rechtsklick (auch Ctrl+Klick am Mac) – in jedem Werkzeug ein Menü, nie ein Strich:
     // auf einem Strich oder Textfeld das Menü der Auswahl, sonst Werkzeuge, Rückgängig, Einfügen.

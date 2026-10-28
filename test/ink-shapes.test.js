@@ -89,3 +89,18 @@ describe('Formen im Stift-Editor', () => {
     expect(dashArray('dot', 2)).toBe('0.01 4.40');
   });
 });
+
+describe('Text in Formen', () => {
+  it('mittig, mehrzeilig, dreht mit; innen anklickbar', async () => {
+    const { shapeTextLayout, hitShape: hit, rotatedShape: turn, toPolygon: poly } = await import('../src/ink/ink-shapes.js');
+    const r = { type: 'shape', kind: 'rect', x: 0, y: 0, w: 100, h: 60, rot: 30, text: 'Zeile 1\nZeile 2', textSize: 10 };
+    const t = shapeTextLayout(r);
+    expect(t).toMatchObject({ cx: 50, cy: 30, size: 10, rot: 30, lines: ['Zeile 1', 'Zeile 2'] });
+    expect(Math.abs(t.firstY - (30 - 6.25 + 3.5))).toBeLessThan(0.01);
+    expect(hit(r, 50, 30, 1)).toBe(true); // ohne Füllung, aber mit Text: innen trifft
+    expect(shapeTextLayout({ type: 'shape', kind: 'line', points: [[0, 0], [9, 9]], text: 'x' })).toBe(null);
+    const p = poly(r);
+    expect(p.textRot).toBe(30);
+    expect(turn(p, 15).textRot).toBe(45);
+  });
+});

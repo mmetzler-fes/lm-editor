@@ -1,5 +1,5 @@
 import { strokeOutline, polyline, bounds, moved, MM } from './ink-geometry.js';
-import { shapeCenter, arrowHead, dashArray } from './ink-shapes.js';
+import { shapeCenter, arrowHead, dashArray, shapeTextLayout } from './ink-shapes.js';
 
 // ==================== BESCHRIFTUNG ANZEIGEN ====================
 //
@@ -43,6 +43,7 @@ export function shapeSvg(item) {
     g.appendChild(item.kind === 'rect'
       ? svgEl('rect', { x: r2(item.x), y: r2(item.y), width: r2(item.w), height: r2(item.h), ...fill, ...stroke })
       : svgEl('ellipse', { cx: r2(cx), cy: r2(cy), rx: r2(item.w / 2), ry: r2(item.h / 2), ...fill, ...stroke }));
+    appendShapeText(g, item, false);
     return g;
   }
   const pts = (item.points || []).map(([x, y]) => `${r2(x)},${r2(y)}`).join(' ');
@@ -53,7 +54,26 @@ export function shapeSvg(item) {
     if (item.heads === 'both') heads.push(arrowHead(p[1], p[0], width));
     for (const h of heads) g.appendChild(svgEl('polygon', { points: h.map(([x, y]) => `${r2(x)},${r2(y)}`).join(' '), fill: item.color, stroke: item.color, 'stroke-width': width / 2, 'stroke-linejoin': 'round' }));
   }
+  appendShapeText(g, item, true);
   return g;
+}
+
+/** Text mittig in der Form; `ownRotation`: beim Vieleck dreht der Text selbst (die Gruppe ist ungedreht). */
+function appendShapeText(g, item, ownRotation) {
+  const t = shapeTextLayout(item);
+  if (!t) return;
+  const r2 = (v) => Math.round(v * 100) / 100;
+  const text = svgEl('text', {
+    x: r2(t.cx), y: r2(t.firstY), 'text-anchor': 'middle', 'font-size': t.size, fill: item.textColor || item.color || '#1e293b',
+    'font-family': 'LM Sans, Liberation Sans, Arial, sans-serif', class: 'ink-shape-text',
+  });
+  if (ownRotation && t.rot) text.setAttribute('transform', `rotate(${t.rot} ${r2(t.cx)} ${r2(t.cy)})`);
+  t.lines.forEach((line, i) => {
+    const span = svgEl('tspan', { x: r2(t.cx), dy: i ? r2(t.lh) : 0 });
+    span.textContent = line || ' ';
+    text.appendChild(span);
+  });
+  g.appendChild(text);
 }
 
 /** Feld: weiße Fläche, darauf Karo (5 mm) oder Linien (10 mm) – oder nur weiß. */

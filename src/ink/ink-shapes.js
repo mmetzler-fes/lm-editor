@@ -8,6 +8,8 @@
 //   polygon (geschlossen), line, arrow: points [[x, y], …] auf der Seite;
 //   Drehen dreht die Punkte selbst, rot bleibt 0
 //   arrow: heads 'end' | 'both'
+//   Rechteck, Ellipse, Vieleck: text (Zeilen mit \n), textSize (pt) – mittig, dreht mit
+//   (beim Vieleck über textRot, weil seine Drehung in den Punkten steckt)
 
 export const SHAPE_KINDS = ['rect', 'ellipse', 'polygon', 'line', 'arrow'];
 /** Hellere Farben für Flächen. */
@@ -19,6 +21,18 @@ export const SHAPE_WIDTHS = [1, 2, 3.5];
 const rad = (deg) => (deg * Math.PI) / 180;
 export const usesPoints = (item) => item.kind === 'polygon' || item.kind === 'line' || item.kind === 'arrow';
 export const isClosed = (item) => item.kind !== 'line' && item.kind !== 'arrow';
+/** Schriftgröße eines Textes in der Form ohne Angabe. */
+export const SHAPE_TEXT_SIZE = 12;
+
+/** Text in der Form: Mitte, Drehung, Zeilen und Grundlinie der ersten Zeile – oder null. */
+export function shapeTextLayout(item) {
+  if (!item.text || !isClosed(item)) return null;
+  const size = item.textSize || SHAPE_TEXT_SIZE;
+  const lines = String(item.text).split('\n');
+  const lh = size * 1.25;
+  const [cx, cy] = shapeCenter(item);
+  return { cx, cy, size, lines, lh, firstY: cy - ((lines.length - 1) * lh) / 2 + size * 0.35, rot: usesPoints(item) ? item.textRot || 0 : item.rot || 0 };
+}
 
 /** Punkt um die Mitte (cx, cy) drehen. */
 export function rotatePoint([x, y], [cx, cy], deg) {
@@ -103,7 +117,7 @@ export function hitShape(item, x, y, radius) {
   const pts = outline(item);
   const reach = radius + (item.width || 1) / 2;
   const closed = isClosed(item);
-  if (closed && item.fill && insidePolygon(x, y, pts)) return true;
+  if (closed && (item.fill || item.text) && insidePolygon(x, y, pts)) return true;
   for (let i = 1; i < pts.length; i++) if (distToSegment(x, y, pts[i - 1], pts[i]) <= reach) return true;
   return closed && pts.length > 2 && distToSegment(x, y, pts[pts.length - 1], pts[0]) <= reach;
 }
@@ -171,7 +185,9 @@ export function normalizedAngle(deg, snap = 0) {
 export function rotatedShape(base, delta) {
   if (usesPoints(base)) {
     const c = shapeCenter(base);
-    return { ...base, points: base.points.map((p) => rotatePoint(p, c, delta)) };
+    const turned = { ...base, points: base.points.map((p) => rotatePoint(p, c, delta)) };
+    if (base.text) turned.textRot = normalizedAngle((base.textRot || 0) + delta);
+    return turned;
   }
   return { ...base, rot: normalizedAngle((base.rot || 0) + delta) };
 }
@@ -181,7 +197,7 @@ export function toPolygon(item, steps = 24) {
   if (usesPoints(item)) return item;
   const { x: _x, y: _y, w: _w, h: _h, rot: _r, ...rest } = item;
   const r2 = (v) => Math.round(v * 100) / 100;
-  return { ...rest, kind: 'polygon', points: outline(item, steps).map(([px, py]) => [r2(px), r2(py)]) };
+  return { ...rest, kind: 'polygon', points: outline(item, steps).map(([px, py]) => [r2(px), r2(py)]), ...(item.text && item.rot ? { textRot: item.rot } : {}) };
 }
 
 /** Strichart als stroke-dasharray (oder null). */

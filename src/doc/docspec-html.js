@@ -59,7 +59,12 @@ function inline(node, images, warnings) {
     const tag = c.tagName;
     if (tag === 'BR') { out += '\\\n'; continue; }
     if (tag === 'IMG') { images.push(c); continue; }
-    if (BLOCK_TAGS.has(tag)) { out += inline(c, images, warnings); continue; }
+    if (BLOCK_TAGS.has(tag)) {
+      // Absätze nebeneinander (z. B. in einer Tabellenzelle): je eine Zeile.
+      const t = inline(c, images, warnings);
+      if (t.trim()) out += `${out.trim() && !out.endsWith('\\\n') ? '\\\n' : ''}${t}\\\n`;
+      continue;
+    }
     const inner = inline(c, images, warnings);
     if (tag === 'STRONG' || tag === 'B') {
       const only = c.childNodes.length === 1 && c.firstChild.nodeType === 1 && ['EM', 'I'].includes(c.firstChild.tagName);
@@ -195,12 +200,29 @@ function listBlock(el, images, warnings, lifted = []) {
   return block;
 }
 
+/** Kind einer Tabellenzelle, das nicht in den Zelltext passt: Überschrift, Liste, Hinweis, Baustein. */
+const richInCell = (n) => /^(H[1-6]|UL|OL|PRE)$/.test(n.tagName) || (n.tagName === 'P' && !!n.getAttribute('data-ds'))
+  || (n.tagName === 'DIV' && (n.hasAttribute('data-block') || n.hasAttribute('data-solution')));
+
 function tableBlock(el, warnings, used = new Set()) {
   const cell = (td) => {
     // Tabellen und Kästen in der Zelle werden ihre Bausteine (Tabelle in der Tabelle).
     const own = (cellEl) => [...cellEl.querySelectorAll('table, div.ws-box')].filter((n) => n.parentElement.closest('td, th') === cellEl);
     let blocks = null;
-    if (own(td).length) {
+    // Überschriften, Listen, Hinweise oder Bausteine in der Zelle: Der ganze
+    // Inhalt wird zu Bausteinen (loser Text dazwischen zu Absätzen).
+    const rich = [...td.children].some(richInCell);
+    if (rich) {
+      const holder = td.ownerDocument.createElement('div');
+      let para = null;
+      for (const n of [...td.cloneNode(true).childNodes]) {
+        if (n.nodeType === 1 && BLOCK_TAGS.has(n.tagName)) { holder.append(n); para = null; continue; }
+        if (n.nodeType === 3 && !n.nodeValue.trim() && !para) continue;
+        if (!para) para = holder.appendChild(td.ownerDocument.createElement('p'));
+        para.append(n);
+      }
+      blocks = blocksOf(holder, warnings, used);
+    } else if (own(td).length) {
       const holder = td.ownerDocument.createElement('div');
       td = td.cloneNode(true);
       const clones = own(td);
@@ -210,7 +232,7 @@ function tableBlock(el, warnings, used = new Set()) {
     }
     const found = [];
     // Führende Leerzeichen bleiben: Sie richten z. B. Programmausgaben aus.
-    const text = cleanText(inline(td, found, warnings)).replace(/^/, (/^ +/.exec(td.textContent) || [''])[0]);
+    const text = rich ? '' : cleanText(inline(td, found, warnings)).replace(/^/, (/^ +/.exec(td.textContent) || [''])[0]);
     const cs = Number(td.getAttribute('colspan')) || 1;
     const rs = Number(td.getAttribute('rowspan')) || 1;
     // Bilder bleiben in ihrer Zelle (z. B. Baustein links, Zeitdiagramm rechts).

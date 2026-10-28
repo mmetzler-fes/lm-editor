@@ -63,6 +63,7 @@ const ICON_PATHS = {
   pointer: 'M6 3l13 8-6 1.5L9.5 19z',
   field: 'M4 5h16v14H4zM4 9.7h16M4 14.3h16M9.3 5v14M14.7 5v14',
   shape: 'M3.5 3.5h9v9h-9zM16.5 11a4.5 4.5 0 110 9 4.5 4.5 0 010-9z',
+  laser: 'M12 9.5a2.5 2.5 0 100 5 2.5 2.5 0 000-5zM12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1',
   print: 'M7 9V3h10v6M7 17H4v-7h16v7h-3M7 14h10v7H7z',
   head: 'M4 3h16v6H4zM7 6h4M4 13h16M4 17h12M4 21h14',
   save: 'M5 4h11l3 3v13H5zM8 4v5h7V4M8 20v-6h8v6',
@@ -73,6 +74,7 @@ const FIELD_PATTERNS = { karo: '▦ Karo', linien: '☰ Linien', leer: '▢ Leer
 const SHAPE_KIND_LABELS = { rect: ['▭', 'Rechteck'], ellipse: ['◯', 'Ellipse'], polygon: ['⬠', 'Vieleck – Punkte setzen, Doppelklick oder Klick auf den ersten Punkt schließt'], line: ['╱', 'Linie'], arrow: ['➝', 'Pfeil'] };
 const DASH_LABELS = { solid: ['—', 'durchgezogen'], dash: ['┄', 'gestrichelt'], dot: ['⋯', 'gepunktet'] };
 const ROT_GAP = 22;         // Abstand des Dreh-Anfassers über der Form, Bildschirm-Pixel
+const LASER_FADE = 1500;    // so lange (ms) leuchtet die Spur des Leuchtstifts nach
 const icon = (name) => `<svg class="ink-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="${ICON_PATHS[name]}"/></svg>`;
 const MAX_PIXELS = 12e6;    // Obergrenze je Hintergrund-Leinwand (iPad Safari: ~16 Mio.)
 const RULER_REACH = 12;     // So nah (Bildschirmpunkte) muss der Stift an die Kante des Geodreiecks
@@ -170,8 +172,9 @@ const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<
  *   save(stand) → true/false, label }; der Stand ist { v, bg, pages, layer, ruler }.
  * - `actions`: weitere Knöpfe in der Leiste – [{ label, title, onClick({ close }) }]; vorher wird gespeichert.
  * - `onClose`: nach dem Schließen (der Stand ist dann gespeichert).
+ * - `laser`: Leuchtstift zum Zeigen am Beamer (Spur verblasst, wird nicht gespeichert) – Vorgabe: wie `solutions` (Lehrkräfte).
  */
-export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = null, solutions = false, paper = null, store = null, actions = [], onClose = null }) {
+export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = null, solutions = false, paper = null, store = null, actions = [], onClose = null, laser = solutions }) {
   const storeKey = `ink:${key}`;
   const saved = store ? await store.load() : await dbGet(storeKey);
   const doc = saved?.v === 1 ? saved : { v: 1, bg: paper ? 'paper' : loadPdf ? 'pdf' : 'karo', pages: [{ items: [] }] };
@@ -223,6 +226,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
         ${tool('text', 'text', 'Textfeld: auf die Seite tippen und schreiben')}
         ${tool('field', 'field', 'Feld: ein Rechteck aufziehen – deckt ab, was darunter liegt, mit Karo, Linien oder weiß')}
         ${tool('shape', 'shape', 'Formen: Rechteck, Ellipse, Vieleck, Linie, Pfeil – mit Füllung und Deckkraft, drehbar')}
+        ${laser ? tool('laser', 'laser', 'Leuchtstift: zum Zeigen am Beamer – die Spur leuchtet kurz und verblasst, nichts wird gespeichert') : ''}
         <span class="ink-sep"></span>
         ${btn('ink-ruler-toggle', 'ruler', 'Geodreieck ein- und ausblenden – drehen am ⟳ (Umschalt: 5°), mit zwei Fingern oder dem Mausrad; vergrößern am ⤢')}
       </span>
@@ -293,6 +297,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
   // ---------- Werkzeugleiste ----------
   const paintToolbar = () => {
     overlay.querySelectorAll('[data-tool]').forEach((b) => b.classList.toggle('active', b.dataset.tool === state.tool));
+    if (state.tool !== 'laser') laserDot(-1, null);
     // Ein begonnenes Vieleck endet, sobald ein anderes Werkzeug (oder eine andere Form) gewählt ist.
     if (state.poly && (state.tool !== 'shape' || state.shapeKind !== 'polygon')) finishPolygon();
     const shapes = state.tool === 'select' ? selectedItems().filter((it) => it.type === 'shape') : [];
@@ -343,6 +348,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
       interact: 'Quizze im Blatt ausfüllen – neben einem Quiz wird wieder ausgewählt; zum Schreiben den Stift wählen.',
       field: 'Rechteck aufziehen – das Feld deckt ab, was darunter liegt.',
       eraser: 'Über einen Strich oder eine Form wischen – sie wird ganz gelöscht.',
+      laser: 'Zeigen: gedrückt ziehen hinterlässt eine Leuchtspur, die von selbst verblasst – nichts wird gespeichert.',
       shape: state.shapeKind === 'polygon'
         ? (state.poly ? 'Weitere Punkte setzen – Doppelklick, Enter oder Klick auf den ersten Punkt schließt, Esc bricht ab' : 'Ersten Punkt setzen')
         : 'Aufziehen – mit Umschalt Quadrat bzw. Kreis, Linien in 15°-Schritten',
@@ -359,6 +365,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     overlay.classList.toggle('ink-tool-text', state.tool === 'text');
     overlay.classList.toggle('ink-tool-interact', state.tool === 'interact');
     overlay.classList.toggle('ink-tool-select', state.tool === 'select');
+    overlay.classList.toggle('ink-tool-laser', state.tool === 'laser');
     overlay.classList.toggle('ink-paper-mode', doc.bg === 'paper');
     const interact = overlay.querySelector('[data-tool="interact"]');
     if (interact) interact.hidden = doc.bg !== 'paper';
@@ -699,7 +706,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     el.dataset.i = i;
     el.innerHTML = `<canvas class="ink-bg"></canvas>
       <svg class="ink-svg" viewBox="0 0 ${w} ${h}" xmlns="http://www.w3.org/2000/svg">
-        <g class="ink-fields"></g><g class="ink-shapes"></g><g class="ink-marker"></g><g class="ink-pen"></g><g class="ink-live"></g>
+        <g class="ink-fields"></g><g class="ink-shapes"></g><g class="ink-marker"></g><g class="ink-pen"></g><g class="ink-live"></g><g class="ink-laser"></g>
         <rect class="ink-sel-rect" display="none"></rect><rect class="ink-sel-box" display="none"></rect>
       </svg>
       <div class="ink-texts"></div>
@@ -744,7 +751,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     el.dataset.i = 0;
     el.innerHTML = `<div class="ink-paper-host"><div class="lm-paper${paper.landscape ? ' lm-landscape' : ''}"></div></div>
       <svg class="ink-svg" xmlns="http://www.w3.org/2000/svg">
-        <g class="ink-fields"></g><g class="ink-shapes"></g><g class="ink-marker"></g><g class="ink-pen"></g><g class="ink-live"></g>
+        <g class="ink-fields"></g><g class="ink-shapes"></g><g class="ink-marker"></g><g class="ink-pen"></g><g class="ink-live"></g><g class="ink-laser"></g>
         <rect class="ink-sel-rect" display="none"></rect><rect class="ink-sel-box" display="none"></rect>
       </svg>
       <div class="ink-texts"></div>
@@ -1384,6 +1391,48 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     }
   }
 
+  // ---------- Leuchtstift: Spuren, die verblassen (nur Anzeige, nie im Stand) ----------
+  const laserTrails = []; // { page, points: [[x, y, t]], el, done }
+  let laserRaf = 0;
+  function laserTick() {
+    const now = performance.now();
+    for (let i = laserTrails.length - 1; i >= 0; i--) {
+      const tr = laserTrails[i];
+      // Die Spur verblasst von ihrem Anfang her: alte Punkte fallen weg.
+      while (tr.points.length > 1 && now - tr.points[0][2] > LASER_FADE) tr.points.shift();
+      const gone = tr.done && (tr.points.length < 2 ? now - (tr.points[0]?.[2] ?? 0) > LASER_FADE : false);
+      if (gone) { tr.el.remove(); laserTrails.splice(i, 1); continue; }
+      const d = tr.points.length > 1 ? polyline(tr.points) : '';
+      tr.el.querySelectorAll('path').forEach((path) => path.setAttribute('d', d));
+    }
+    laserRaf = laserTrails.length ? requestAnimationFrame(laserTick) : 0;
+  }
+  function laserStart(page, x, y) {
+    const p = pages[page];
+    const el = svgEl('g', { class: 'ink-laser-trail' });
+    el.appendChild(svgEl('path', { class: 'ink-laser-glow', d: '' }));
+    el.appendChild(svgEl('path', { class: 'ink-laser-core', d: '' }));
+    p.svg.querySelector('.ink-laser').appendChild(el);
+    const tr = { page, points: [[x, y, performance.now()]], el, done: false };
+    laserTrails.push(tr);
+    if (!laserRaf) laserRaf = requestAnimationFrame(laserTick);
+    return tr;
+  }
+  /** Leuchtender Punkt unter dem Zeiger (auch ohne zu drücken). */
+  function laserDot(page, at) {
+    for (const p of pages) {
+      let dot = p.svg.querySelector('.ink-laser-dot');
+      if (p.i !== page || !at) { dot?.remove(); continue; }
+      if (!dot) {
+        dot = svgEl('circle', { class: 'ink-laser-dot', r: 6 });
+        p.svg.querySelector('.ink-laser').appendChild(dot);
+      }
+      dot.setAttribute('cx', at[0]);
+      dot.setAttribute('cy', at[1]);
+      dot.setAttribute('r', String(6 / Math.max(0.5, state.zoom)));
+    }
+  }
+
   /** Die Form, wenn genau eine Form gewählt ist (dann mit Anfassern). */
   function selectedShape(page) {
     const sel = state.selection;
@@ -1949,7 +1998,10 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
       if (p.paper) e.stopPropagation();
       p.el.setPointerCapture?.(e.pointerId);
 
-      if (tool === 'pen' || tool === 'marker') {
+      if (tool === 'laser') {
+        gesture = { kind: 'laser', id: e.pointerId, trail: laserStart(p.i, x, y) };
+        laserDot(p.i, [x, y]);
+      } else if (tool === 'pen' || tool === 'marker') {
         const marker = tool === 'marker';
         gesture = {
           kind: 'stroke', id: e.pointerId,
@@ -2018,6 +2070,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
       clearTimeout(gesture.press);
       clearTimeout(gesture.hold);
       if (gesture.kind === 'stroke' || gesture.kind === 'shape') gesture.el?.remove();
+      if (gesture.kind === 'laser') gesture.trail.done = true;
       if (gesture.kind === 'rect') showSvg(p.svg.querySelector('.ink-sel-rect'), false);
       gesture = null;
       p.busy = false;
@@ -2036,6 +2089,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
       }
       if (rulerDrag?.pointers.has(e.pointerId)) { const [x, y] = toPage(e); rulerMove(e, x, y); return; }
       if (!gesture && state.poly?.page === p.i) { polygonPreview(toPage(e)); return; }
+      if (!gesture && state.tool === 'laser') { laserDot(p.i, toPage(e)); return; }
       if (!gesture || e.pointerId !== gesture.id) return;
       const events = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
       if (gesture.kind === 'stroke') {
@@ -2076,6 +2130,13 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
         const [fx, fy] = gesture.from;
         for (const [k, v] of Object.entries({ x: Math.min(fx, x), y: Math.min(fy, y), width: Math.abs(x - fx), height: Math.abs(y - fy) })) r.setAttribute(k, v);
         gesture.to = [x, y];
+      } else if (gesture.kind === 'laser') {
+        const now = performance.now();
+        for (const ev of events.length ? events : [e]) {
+          const [x, y] = toPage(ev);
+          gesture.trail.points.push([x, y, now]);
+        }
+        laserDot(p.i, toPage(e));
       } else if (gesture.kind === 'shape') {
         const geom = shapeFromDrag(state.shapeKind, gesture.from, toPage(e), e.shiftKey);
         gesture.geom = geom;
@@ -2151,6 +2212,8 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
         doc.pages[p.i].items.push(g.item);
         changed();
         drawItems(p.i);
+      } else if (g.kind === 'laser') {
+        g.trail.done = true; // verblasst von selbst (laserTick)
       } else if (g.kind === 'shape') {
         g.el?.remove();
         const geom = g.geom;
@@ -2193,6 +2256,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     p.el.addEventListener('pointermove', move);
     p.el.addEventListener('pointerup', up);
     p.el.addEventListener('pointercancel', up);
+    p.el.addEventListener('pointerleave', () => { if (state.tool === 'laser') laserDot(-1, null); });
     // Doppelklick auf ein Textfeld beim Auswählen: gleich weiterschreiben.
     p.el.addEventListener('dblclick', (e) => {
       if (state.tool !== 'select') return;

@@ -192,7 +192,8 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
   if (doc.bg === 'paper') doc.pages = [{ items: [] }];
 
   const state = {
-    tool: 'pen', color: COLORS[0], marker: MARKERS[0], widthIdx: 1, textSize: NEW_TEXT_SIZE, fieldPattern: 'karo',
+    // Im Dokument zuerst „Bedienen“ (Quizze ausfüllen) – geschrieben wird erst, wenn der Stift gewählt ist.
+    tool: doc.bg === 'paper' ? 'interact' : 'pen', color: COLORS[0], marker: MARKERS[0], widthIdx: 1, textSize: NEW_TEXT_SIZE, fieldPattern: 'karo',
     shapeKind: 'rect', shapeDash: 'solid', shapeFill: null, shapeOpacity: 1,
     zoom: 1, fingerDraws: false, variant: 'blatt',
     selection: null,          // { page, ids: Set }
@@ -202,6 +203,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
   const pdfs = {};            // variant → PDFDocumentProxy | Promise
   let pages = [];             // [{ w, h, el, svg, canvas, texts }]
   let saveTimer = null;
+  let penEraseAt = 0;         // zuletzt mit der Radiertaste des Stifts radiert (Kontextmenü danach schlucken)
 
   // ---------- Gerüst ----------
   const overlay = document.createElement('div');
@@ -292,7 +294,14 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
   const $ = (sel) => overlay.querySelector(sel);
   const scroller = $('.ink-scroll');
   const pagesEl = $('.ink-pages');
-  const status = (text) => { $('.ink-status').textContent = text; };
+  // Nur das Zeichen (💾, ⚠️, …) – der Text steht im Tooltip. Längerer Text machte die Leiste breiter, die Knöpfe rutschten.
+  const status = (text) => {
+    const el = $('.ink-status');
+    const head = String(text || '').split(' ')[0];
+    el.textContent = !head ? '' : /^[\p{L}\p{N}]/u.test(head) ? '⏳' : head;
+    el.title = text || '';
+    el.setAttribute('aria-label', text || '');
+  };
 
   // ---------- Werkzeugleiste ----------
   const paintToolbar = () => {
@@ -524,8 +533,12 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
   $('.ink-close').addEventListener('click', () => close());
   $('.ink-save').addEventListener('click', async () => {
     const b = $('.ink-save');
+    const tool = state.tool; // Speichern wechselt nie das Werkzeug – der Stift bleibt aktiv.
     b.disabled = true;
-    try { await persist(); } finally { b.disabled = false; }
+    try { await persist(); } finally {
+      b.disabled = false;
+      if (state.tool !== tool) { state.tool = tool; paintToolbar(); }
+    }
     b.classList.add('ink-saved');
     setTimeout(() => b.classList.remove('ink-saved'), 1200);
   });
@@ -2015,8 +2028,12 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
       if (p.paper && (e.target.closest?.('.ink-karo-handle, .ink-insert-mark') || state.tool === 'interact'
         || (state.tool === 'text' && e.target.closest?.('.ink-text')))) return;
       if (e.pointerType === 'pen') penDown = true;
-      // Rechte Taste, Stift-Seitentaste, Ctrl+Klick (Mac): Kontextmenü, nicht zeichnen.
-      if ((e.button > 0 && e.button !== 5) || (e.buttons & 2) || (e.ctrlKey && e.pointerType === 'mouse')) return;
+      // Stift mit Radierer-Ende oder Seitentaste (Windows meldet die Löschtaste mal als
+      // Radierer, mal als rechte Taste): radiert – immer, nie Kontextmenü oder Auswählen.
+      const penErases = e.pointerType === 'pen' && (e.button === 2 || e.button === 5 || (e.buttons & 34));
+      if (penErases) penEraseAt = Date.now();
+      // Rechte Taste, Ctrl+Klick (Mac): Kontextmenü, nicht zeichnen.
+      if (!penErases && ((e.button > 0 && e.button !== 5) || (e.buttons & 2) || (e.ctrlKey && e.pointerType === 'mouse'))) return;
       if (e.pointerType === 'touch' && state.fingerDraws && !rulerDrag) {
         touches.set(e.pointerId, [e.clientX, e.clientY]);
         if (pan) return;
@@ -2033,8 +2050,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
         }
       }
       const [x, y] = toPage(e);
-      // Stift mit Radierer-Ende (Windows Ink / Wacom): radiert.
-      const tool = e.button === 5 || (e.buttons & 32) ? 'eraser' : state.tool;
+      const tool = penErases || e.button === 5 || (e.buttons & 32) ? 'eraser' : state.tool;
       const draws = e.pointerType !== 'touch' || state.fingerDraws;
 
       // Geodreieck: Griffe drehen/vergrößern; setzt der Stift an einer Kante
@@ -2154,7 +2170,19 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     };
 
     const move = (e) => {
-      if (gesture?.kind === 'stroke' && (e.buttons & 2)) { cancelGesture(); return; }
+      if (gesture?.kind === 'stroke' && (e.buttons & 34)) {
+        const id = gesture.id;
+        cancelGesture();
+        // Stift: Löschtaste mitten im Strich gedrückt – ab hier radieren.
+        if (e.pointerType === 'pen') {
+          penEraseAt = Date.now();
+          gesture = { kind: 'erase', id, removed: false };
+          erase(p.i, ...toPage(e), gesture);
+          p.busy = true;
+        }
+        return;
+      }
+      if (gesture?.kind === 'erase' && e.pointerType === 'pen') penEraseAt = Date.now();
       if (touches.has(e.pointerId)) touches.set(e.pointerId, [e.clientX, e.clientY]);
       if (pan) {
         if (touches.size >= 2) {
@@ -2348,6 +2376,8 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
       // In einem Quiz oder Textfeld bleibt das Menü des Browsers (Kopieren, Rechtschreibung).
       if (e.target.closest?.('.ds-quiz-live input, .ds-quiz-live textarea, .ink-text[contenteditable="true"]:focus')) return;
       e.preventDefault();
+      // Die Löschtaste des Stifts hat radiert – kein Menü und kein Wechsel zu „Auswählen“.
+      if (Date.now() - penEraseAt < 1000) return;
       cancelGesture();
       const [x, y] = toPage(e);
       const hit = itemAt(doc.pages[p.i].items, x, y, 6 / state.zoom);

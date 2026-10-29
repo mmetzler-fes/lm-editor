@@ -74,7 +74,7 @@ const FIELD_PATTERNS = { karo: '▦ Karo', linien: '☰ Linien', leer: '▢ Leer
 const SHAPE_KIND_LABELS = { rect: ['▭', 'Rechteck'], ellipse: ['◯', 'Ellipse'], polygon: ['⬠', 'Vieleck – Punkte setzen, Doppelklick oder Klick auf den ersten Punkt schließt'], line: ['╱', 'Linie'], arrow: ['➝', 'Pfeil'] };
 const DASH_LABELS = { solid: ['—', 'durchgezogen'], dash: ['┄', 'gestrichelt'], dot: ['⋯', 'gepunktet'] };
 const ROT_GAP = 22;         // Abstand des Dreh-Anfassers über der Form, Bildschirm-Pixel
-const LASER_FADE = 1500;    // so lange (ms) leuchtet die Spur des Leuchtstifts nach
+const LASER_FADE = 1500;    // so lange (ms) leuchtet die Spur des Leuchtstifts nach dem Absetzen nach
 const icon = (name) => `<svg class="ink-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="${ICON_PATHS[name]}"/></svg>`;
 const MAX_PIXELS = 12e6;    // Obergrenze je Hintergrund-Leinwand (iPad Safari: ~16 Mio.)
 const RULER_REACH = 12;     // So nah (Bildschirmpunkte) muss der Stift an die Kante des Geodreiecks
@@ -348,7 +348,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
       interact: 'Quizze im Blatt ausfüllen – neben einem Quiz wird wieder ausgewählt; zum Schreiben den Stift wählen.',
       field: 'Rechteck aufziehen – das Feld deckt ab, was darunter liegt.',
       eraser: 'Über einen Strich oder eine Form wischen – sie wird ganz gelöscht.',
-      laser: 'Zeigen: gedrückt ziehen hinterlässt eine Leuchtspur, die von selbst verblasst – nichts wird gespeichert.',
+      laser: 'Zeigen: gedrückt ziehen hinterlässt eine Leuchtspur, die nach dem Absetzen verblasst – nichts wird gespeichert.',
       shape: state.shapeKind === 'polygon'
         ? (state.poly ? 'Weitere Punkte setzen – Doppelklick, Enter oder Klick auf den ersten Punkt schließt, Esc bricht ab' : 'Ersten Punkt setzen')
         : 'Aufziehen – mit Umschalt Quadrat bzw. Kreis, Linien in 15°-Schritten',
@@ -1422,9 +1422,9 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     const now = performance.now();
     for (let i = laserTrails.length - 1; i >= 0; i--) {
       const tr = laserTrails[i];
-      // Die Spur verblasst von ihrem Anfang her: alte Punkte fallen weg.
-      while (tr.points.length > 1 && now - tr.points[0][2] > LASER_FADE) tr.points.shift();
-      const gone = tr.done && (tr.points.length < 2 ? now - (tr.points[0]?.[2] ?? 0) > LASER_FADE : false);
+      // Erst nach dem Absetzen verblasst die Spur von ihrem Anfang her: alte Punkte fallen weg (laserEnd).
+      if (tr.done) while (tr.points.length > 1 && now - tr.points[0][2] > LASER_FADE) tr.points.shift();
+      const gone = tr.done && tr.points.length < 2 && now - (tr.points[0]?.[2] ?? 0) > LASER_FADE;
       if (gone) { tr.el.remove(); laserTrails.splice(i, 1); continue; }
       const d = tr.points.length > 1 ? polyline(tr.points) : '';
       tr.el.querySelectorAll('path').forEach((path) => path.setAttribute('d', d));
@@ -1441,6 +1441,18 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     laserTrails.push(tr);
     if (!laserRaf) laserRaf = requestAnimationFrame(laserTick);
     return tr;
+  }
+  /**
+   * Stift abgesetzt: Solange er die Fläche berührt, bleibt die ganze Spur
+   * stehen; jetzt verblasst sie in LASER_FADE vom Anfang her – die Zeiten der
+   * Punkte werden dafür gleichmäßig über diese Spanne verteilt.
+   */
+  function laserEnd(tr) {
+    if (tr.done) return;
+    const now = performance.now();
+    const n = tr.points.length;
+    tr.points.forEach((pt, i) => { pt[2] = now - LASER_FADE + (LASER_FADE * (i + 1)) / n; });
+    tr.done = true;
   }
   /** Leuchtender Punkt unter dem Zeiger (auch ohne zu drücken). */
   function laserDot(page, at) {
@@ -2135,7 +2147,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
       clearTimeout(gesture.press);
       clearTimeout(gesture.hold);
       if (gesture.kind === 'stroke' || gesture.kind === 'shape') gesture.el?.remove();
-      if (gesture.kind === 'laser') gesture.trail.done = true;
+      if (gesture.kind === 'laser') laserEnd(gesture.trail);
       if (gesture.kind === 'rect') showSvg(p.svg.querySelector('.ink-sel-rect'), false);
       gesture = null;
       p.busy = false;
@@ -2278,7 +2290,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
         changed();
         drawItems(p.i);
       } else if (g.kind === 'laser') {
-        g.trail.done = true; // verblasst von selbst (laserTick)
+        laserEnd(g.trail); // verblasst von selbst (laserTick)
       } else if (g.kind === 'shape') {
         g.el?.remove();
         const geom = g.geom;

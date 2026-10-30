@@ -4,6 +4,10 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>lm-editor</title>
+  <link rel="manifest" href="manifest.webmanifest" />
+  <meta name="theme-color" content="#2563eb" />
+  <link rel="icon" href="icons/favicon-32.png" sizes="32x32" />
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
   <link rel="stylesheet" href="src/css/modules.css" />
   <link rel="stylesheet" href="src/css/ink.css" />
   <link rel="stylesheet" href="src/css/paper.css" />
@@ -16,7 +20,7 @@
       <p>Arbeitsblätter mit Stift, Finger oder Maus bearbeiten – mit Karos, Formeln und Quizzen im Blatt.</p>
     </header>
     <div class="app-actions">
-      <button type="button" class="btn btn-primary" id="btnOpen" title=".zlm öffnen – oder ein Writer-Dokument (.odt) bzw. PDF übernehmen">📂 Öffnen (.zlm, .odt, .pdf)</button>
+      <button type="button" class="btn btn-primary" id="btnOpen" title=".zlm öffnen – oder ein Writer-Dokument (.odt), Folien (.odp, .odg) bzw. PDF übernehmen">📂 Öffnen (.zlm, .odt, .odp, .odg, .pdf)</button>
       <button type="button" class="btn btn-secondary" id="btnExample">✨ Beispiel: Ohmsches Gesetz</button>
       <button type="button" class="btn btn-secondary" id="btnKaro">▦ Neues Karoblatt</button>
     </div>
@@ -24,10 +28,14 @@
       <h2>Zuletzt geöffnet</h2>
       <ul id="recent" class="app-recent"></ul>
       <p class="app-hint">Entwürfe bleiben in diesem Browser. Mit „💾 Speichern“ im Editor wird daraus eine .zlm-Datei.
-        Eine Datei lässt sich auch einfach auf diese Seite ziehen. Ein Writer-Dokument (.odt) wird zu Bausteinen
-        (Überschriften, Absätze, Listen, Tabellen, Bilder), ein PDF zu Bildern seiner Seiten – beides speichert der Editor als neue .zlm.</p>
+        Eine Datei lässt sich auch einfach auf diese Seite ziehen. Ein Writer-Dokument (.odt) oder Folien (.odp, .odg) werden zu Bausteinen
+        (Überschriften, Absätze, Listen, Tabellen, Bilder), ein PDF zu Bildern seiner Seiten – alles speichert der Editor als neue .zlm.</p>
     </section>
   </main>
   <script type="module" src="src/app/app.js"></script>
+  <script>
+    // Installierbar und offline (sw.js) – nur über https oder localhost.
+    if ('serviceWorker' in navigator && window.isSecureContext) navigator.serviceWorker.register('sw.js').catch(() => {});
+  </script>
 </body>
 </html>

@@ -250,3 +250,15 @@ document.addEventListener('drop', async (e) => {
 });
 
 showStart();
+
+// Installierte App: Rechte Maustaste → „Öffnen mit“ bzw. Doppelklick (Chrome/Edge,
+// manifest.webmanifest: file_handlers). Bei einer .zlm bleibt der Ort zum Speichern.
+if ('launchQueue' in window) {
+  window.launchQueue.setConsumer(async (params) => {
+    const handle = params.files?.[0];
+    const file = await handle?.getFile().catch(() => null);
+    if (!file) return;
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    await openBytes(bytes, { fileName: file.name, handle: sniff(bytes) === 'zlm' ? handle : null });
+  });
+}

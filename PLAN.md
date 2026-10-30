@@ -78,7 +78,7 @@ nie, sie ist nur das Datenmodell darunter.
 - [ ] Bilder aus `media/` einfügen (bisher nur anzeigen)
 - [x] Übernehmen ohne Server: `.odt` (Leser aus LearningModules nach `src/import/odt.js` übertragen, gleiche Ergebnisse geprüft; `docspec-html.js` liegt jetzt hier) und `.pdf` als Bilder der Seiten (pdf.js, weißer Rand abgeschnitten); Bilder nach `media/`; Hinweise, was nicht mitkam; gespeichert wird als neue `.zlm`
 - [ ] LearningModules liest `.odt` ebenfalls mit `src/import/odt.js` im Browser (der Server wandelt nur noch .docx um) – dann entfällt `odt.ts`
-- [ ] offline über Service Worker, „Zum Home-Bildschirm“ (iPad)
+- [x] installierbare Web-App (manifest.webmanifest, „Öffnen mit“ für .zlm/.odt/.odp/.odg/.pdf über launchQueue), offline über Service Worker (sw.js: online immer aktuell, ohne Netz aus dem Cache), veröffentlicht über GitHub Pages (.github/workflows/pages.yml)
 - [ ] Browser-Druck mit Druck-CSS als Rückfall ohne Renderer
 
 ### 4 Docker

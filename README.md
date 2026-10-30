@@ -7,7 +7,7 @@ ausgegeben als .odt und PDF.
 
 Der Editor läuft ohne Konto und ohne Administration:
 
-- als **Webapp**, auch offline,
+- als **Webapp**, auch offline und **installierbar** wie ein Programm,
 - im **Docker**-Container auf dem PC, zusammen mit dem
   [worksheet-renderer](https://github.com/mmetzler-fes/LearningModules/tree/master/worksheet-renderer)
   für die Druckausgabe,
@@ -18,6 +18,19 @@ in der Notizbuch-Vorschau und für Schüler über den Link.
 
 > **Stand:** am Anfang. Was wann kommt, steht im [Arbeitsplan](PLAN.md),
 > das Dateiformat in [docs/FORMAT.md](docs/FORMAT.md).
+
+## Als App installieren (Windows, macOS, Linux, iPad)
+
+Unter **https://mmetzler-fes.github.io/lm-editor/** in Edge oder Chrome
+öffnen und oben in der Adressleiste auf **Installieren** (⊕) klicken – auf dem
+iPad in Safari **Teilen → Zum Home-Bildschirm**. Danach startet der Editor wie
+ein eigenes Programm, auch ohne Netz, und kommt unter **rechte Maustaste →
+Öffnen mit** für `.zlm`, `.odt`, `.odp`, `.odg` und `.pdf` vor (Windows/macOS,
+Edge/Chrome). Die Dateien bleiben auf dem Rechner; Updates kommen von selbst,
+sobald man online ist.
+
+Ohne Internet-Adresse geht dasselbe vom eigenen Rechner aus (`npm start`,
+dann `http://localhost:5180` installieren).
 
 ## Ausprobieren
 

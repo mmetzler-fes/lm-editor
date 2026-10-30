@@ -4,12 +4,17 @@
 // Karoblatt, zuletzt geöffnete Entwürfe. Ein Dokument öffnet im Stift-Editor auf dem Hintergrund
 // „Dokument“; jede Änderung landet als Entwurf in diesem Browser (IndexedDB),
 // „💾 Speichern“ schreibt die .zlm-Datei.
+//
+// Mit Renderer (docker-compose.yaml, tools/serve.mjs leitet /renderer/ weiter):
+// PDF mit Vorlage drucken und Word/PowerPoint übernehmen (LibreOffice).
 
 import { createZlm, readZlm, writeZlm, editorStateOf, layerOf, specForView, ZlmError } from '../zlm/zlm.js';
 import { stampBlockIds } from '../doc/ids.js';
 import { openInkEditor } from '../ink/ink-editor.js';
 import { H5pRenderer } from '../modules/h5p-renderer.js';
 import { sniff, importOdt, importPdfPages } from '../import/import.js';
+import { applyInkToSpec } from '../ink/ink-print.js';
+import { renderJob, base64 } from '../print/render-job.js';
 
 const GENERATOR = 'lm-editor 0.1.0';
 const $ = (sel) => document.querySelector(sel);
@@ -50,11 +55,63 @@ async function saveDraft(session) {
   } catch (_) { return false; }
 }
 
+// ---------- Renderer (nur mit tools/serve.mjs und RENDERER_URL) ----------
+
+let rendererCheck = null;
+/** Steht ein Renderer bereit? Einmal gefragt; als Webapp (GitHub Pages) nie. */
+function rendererAvailable() {
+  rendererCheck ??= fetch('renderer/health', { cache: 'no-store' })
+    .then((r) => (r.ok ? r.json() : null)).then((h) => !!h?.ok).catch(() => false);
+  return rendererCheck;
+}
+
+async function rendererPost(path, body) {
+  const res = await fetch(`renderer/${path}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `Renderer: HTTP ${res.status}`);
+  return data;
+}
+
+/** Word und PowerPoint – wandelt LibreOffice im Renderer um. */
+const CONVERT = /\.(docx|doc|rtf|pptx|ppt|ppsx|pps)$/i;
+
+/** Word → .odt, PowerPoint → .odg (Renderer); danach liest sie der .odt-Leser. */
+async function convertWithRenderer(bytes, fileName) {
+  if (!(await rendererAvailable())) {
+    throw new Error('Word- und PowerPoint-Dateien wandelt nur der Renderer um (docker-compose.yaml) – oder in LibreOffice als .odt bzw. .odp speichern.');
+  }
+  const data = await rendererPost('convert-odt', { file: base64(bytes), name: fileName });
+  const out = data.odt ?? data.odg;
+  if (typeof out !== 'string') throw new Error('Der Renderer hat nichts geliefert.');
+  const bin = atob(out);
+  const odf = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) odf[i] = bin.charCodeAt(i);
+  return { bytes: odf, fileName: fileName.replace(/\.[^.]+$/, data.odt ? '.odt' : '.odg') };
+}
+
+/** PDF mit Vorlage über den Renderer (wie in LearningModules); liefert die Hinweise. */
+async function printPdf(doc, data, { solutions, win }) {
+  const spec = applyInkToSpec(doc.spec, data);
+  const { job, warnings } = renderJob(spec, {
+    title: doc.manifest.title, media: doc.media, modules: doc.modules, outputs: [solutions ? 'loesung_pdf' : 'pdf'],
+  });
+  const res = await rendererPost('render', job);
+  const pdf = res.files?.[solutions ? 'loesung_pdf' : 'pdf'];
+  if (!pdf) throw new Error('Der Renderer hat kein PDF geliefert.');
+  const bin = atob(pdf);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  const url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
+  if (win) win.location.href = url; else window.open(url, '_blank');
+  return [...warnings, ...(res.warnings || [])];
+}
+
 // ---------- Dateien ----------
 
 const ZLM_TYPES = [{ description: 'lm-editor-Dokument', accept: { 'application/zip': ['.zlm'] } }];
 const OPEN_TYPES = [
-  { description: 'lm-editor, Writer, Folien, PDF', accept: { 'application/zip': ['.zlm'], 'application/vnd.oasis.opendocument.text': ['.odt', '.ott'], 'application/vnd.oasis.opendocument.presentation': ['.odp'], 'application/vnd.oasis.opendocument.graphics': ['.odg'], 'application/pdf': ['.pdf'] } },
+  { description: 'lm-editor, Writer, Folien, PDF', accept: { 'application/zip': ['.zlm'], 'application/vnd.oasis.opendocument.text': ['.odt', '.ott'], 'application/vnd.oasis.opendocument.presentation': ['.odp'], 'application/vnd.oasis.opendocument.graphics': ['.odg'], 'application/pdf': ['.pdf'],
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'], 'application/vnd.openxmlformats-officedocument.presentationml.presentation': ['.pptx'] } },
 ];
 const fileNameOf = (title) => `${String(title || 'Dokument').replace(/[\\/:*?"<>|]+/g, '-').trim() || 'Dokument'}.zlm`;
 
@@ -74,7 +131,8 @@ async function pickFile() {
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = '.zlm,.odt,.ott,.odp,.odg,.pdf,application/zip,application/vnd.oasis.opendocument.text,'
-      + 'application/vnd.oasis.opendocument.presentation,application/vnd.oasis.opendocument.graphics,application/pdf';
+      + 'application/vnd.oasis.opendocument.presentation,application/vnd.oasis.opendocument.graphics,application/pdf,'
+      + '.docx,.doc,.rtf,.pptx,.ppt';
     input.onchange = async () => {
       const file = input.files[0];
       resolve(file ? { bytes: new Uint8Array(await file.arrayBuffer()), name: file.name, handle: null } : null);
@@ -145,6 +203,8 @@ async function openSession(doc, { fileName = null, handle = null } = {}) {
   const session = { doc, fileName, handle };
   const renderer = new H5pRenderer();
   const embedModule = (id) => doc.modules[id] || null;
+  // Mit Renderer zusätzlich „PDF mit Vorlage“ im Druckmenü.
+  const withRenderer = await rendererAvailable();
   $('#start').hidden = true;
   await openInkEditor({
     title: doc.manifest.title,
@@ -156,6 +216,7 @@ async function openSession(doc, { fileName = null, handle = null } = {}) {
         el.appendChild(renderer.createTypePreview('document', { spec: specForView(doc), kind: doc.manifest.kind }, { blockIds: true, quizMode: true, embedModule }));
         if (solutions) el.querySelector('.docspec')?.classList.remove('ds-hide-solutions');
       },
+      ...(withRenderer ? { printPdf: (data, opts) => printPdf(doc, data, opts) } : {}),
     },
     store: {
       label: 'im Entwurf',
@@ -172,12 +233,18 @@ async function openSession(doc, { fileName = null, handle = null } = {}) {
 }
 
 /**
- * Datei öffnen: .zlm direkt, .odt und .pdf als neues Dokument. Übernommenes
+ * Datei öffnen: .zlm direkt, .odt/.odp/.odg und .pdf als neues Dokument,
+ * Word und PowerPoint mit Renderer über LibreOffice. Übernommenes
  * wird als neue .zlm gespeichert – nie über das Original.
  */
 async function openBytes(bytes, { fileName = '', handle = null } = {}) {
-  const kind = sniff(bytes) || (/\.zlm$/i.test(fileName) ? 'zlm' : null);
+  const original = fileName;
   try {
+    if (CONVERT.test(fileName) && !sniff(bytes)) {
+      const busy = toast(`${fileName} wird mit LibreOffice umgewandelt …`);
+      try { ({ bytes, fileName } = await convertWithRenderer(bytes, fileName)); } finally { busy.remove(); }
+    }
+    const kind = sniff(bytes) || (/\.zlm$/i.test(fileName) ? 'zlm' : null);
     if (kind === 'zlm') { await openSession(readZlm(bytes), { fileName, handle }); return; }
     let result;
     if (kind === 'odt') result = importOdt(bytes, fileName);
@@ -186,10 +253,10 @@ async function openBytes(bytes, { fileName = '', handle = null } = {}) {
       try {
         result = await importPdfPages(bytes, fileName, { onProgress: (i, n) => { busy.textContent = `PDF wird übernommen: Seite ${i} von ${n} …`; } });
       } finally { busy.remove(); }
-    } else throw new Error('Diese Datei kenne ich nicht – geöffnet werden .zlm, .odt, .odp, .odg und .pdf.');
+    } else throw new Error('Diese Datei kenne ich nicht – geöffnet werden .zlm, .odt, .odp, .odg und .pdf – mit Renderer auch .docx und .pptx.');
     const name = `${(fileName.replace(/^.*[\\/]/, '').replace(/\.[^.]+$/, '') || result.doc.manifest.title)}.zlm`;
     await openSession(result.doc, { fileName: name });
-    notice(`Übernommen aus ${fileName || 'der Datei'}`, result.warnings);
+    notice(`Übernommen aus ${original || 'der Datei'}`, result.warnings);
   } catch (err) {
     showStart();
     toast(err instanceof ZlmError ? `⚠️ ${err.message}` : `⚠️ Öffnen nicht möglich: ${err.message}`, true);

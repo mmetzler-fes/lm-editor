@@ -32,6 +32,22 @@ sobald man online ist.
 Ohne Internet-Adresse geht dasselbe vom eigenen Rechner aus (`npm start`,
 dann `http://localhost:5180` installieren).
 
+## Mit Docker – PDF mit Vorlage, Word und PowerPoint
+
+Für den Druck mit der Schulvorlage (Logo, Kopfzeile) und um `.docx` und
+`.pptx` zu übernehmen, braucht der Editor den
+[worksheet-renderer](https://github.com/mmetzler-fes/LearningModules/tree/master/worksheet-renderer)
+mit LibreOffice. Beides zusammen startet [docker-compose.yaml](docker-compose.yaml):
+
+1. [Docker Desktop](https://www.docker.com/products/docker-desktop/) installieren (Windows, macOS) bzw. Docker (Linux).
+2. `docker-compose.yaml` aus diesem Repository in einen Ordner legen.
+3. Dort `docker compose up -d` – danach **http://localhost:5180** öffnen
+   und, wenn gewünscht, als App installieren.
+
+Neue Fassung: `docker compose pull`, dann wieder `docker compose up -d`.
+Im Druckmenü (🖨) steht dann zusätzlich „PDF mit Vorlage“; Quizze erscheinen
+dort als Kasten (QR-Code und Link gibt es nur über LearningModules).
+
 ## Ausprobieren
 
 Node 22 genügt, keine weiteren Pakete:

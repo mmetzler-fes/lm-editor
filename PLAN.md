@@ -82,17 +82,18 @@ nie, sie ist nur das Datenmodell darunter.
 - [ ] Browser-Druck mit Druck-CSS als Rückfall ohne Renderer
 
 ### 4 Docker
-- [ ] Image `lm-editor`: liefert die Webapp aus, speichert in einem Ordner (`./dokumente`)
-- [ ] `docker-compose.yaml` für den PC: lm-editor + worksheet-renderer, nur `localhost`
-- [ ] Images auch für `linux/amd64` (Windows-PCs, Intel-Macs) – auch für den worksheet-renderer
+- [x] Image `lm-editor` (ghcr.io, .github/workflows/docker.yml): liefert die Webapp aus und reicht `/renderer/` an den Renderer weiter (Token bleibt im Container) – gespeichert wird weiter über den Browser (Datei wählen), kein eigener Ordner
+- [x] `docker-compose.yaml` für den PC: lm-editor + worksheet-renderer, nur `localhost`
+- [x] Images auch für `linux/amd64` (Windows-PCs, Intel-Macs) – auch für den worksheet-renderer
 
 ### 5 Druck und Export
 - [x] Drucken/PDF im Browser (🖨): Arbeits- oder Lösungsblatt, mit oder ohne Beschriftung; Ränder wie die Schulvorlage auf jeder Seite, Seitenumbrüche aus dem Dokument, Felder/Bilder/Formeln werden nicht zerrissen, Beschriftung je Baustein als Vektorgrafik
 - [ ] Druckfassung je Quiztyp (bisher: das Quiz, wie es gerade aussieht – bei Richtig/Falsch nur die erste Frage)
-- [ ] `.zlm` → Renderer-Auftrag (Spec, Bilder, Stift-Ebene als SVG)
+- [x] `.zlm` → Renderer-Auftrag (Spec, Bilder, Stift-Ebene als SVG; src/print/render-job.js) – „PDF mit Vorlage“ im Druckmenü, wenn ein Renderer da ist
 - [ ] eingebettete Quizze: Druckfassung je Typ (Multiple Choice, Lückentext, Zuordnen, Wahr/Falsch …), sonst Bild der Vorschau – statt QR-Code
 - [ ] Renderer über LearningModules-Konto (Anmelden aus dem Editor, Weiterleitung durch den App-Server, Grenzen je Konto)
-- [ ] Übernehmen mit Renderer: `.pdf` mit Text und Struktur (pdf_import.py, wahlweise KI-Erkennung) und `.docx` (LibreOffice) – dieselbe Auswahl wie in LearningModules
+- [x] Übernehmen mit Renderer: `.docx` und `.pptx` (LibreOffice → .odt bzw. .odg, dann der .odt-Leser)
+- [ ] Übernehmen mit Renderer: `.pdf` mit Text und Struktur (pdf_import.py, wahlweise KI-Erkennung) – dieselbe Auswahl wie in LearningModules
 - [ ] Zwischenspeicher: gleicher Auftrag wird nicht zweimal gerendert
 
 ### 6 Lernmodule im Editor

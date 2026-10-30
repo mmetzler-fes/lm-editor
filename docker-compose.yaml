@@ -1,0 +1,33 @@
+# lm-editor auf dem eigenen PC – mit dem worksheet-renderer für „PDF mit
+# Vorlage“ und um Word- und PowerPoint-Dateien zu übernehmen.
+#
+#   docker compose up -d        → http://localhost:5180 (dort auch „Installieren“)
+#   docker compose pull         → neue Fassung holen, dann wieder up -d
+#
+# Der Renderer ist von außen nicht erreichbar; das Token gilt nur zwischen den
+# beiden Containern.
+
+services:
+  lm-editor:
+    image: ghcr.io/mmetzler-fes/lm-editor:latest
+    # Selbst bauen statt holen: `docker compose build` (nutzt diesen Ordner).
+    build: .
+    ports:
+      # Nur dieser Rechner. Fürs iPad im selben Netz: "5180:5180".
+      - "127.0.0.1:5180:5180"
+    environment:
+      RENDERER_URL: http://worksheet-renderer:8090
+      RENDERER_TOKEN: lm-editor-lokal
+    depends_on:
+      - worksheet-renderer
+    restart: unless-stopped
+
+  worksheet-renderer:
+    image: ghcr.io/mmetzler-fes/worksheet-renderer:latest
+    environment:
+      WORKSHEET_RENDERER_TOKEN: lm-editor-lokal
+      RENDERER_WORKERS: "1"
+    # Aufträge und LibreOffice-Profile im Arbeitsspeicher; bei jedem Neustart leer.
+    tmpfs:
+      - /tmp:size=512m
+    restart: unless-stopped

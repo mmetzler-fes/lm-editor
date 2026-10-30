@@ -255,22 +255,24 @@ const MAX_TOTAL_IMAGE_BYTES = 20 * 1024 * 1024;
 /** Länge wie "8.5cm", "3in" oder "120pt" in CSS-Pixel. */
 const BESIDE_OPEN = '<!--lm-beside-->';
 const BESIDE_CLOSE = '<!--/lm-beside-->';
-
 /** Ende (Index hinter dem schließenden Tag) des Elements, das bei `start` beginnt – oder -1. */
 function elementEnd(s, start) {
-  const tag = /^<([a-z0-9]+)/i.exec(s.slice(start))?.[1];
-  if (!tag) return -1;
-  const re = new RegExp(`<(/?)${tag}\\b[^>]*>`, 'gi');
-  re.lastIndex = start;
-  let depth = 0;
-  for (let m = re.exec(s); m; m = re.exec(s)) {
-    if (m[1]) {
-      if (--depth === 0) return re.lastIndex;
-    } else if (!m[0].endsWith('/>')) depth++;
-  }
-  return -1;
+    const tag = /^<([a-z0-9]+)/i.exec(s.slice(start))?.[1];
+    if (!tag)
+        return -1;
+    const re = new RegExp(`<(/?)${tag}\\b[^>]*>`, 'gi');
+    re.lastIndex = start;
+    let depth = 0;
+    for (let m = re.exec(s); m; m = re.exec(s)) {
+        if (m[1]) {
+            if (--depth === 0)
+                return re.lastIndex;
+        }
+        else if (!m[0].endsWith('/>'))
+            depth++;
+    }
+    return -1;
 }
-
 /**
  * Textrahmen, die schmal neben dem Text standen (z. B. eine Wertetabelle neben
  * der Schaltung), hängen am Absatz davor – meist der Überschrift. Im Blatt
@@ -278,33 +280,62 @@ function elementEnd(s, start) {
  * wandern sie nicht.
  */
 function placeBeside(html) {
-  let out = html;
-  let from = 0;
-  for (;;) {
-    const a = out.indexOf(BESIDE_OPEN, from);
-    if (a < 0) break;
-    const b = out.indexOf(BESIDE_CLOSE, a);
-    if (b < 0) break;
-    const chunk = out.slice(a + BESIDE_OPEN.length, b);
-    const rest = out.slice(b + BESIDE_CLOSE.length);
-    const next = /^\s*(?:<p data-empty="1"><br><\/p>\s*)*(?=<(p|div|table|ul|ol|figure)\b)/i.exec(rest);
-    const end = next ? elementEnd(rest, next[0].length) : -1;
-    if (end > 0) {
-      out = out.slice(0, a) + rest.slice(0, end) + chunk + rest.slice(end);
-      from = a + end + chunk.length;
-    } else {
-      out = out.slice(0, a) + chunk + rest;
-      from = a + chunk.length;
+    let out = html;
+    let from = 0;
+    for (;;) {
+        const a = out.indexOf(BESIDE_OPEN, from);
+        if (a < 0)
+            break;
+        const b = out.indexOf(BESIDE_CLOSE, a);
+        if (b < 0)
+            break;
+        const chunk = out.slice(a + BESIDE_OPEN.length, b);
+        const rest = out.slice(b + BESIDE_CLOSE.length);
+        const next = /^\s*(?:<p data-empty="1"><br><\/p>\s*)*(?=<(p|div|table|ul|ol|figure)\b)/i.exec(rest);
+        const end = next ? elementEnd(rest, next[0].length) : -1;
+        if (end > 0) {
+            out = out.slice(0, a) + rest.slice(0, end) + chunk + rest.slice(end);
+            from = a + end + chunk.length;
+        }
+        else {
+            out = out.slice(0, a) + chunk + rest;
+            from = a + chunk.length;
+        }
     }
-  }
-  return out;
+    return out;
 }
-
 /** Länge in cm, auf 0,1 gerundet – null ohne brauchbare Angabe. */
 function lengthCm(value) {
     const m = /^([\d.]+)\s*(cm|mm|in|pt|pc|px)$/.exec(String(value || '').trim());
     const cm = m ? parseFloat(m[1]) * ({ cm: 1, mm: 0.1, in: 2.54, pt: 2.54 / 72, pc: 2.54 / 6, px: 2.54 / 96 }[m[2]] ?? 1) : 0;
     return cm > 0 ? Math.round(cm * 10) / 10 : null;
+}
+/** Wie toPx, auch negativ (Lage links oder über der Seite); ohne Angabe 0. */
+const signedPx = (v) => {
+    const t = String(v ?? '').trim();
+    return t.startsWith('-') ? -(toPx(t.slice(1)) ?? 0) : toPx(t) ?? 0;
+};
+/**
+ * Punkt (px) durch eine ODF-Transformation ("rotate (0.5) translate (2cm 1cm)")
+ * – Schritte in Leserichtung, Drehwinkel gegen den Uhrzeigersinn.
+ */
+function odfPoint(t, x, y) {
+    for (const m of (t || '').matchAll(/(rotate|translate|scale)\s*\(([^)]*)\)/g)) {
+        const args = m[2].trim().split(/[\s,]+/);
+        if (m[1] === 'rotate') {
+            const a = -parseFloat(args[0]) || 0;
+            [x, y] = [x * Math.cos(a) - y * Math.sin(a), x * Math.sin(a) + y * Math.cos(a)];
+        }
+        else if (m[1] === 'translate') {
+            x += signedPx(args[0]);
+            y += signedPx(args[1]);
+        }
+        else {
+            x *= parseFloat(args[0]) || 1;
+            y *= parseFloat(args[1] ?? args[0]) || 1;
+        }
+    }
+    return [x, y];
 }
 function toPx(value) {
     const m = /^([\d.]+)\s*(cm|mm|in|pt|pc|px)?$/.exec(String(value || '').trim());
@@ -643,8 +674,16 @@ class DrawingSvg {
                 return false;
         }
         if (n.name !== 'draw:line' && n.name !== 'draw:connector') {
-            this.grow(ox, oy);
-            this.grow(ox + b.w, oy + b.h);
+            if (/rotate/.test(n.attrs['draw:transform'] || '')) {
+                // Gedreht (z. B. ein hochkant gestelltes Foto): alle vier Ecken zählen.
+                for (const [px, py] of [[b.x, b.y], [b.x + b.w, b.y], [b.x, b.y + b.h], [b.x + b.w, b.y + b.h]]) {
+                    this.grow(...odfPoint(n.attrs['draw:transform'], px, py));
+                }
+            }
+            else {
+                this.grow(ox, oy);
+                this.grow(ox + b.w, oy + b.h);
+            }
         }
         this.shapes++;
         return true;
@@ -665,17 +704,18 @@ class DrawingSvg {
         return `<img src="data:image/svg+xml;base64,${b64(new TextEncoder().encode(svg))}" alt="Zeichnung" width="${w}">`;
     }
 }
+/** So lang wird eine Überschrift nicht – ein Absatz mit Überschriften-Vorlage (sieht im Dokument aus wie Text). */
+const MAX_HEADING_CHARS = 200;
 /**
  * Titel aus den Metadaten nur, wenn er nach einem Titel aussieht: Vorlagen
  * tragen oft „1“, „Unbenannt“ oder den Namen der Vorlage – dann zählen die
  * erste Überschrift bzw. der Dateiname.
  */
 export function usableTitle(t) {
-  const s = String(t || '').trim();
-  return (s.match(/\p{L}/gu) || []).length >= 3 && !/^(unbenannt|untitled|ohne titel|titel|dokument|document|vorlage)\s*\d*$/i.test(s);
+    const s = String(t || '').trim();
+    return (s.match(/\p{L}/gu) || []).length >= 3 && !/^(unbenannt|untitled|ohne titel|titel|dokument|document|vorlage)\s*\d*$/i.test(s);
 }
-
-export function odtToHtml(buffer, fileName = '') {
+export function odtToHtml(buffer, fileName = '', opts = {}) {
     let files;
     try {
         let count = 0;
@@ -696,8 +736,10 @@ export function odtToHtml(buffer, fileName = '') {
     const zip = { getEntry: (name) => (files[name] ? { getData: () => files[name] } : null) };
     const read = (entry) => { const d = zip.getEntry(entry)?.getData(); return d ? strFromU8(d) : undefined; };
     const mimetype = (read('mimetype') || '').trim();
-    if (mimetype && !mimetype.startsWith('application/vnd.oasis.opendocument.text')) {
-        throw new Error('Das ist kein Writer-Dokument (.odt).');
+    // Folien aus Impress (.odp) und Seiten aus Draw (.odg) – PowerPoint kommt
+    // über LibreOffice als .odg (Renderer, POST /convert-odt).
+    if (mimetype && !/^application\/vnd\.oasis\.opendocument\.(text|presentation|graphics)/.test(mimetype)) {
+        throw new Error('Das ist kein Writer-, Impress- oder Draw-Dokument.');
     }
     const contentXml = read('content.xml');
     if (!contentXml)
@@ -705,13 +747,14 @@ export function odtToHtml(buffer, fileName = '') {
     const content = parseXml(contentXml);
     const styles = new Styles();
     const stylesXml = read('styles.xml');
-    if (stylesXml)
-        styles.read(parseXml(stylesXml));
+    const stylesRoot = stylesXml ? parseXml(stylesXml) : undefined;
+    styles.read(stylesRoot);
     styles.read(find(content, 'office:automatic-styles'));
-    const body = find(content, 'office:text');
+    const slideBody = find(content, 'office:presentation') ?? find(content, 'office:drawing');
+    const body = find(content, 'office:text') ?? slideBody;
     if (!body)
         throw new Error('Das Dokument enthält keinen Text.');
-    const stats = { headings: 0, paragraphs: 0, tables: 0, images: 0, drawings: 0 };
+    const stats = { headings: 0, paragraphs: 0, tables: 0, images: 0, drawings: 0, exported: 0 };
     let skippedDrawings = 0;
     let skippedImages = 0;
     let skippedLarge = 0;
@@ -791,6 +834,19 @@ export function odtToHtml(buffer, fileName = '') {
             html = `<sup>${html}</sup>`;
         return html;
     };
+    /**
+     * Inhalt eines Textrahmens: mit Rand ein Kasten, ohne Rand (fo:border="none")
+     * nur der Inhalt – solche Rahmen setzen z. B. eine Tabelle neben den Text.
+     */
+    const textBox = (frame, box) => {
+        const inner = blocks(box);
+        if (!inner.trim())
+            return '';
+        const html = styles.graphic(frame.attrs['draw:style-name'], 'border') === 'none' ? inner : `<div class="ws-box">${inner}</div>`;
+        const width = toPx(frame.attrs['svg:width']) ?? 0;
+        const beside = anchored(frame) && frame.attrs['svg:x'] !== undefined && width > 0 && width < 380;
+        return beside ? `${BESIDE_OPEN}${html}${BESIDE_CLOSE}` : html;
+    };
     /** Frei verankert (am Absatz, Zeichen, Seite) statt wie ein Buchstabe im Text. */
     const anchored = (c) => !!c.attrs['text:anchor-type'] && c.attrs['text:anchor-type'] !== 'as-char';
     const isImageFrame = (f) => elements(f).some((c) => c.name === 'draw:image');
@@ -811,6 +867,24 @@ export function odtToHtml(buffer, fileName = '') {
         // Satzspiegel einer A4-Seite mit üblichen Rändern: rund 17 cm.
         return x + w / 2 > 320 ? 'right' : 'left';
     };
+    /**
+     * Von LibreOffice gezeichnet (OdtOptions.drawings)? Dann das SVG als Bild, sonst null.
+     * '' für Teile einer zusammengefassten Zeichnung (lmdraw-<n>-teil<k>) – sie
+     * stecken schon im Bild von lmdraw-<n>.
+     */
+    const exported = (c) => {
+        if (opts.drawings && /^lmdraw-\d+-teil\d+$/.test(c.attrs['draw:name'] || ''))
+            return '';
+        const d = opts.drawings?.get(c.attrs['draw:name'] || '');
+        if (!d)
+            return null;
+        stats.images++;
+        stats.exported++;
+        const width = d.widthMm ? Math.round((d.widthMm * 96) / 25.4) : 0;
+        const stored = opts.stored?.get(c.attrs['draw:name'] || '');
+        const src = stored ? esc(stored.url) : `data:image/svg+xml;base64,${b64(d.svg)}`;
+        return `<img src="${src}" alt="Zeichnung"${width ? ` width="${width}"` : ''}${stored ? ` data-source="${esc(stored.source)}"` : ''}>`;
+    };
     const inline = (n) => {
         const out = [];
         // Zeichnungen eines Absatzes werden gesammelt und am Ende als ein Bild
@@ -827,6 +901,14 @@ export function odtToHtml(buffer, fileName = '') {
             }
             if (SKIP.has(c.name))
                 continue;
+            const ready = exported(c);
+            if (ready === '')
+                continue;
+            if (ready !== null) {
+                // Wie ein Buchstabe im Text bleibt im Text, sonst eine eigene Zeile.
+                out.push(c.attrs['text:anchor-type'] === 'as-char' ? { inline: ready } : { block: `<p>${ready.replace('<img ', '<img class="ws-img-center" ')}</p>` });
+                continue;
+            }
             switch (c.name) {
                 case 'text:s': {
                     const count = Math.min(Number(c.attrs['text:c'] || 1), 40);
@@ -963,22 +1045,14 @@ export function odtToHtml(buffer, fileName = '') {
         // als Abstand; mehr fasst `blocks` ohnehin zusammen.
         return parts.length ? parts.join('') : '<p data-empty="1"><br></p>';
     };
-    // Textrahmen: mit Rand ein Kasten, ohne Rand nur der Inhalt (wie odt.ts).
-    const textBox = (frame, box) => {
-        const inner = blocks(box);
-        if (!inner.trim())
-            return '';
-        const html = styles.graphic(frame.attrs['draw:style-name'], 'border') === 'none' ? inner : `<div class="ws-box">${inner}</div>`;
-        const width = toPx(frame.attrs['svg:width']) ?? 0;
-        const beside = anchored(frame) && frame.attrs['svg:x'] !== undefined && width > 0 && width < 380;
-        return beside ? `${BESIDE_OPEN}${html}${BESIDE_CLOSE}` : html;
-    };
     const headingTag = (n) => {
         const level = Number(n.attrs['text:outline-level'] || 1);
         return `h${Math.min(4, Math.max(2, level + 1))}`;
     };
-    // Punkte mit Überschriften (Gliederung) ohne Liste – wie odt.ts.
-    // Überschrift in nummerierter Gliederung: Abschnitt, Aufgabe, Teilaufgabe (wie odt.ts).
+    /**
+     * Überschrift in einer nummerierten Gliederung: Abschnitt (1.), Aufgabe (1.1)
+     * oder Teilaufgabe (1.1.1) nach ihrer Ebene – die Nummer setzt das Dokument.
+     */
     const numberedHeading = (c, tag) => {
         const html = paragraph(c, headingTag(c));
         if (tag !== 'ol')
@@ -988,6 +1062,12 @@ export function odtToHtml(buffer, fileName = '') {
         return html.replace(/<(h[2-6])(?=[ >])/, `<$1 data-ds="${ds}"`);
     };
     const hasHeading = (n) => elements(n).some((c) => c.name === 'text:h' || (c.name !== 'table:table' && hasHeading(c)));
+    /**
+     * Liste – Punkte mit Überschriften (Gliederung aus Writer/Word: „2.1.2
+     * Funktionsgleichung“) aber ohne Liste: Die Nummern setzt das Dokument
+     * selbst (Abschnitt, Aufgabe, Teilaufgabe), und was darunter steht – etwa
+     * ein Rahmen mit Tabelle – bliebe sonst im Listenpunkt stecken.
+     */
     const list = (n, listStyle, depth) => {
         const styleName = n.attrs['text:style-name'] || listStyle;
         const tag = styles.listType(styleName, depth);
@@ -1011,7 +1091,8 @@ export function odtToHtml(buffer, fileName = '') {
         }
         return html + (open ? `<${tag}>${open}</${tag}>` : '');
     };
-    // Spaltenbreiten und Zeilenhöhen (wie odt.ts in LearningModules).
+    // Spaltenbreiten (<col style="width">) und Zeilenhöhen (<tr style="height">)
+    // – der Editor liest sie als widths/heights (docspec-html.js).
     const columnWidths = (n) => {
         const out = [];
         const visit = (x) => {
@@ -1029,6 +1110,10 @@ export function odtToHtml(buffer, fileName = '') {
         visit(n);
         return out;
     };
+    /**
+     * Höhe einer Zeile: fest aus der Zeilenvorlage, sonst aus leeren Absätzen –
+     * so lassen Arbeitsblätter Platz zum Zeichnen (z. B. „Funktionsplan“).
+     */
     const rowHeight = (row) => {
         const fixed = lengthCm(styles.prop(row.attrs['table:style-name'], 'rowHeight'));
         if (fixed && fixed >= 0.6)
@@ -1042,12 +1127,18 @@ export function odtToHtml(buffer, fileName = '') {
         }
         return lines >= 2 ? `${Math.round(lines * 0.55 * 10) / 10}cm` : '';
     };
-    // Layout-Tabelle (Tabelle in einer Zelle): je Zeile Spalten – wie odt.ts.
+    /** Zeilen einer Tabelle, auch aus Kopfzeilen und Zeilengruppen. */
     const tableRowsOf = (n) => elements(n).flatMap((c) => (c.name === 'table:table-row' ? [c]
         : ['table:table-header-rows', 'table:table-rows', 'table:table-row-group'].includes(c.name) ? tableRowsOf(c) : []));
+    /**
+     * Layout-Tabelle: Steckt in einer Zelle eine weitere Tabelle, ordnet die
+     * äußere nur nebeneinander an (z. B. Schaltung links, Wertetabelle rechts).
+     * Jede Zeile wird ein Spalten-Baustein (table.ws-columns → type: columns).
+     */
     const layoutTable = (n) => {
         const rows = tableRowsOf(n);
         const cellsOf = (r) => elements(r).filter((c) => c.name === 'table:table-cell');
+        // Nur mit mindestens zwei Zellen nebeneinander – eine einzelne Zelle mit Tabelle ist ein Kasten.
         if (!rows.some((r) => cellsOf(r).length >= 2 && cellsOf(r).some((c) => elements(c).some((x) => x.name === 'table:table'))))
             return null;
         const widths = columnWidths(n);
@@ -1093,13 +1184,19 @@ export function odtToHtml(buffer, fileName = '') {
         };
         const header = elements(n).find((c) => c.name === 'table:table-header-rows');
         const head = header ? `<thead>${rowsHtml(header, 'th')}</thead>` : '';
+        // Breiten nur, wenn alle Spalten eine haben – sonst rechnet der Renderer selbst.
         const widths = columnWidths(n);
         const cols = widths.length && widths.every(Boolean) ? `<colgroup>${widths.map((w) => `<col style="width:${w}">`).join('')}</colgroup>` : '';
         return `<table>${cols}${head}<tbody>${rowsHtml(n, 'td')}</tbody></table>`;
     };
-    // ---- Abbildungen nebeneinander (wie odt.ts in LearningModules) ----
-    // Jedes Bild am eigenen, sonst leeren Absatz, per Position nebeneinander,
-    // darunter „Abbildung 1 ⇥ Abbildung 2 …“ → Tabelle ohne Linien.
+    // ---- Abbildungen nebeneinander ----
+    //
+    // In Arbeitsblättern stehen Abbildungen oft nebeneinander: jedes Bild am
+    // eigenen (sonst leeren) Absatz verankert, per Position nebeneinander
+    // gerückt, leere Absätze halten den Platz frei, darunter eine Zeile
+    // „Abbildung 1 ⇥ Abbildung 2 ⇥ …“. Daraus wird eine Tabelle ohne Linien:
+    // oben die Bilder, darunter die Unterschriften.
+    /** Verankerte Bildrahmen eines Absatzes, der sonst nichts enthält – oder null. */
     const framesOnly = (p) => {
         if (p.name !== 'text:p')
             return null;
@@ -1119,8 +1216,22 @@ export function odtToHtml(buffer, fileName = '') {
         }
         return frames;
     };
-    const tabText = (n) => typeof n === 'string' ? n : n.name === 'text:tab' ? '\t' : n.name === 'text:s' ? ' ' : n.children.map(tabText).join('');
+    /** Text eines Absatzes mit Tabs als \t (für die Zeile der Bildunterschriften). */
+    const tabText = (n) => {
+        if (typeof n === 'string')
+            return n;
+        if (n.name === 'text:tab')
+            return '\t';
+        if (n.name === 'text:s')
+            return ' ';
+        return n.children.map(tabText).join('');
+    };
+    /**
+     * Ab `start` eine Reihe nebeneinanderstehender Abbildungen: Liefert das
+     * HTML und wie viele Elemente sie verbraucht – oder null.
+     */
     const figureRow = (list, start) => {
+        // Absätze ungefähr eine Zeile hoch – genug, um zu sehen, ob die Bilder nebeneinander stehen.
         const LINE = 19;
         const placed = [];
         let i = start;
@@ -1128,6 +1239,7 @@ export function odtToHtml(buffer, fileName = '') {
             const frames = framesOnly(list[i]);
             if (!frames)
                 break;
+            // Unterhalb aller bisherigen Bilder beginnt etwas Neues.
             if (placed.length && (i - start) * LINE >= Math.max(...placed.map((p) => p.bottom)))
                 break;
             for (const f of frames) {
@@ -1135,16 +1247,19 @@ export function odtToHtml(buffer, fileName = '') {
                 placed.push({ f, x: toPx(f.attrs['svg:x']) ?? 0, top, bottom: top + (toPx(f.attrs['svg:height']) ?? 0) });
             }
         }
+        // Leere Absätze am Ende gehören noch zum Platz der Bilder.
         while (i > start && !framesOnly(list[i - 1])?.length)
             i--;
         if (placed.length < 2)
             return null;
+        // Nebeneinander: alle Bilder teilen sich ein Stück Höhe.
         if (Math.max(...placed.map((p) => p.top)) >= Math.min(...placed.map((p) => p.bottom)))
             return null;
         placed.sort((a, b) => a.x - b.x);
-        const cells = placed.map((p) => image(p.f)).filter((img) => !!img);
+        const cells = placed.map((p) => exported(p.f) ?? image(p.f)).filter((img) => !!img);
         if (cells.length < 2)
             return null;
+        // Leere Absätze danach (der freigehaltene Platz) und die Zeile der Unterschriften.
         let j = i;
         while (j < list.length && list[j].name === 'text:p' && !textOf(list[j]).trim() && framesOnly(list[j])?.length === 0)
             j++;
@@ -1178,7 +1293,7 @@ export function odtToHtml(buffer, fileName = '') {
                 continue;
             }
             if (c.name === 'text:p' || c.name === 'text:h') {
-                const tag = c.name === 'text:h' ? headingTag(c)
+                const tag = c.name === 'text:h' && textOf(c).trim().length <= MAX_HEADING_CHARS ? headingTag(c)
                     : styles.inherits(c.attrs['text:style-name'], /^Title$/i) ? 'h2'
                         : styles.inherits(c.attrs['text:style-name'], /^Subtitle$/i) ? 'h3' : 'p';
                 const html = paragraph(c, tag);
@@ -1215,13 +1330,302 @@ export function odtToHtml(buffer, fileName = '') {
             .replace(/(<p data-empty="1"><br><\/p>)+/g, '<p><br></p>')
             .replace(/^(<p><br><\/p>)+|(<p><br><\/p>)+$/g, '');
     }
-    const html = placeBeside(blocks(body));
+    // ---- Folien (.odp) und Zeichenseiten (.odg) ----
+    //
+    // Jede Folie: Titel als Überschrift, darunter Textrahmen, Bilder und
+    // Zeichnungen in Leserichtung. Was auf der Folie nebeneinander stand (Text
+    // links, Bilder rechts), wird ein Spalten-Baustein mit den Breiten der
+    // Folie. Fußzeile, Foliennummer, Datum und die Masterseite (Logo, Hintergrund)
+    // bleiben weg, ebenso ein Bild, das fast die ganze Folie füllt. Jede Folie
+    // beginnt eine neue Seite; ihre Notizen stehen darunter als ausgeblendete Lösung.
+    const slideStats = { slides: 0, backgrounds: 0, notes: 0 };
+    /** Seitenumbruch als fester Baustein (docspec-html.js liest div[data-block]). */
+    const PAGEBREAK = `<div data-block="${encodeURIComponent(JSON.stringify({ type: 'pagebreak' }))}"></div>`;
+    /** Platzhalter der Vorlage, die kein Inhalt sind. */
+    const TEMPLATE_CLASSES = new Set(['footer', 'header', 'page-number', 'date-time', 'handout']);
+    // Satzbreite des Blatts in px (A4 mit üblichen Rändern, rund 17 cm) – darauf wird die Folie verkleinert.
+    const SHEET_PX = 643;
+    const findBy = (n, pred) => {
+        for (const c of elements(n)) {
+            if (pred(c))
+                return c;
+            const deep = findBy(c, pred);
+            if (deep)
+                return deep;
+        }
+        return undefined;
+    };
+    const allBy = (n, pred) => elements(n).flatMap((c) => (pred(c) ? [c] : allBy(c, pred)));
+    /** Größe der Seite (px) laut Masterseite – Folien sind meist 25,4 × 14,3 cm, Zeichenseiten A4. */
+    const pageSize = (master) => {
+        const roots = [stylesRoot, content].filter((r) => !!r);
+        const mp = roots.map((r) => findBy(r, (x) => x.name === 'style:master-page' && x.attrs['style:name'] === master)).find(Boolean);
+        const layoutName = mp?.attrs['style:page-layout-name'];
+        const layout = layoutName ? roots.map((r) => findBy(r, (x) => x.name === 'style:page-layout' && x.attrs['style:name'] === layoutName)).find(Boolean) : undefined;
+        const props = layout ? elements(layout).find((c) => c.name === 'style:page-layout-properties') : undefined;
+        return { w: toPx(props?.attrs['fo:page-width']) || 960, h: toPx(props?.attrs['fo:page-height']) || 540 };
+    };
+    /** Lage eines Elements auf der Seite (px), mit Drehung und Verschiebung. */
+    const bounds = (n) => {
+        let pts;
+        if (n.name === 'draw:g') {
+            const parts = elements(n).map(bounds).filter((b) => !!b);
+            pts = parts.flatMap((b) => [[b.x, b.y], [b.x + b.w, b.y + b.h]]);
+        }
+        else if (n.name === 'draw:line' || n.name === 'draw:connector') {
+            pts = [[signedPx(n.attrs['svg:x1']), signedPx(n.attrs['svg:y1'])], [signedPx(n.attrs['svg:x2']), signedPx(n.attrs['svg:y2'])]];
+        }
+        else {
+            const x = signedPx(n.attrs['svg:x']);
+            const y = signedPx(n.attrs['svg:y']);
+            const w = toPx(n.attrs['svg:width']) ?? 0;
+            const h = toPx(n.attrs['svg:height']) ?? 0;
+            const t = n.attrs['draw:transform'];
+            pts = [[x, y], [x + w, y], [x, y + h], [x + w, y + h]].map(([px, py]) => (t ? odfPoint(t, px, py) : [px, py]));
+        }
+        if (!pts.length)
+            return null;
+        const xs = pts.map((p) => p[0]);
+        const ys = pts.map((p) => p[1]);
+        const x = Math.min(...xs);
+        const y = Math.min(...ys);
+        return { x, y, w: Math.max(...xs) - x, h: Math.max(...ys) - y };
+    };
+    /** Form mit sichtbarem Rand oder Füllung (sonst nur ein Textfeld). */
+    const visibleShape = (n) => {
+        const st = n.attrs['draw:style-name'];
+        return (styles.graphic(st, 'stroke') ?? 'none') !== 'none' || (styles.graphic(st, 'fill') ?? 'none') !== 'none';
+    };
+    /** Rechteckige Form mit Text – wird Text (mit Rand ein Kasten) statt Zeichnung. */
+    const textShape = (n) => {
+        if (n.name === 'draw:rect')
+            return true;
+        if (n.name !== 'draw:custom-shape')
+            return false;
+        const type = elements(n).find((c) => c.name === 'draw:enhanced-geometry')?.attrs['draw:type'] || 'rectangle';
+        return /rect/i.test(type);
+    };
+    const paragraphsOf = (n) => allBy(n, (x) => x.name === 'text:p' || x.name === 'text:h');
+    const plain = (s) => s.replace(/\s+/g, ' ').trim();
+    /** Text eines Rahmens als eine Zeile (für Titel). */
+    const lineHtml = (holder) => paragraphsOf(holder)
+        .map((p) => paragraph(p, 'p').replace(/^<p[^>]*>|<\/p>$/g, '').replace(/<br>/g, ' ').trim())
+        .filter(Boolean).join(' ');
+    /** Bilder auf die Satzbreite verkleinern – so groß wie auf der Folie im Verhältnis zur Seite. */
+    const scaleImg = (img, scale) => img.replace(/ width="(\d+)"/, (_m, w) => ` width="${Math.max(16, Math.round(Number(w) * scale))}"`);
+    /**
+     * Listen einer Folie aufräumen: PowerPoint teilt eine Liste je Absatzformat
+     * in mehrere und setzt einen eingerückten Punkt in leere Listenpunkte der
+     * Ebenen darüber. Aufeinanderfolgende Listen werden eine, ein leerer Punkt
+     * mit Unterliste hängt am Punkt davor (bzw. fällt am Anfang weg) – sonst
+     * stünden leere Aufzählungszeichen im Blatt und die Nummern begännen neu.
+     */
+    const tidyLists = (html) => {
+        const join = (h) => h.replace(/<\/(ul|ol)><\1>/g, '').replace(/<\/li><li>(?=<(ul|ol)>)/g, '');
+        for (let before = ''; before !== html;) {
+            before = html;
+            // Erst zusammenfügen, bis nichts mehr geht – dann am Listenanfang eine Hülle auspacken.
+            for (let joined = join(html); joined !== html; joined = join(html))
+                html = joined;
+            for (const m of html.matchAll(/<(ul|ol)><li>(?=<(?:ul|ol)>)/g)) {
+                const outerEnd = elementEnd(html, m.index);
+                const inner = m.index + m[0].length;
+                const innerEnd = elementEnd(html, inner);
+                if (outerEnd > 0 && innerEnd > 0 && html.slice(innerEnd, outerEnd) === `</li></${m[1]}>`) {
+                    html = html.slice(0, m.index) + html.slice(inner, innerEnd) + html.slice(outerEnd);
+                    break;
+                }
+            }
+        }
+        return html;
+    };
+    // Ein Zeilenumbruch, einzeln fett oder kursiv gesetzt (PowerPoint), ist nur ein Zeilenumbruch.
+    const bareBreaks = (html) => {
+        for (let before = ''; before !== html;) {
+            before = html;
+            html = html.replace(/<(strong|em|u|s)>(\s*<br>\s*)<\/\1>/g, '$2');
+        }
+        return html;
+    };
+    const slideText = (holder) => bareBreaks(tidyLists(blocks(holder)));
+    /** Elemente in Gruppen, die sich entlang einer Achse nicht überlappen (Zeilen bzw. Spalten). */
+    const cut = (items, axis) => {
+        const TOL = 6;
+        const pos = (i) => (axis === 'y' ? i.y : i.x);
+        const len = (i) => (axis === 'y' ? i.h : i.w);
+        const groups = [];
+        let end = -Infinity;
+        for (const i of [...items].sort((a, b) => pos(a) - pos(b))) {
+            if (!groups.length || pos(i) >= end - TOL)
+                groups.push([i]);
+            else
+                groups[groups.length - 1].push(i);
+            end = Math.max(end, pos(i) + len(i));
+        }
+        return groups;
+    };
+    /**
+     * Anordnung wie auf der Folie: erst Zeilen (übereinander), darin Spalten
+     * (nebeneinander) als Spalten-Baustein. In einer Spalte keine weiteren
+     * Spalten – Bilder nebeneinander werden dort eine randlose Tabelle.
+     */
+    const arrange = (items, inColumn) => {
+        if (items.length === 1)
+            return items[0].html;
+        const rows = cut(items, 'y');
+        if (rows.length > 1)
+            return rows.map((r) => arrange(r, inColumn)).join('');
+        const cols = cut(items, 'x');
+        if (cols.length < 2)
+            return [...items].sort((a, b) => a.y - b.y || a.x - b.x).map((i) => i.html).join('');
+        if (inColumn) {
+            if (cols.some((c) => c.some((i) => i.kind === 'text')))
+                return cols.map((c) => arrange(c, true)).join('');
+            stats.tables++;
+            return `<table class="ws-table-plain"><tbody><tr>${cols.map((c) => `<td>${arrange(c, true)}</td>`).join('')}</tr></tbody></table>`;
+        }
+        const groups = cols.length > 4 ? [...cols.slice(0, 3), cols.slice(3).flat()] : cols;
+        const left = groups.map((g) => Math.min(...g.map((i) => i.x)));
+        const right = Math.max(...items.map((i) => i.x + i.w));
+        const spans = left.map((l, k) => (k + 1 < left.length ? left[k + 1] : right) - l);
+        const total = spans.reduce((a, b) => a + b, 0) || 1;
+        const widths = spans.map((s) => `<col style="width:${((17 * s) / total).toFixed(1)}cm">`).join('');
+        return `<table class="ws-columns"><colgroup>${widths}</colgroup><tbody><tr>${groups.map((g) => `<td>${arrange(g, true) || '<p><br></p>'}</td>`).join('')}</tr></tbody></table>`;
+    };
+    /** Eine Folie als HTML; `prevTitle`: Titel der Folie davor – derselbe wird nicht wiederholt. */
+    const slide = (page, prevTitle) => {
+        const size = pageSize(page.attrs['draw:master-page-name']);
+        const scale = Math.min(1, SHEET_PX / size.w);
+        let title = '';
+        let titleHtml = '';
+        let notes = '';
+        const items = [];
+        const shapes = [];
+        for (const c of elements(page)) {
+            if (c.name === 'presentation:notes') {
+                // Notizen: unter der Folie als ausgeblendete Lösung (Hinweis für die Lehrkraft).
+                for (const f of allBy(c, (x) => x.attrs['presentation:class'] === 'notes')) {
+                    const box = elements(f).find((x) => x.name === 'draw:text-box');
+                    if (box && textOf(box).trim())
+                        notes += slideText(box);
+                }
+                if (notes)
+                    slideStats.notes++;
+                continue;
+            }
+            const cls = c.attrs['presentation:class'] || '';
+            if (TEMPLATE_CLASSES.has(cls) || c.attrs['presentation:placeholder'] === 'true')
+                continue;
+            const b = bounds(c);
+            if (!b)
+                continue;
+            const box = elements(c).find((x) => x.name === 'draw:text-box');
+            const holder = box ?? (c.name !== 'draw:frame' && c.name !== 'draw:g' ? c : undefined);
+            const hasText = !!holder && !!textOf(holder).trim();
+            if (cls === 'title' && hasText && !title) {
+                title = plain(textOf(holder));
+                titleHtml = lineHtml(holder);
+                continue;
+            }
+            if (c.name === 'draw:frame' && isImageFrame(c)) {
+                // Füllt fast die ganze Folie: Hintergrund (Titelfolie), kein Inhalt.
+                if (b.w * b.h >= 0.6 * size.w * size.h) {
+                    slideStats.backgrounds++;
+                    continue;
+                }
+                // Gedreht (hochkant gestelltes Foto): als Zeichnung, damit die Drehung bleibt.
+                const img = /rotate/.test(c.attrs['draw:transform'] || '') ? drawing([c]) : image(c);
+                if (img === null)
+                    skippedImages++;
+                else if (img)
+                    items.push({ ...b, html: `<p>${scaleImg(img, scale)}</p>`, kind: 'image', node: c });
+                continue;
+            }
+            if (c.name === 'draw:frame') {
+                if (box && hasText) {
+                    const inner = slideText(box);
+                    items.push({ ...b, html: cls === 'subtitle' ? `<h3>${lineHtml(box)}</h3>` : inner, kind: 'text', node: c, holder: box });
+                }
+                else if (!box && elements(c).some((x) => x.name === 'draw:object' || x.name === 'draw:object-ole'))
+                    skippedImages++;
+                continue;
+            }
+            if (!DRAWINGS.has(c.name))
+                continue;
+            if (hasText && textShape(c)) {
+                const inner = slideText(c);
+                items.push({ ...b, html: visibleShape(c) ? `<div class="ws-box">${inner}</div>` : inner, kind: 'text', node: c, holder: c });
+            }
+            else
+                shapes.push(c);
+        }
+        // Formen (Pfeile, Kästen, Gruppen) werden ein Bild – samt der Textrahmen
+        // und Bilder, die auf ihnen liegen (Beschriftungen).
+        if (shapes.length) {
+            const parts = shapes.map(bounds).filter((r) => !!r);
+            const ux = Math.min(...parts.map((r) => r.x));
+            const uy = Math.min(...parts.map((r) => r.y));
+            const u = { x: ux, y: uy, w: Math.max(...parts.map((r) => r.x + r.w)) - ux, h: Math.max(...parts.map((r) => r.y + r.h)) - uy };
+            const overlap = (i) => Math.max(0, Math.min(i.x + i.w, u.x + u.w) - Math.max(i.x, u.x)) * Math.max(0, Math.min(i.y + i.h, u.y + u.h) - Math.max(i.y, u.y));
+            const on = items.filter((i) => i.w * i.h > 0 && overlap(i) >= 0.7 * i.w * i.h);
+            const img = drawing([...shapes, ...on.map((i) => i.node)]);
+            if (img) {
+                for (const i of on)
+                    items.splice(items.indexOf(i), 1);
+                const all = [u, ...on];
+                const x = Math.min(...all.map((r) => r.x));
+                const y = Math.min(...all.map((r) => r.y));
+                items.push({ x, y, w: Math.max(...all.map((r) => r.x + r.w)) - x, h: Math.max(...all.map((r) => r.y + r.h)) - y,
+                    html: `<p>${scaleImg(img, scale)}</p>`, kind: 'drawing', node: shapes[0] });
+            }
+        }
+        // Eine kurze Zeile ganz oben unter dem Titel (z. B. „Hintergrund“) ist die Unterüberschrift.
+        const top = [...items].sort((a, b) => a.y - b.y)[0];
+        if (title && top?.kind === 'text' && top.holder && !/^<h3>/.test(top.html) && top.h <= 60
+            && paragraphsOf(top.holder).filter((p) => textOf(p).trim()).length === 1 && plain(textOf(top.holder)).length <= 80
+            && items.every((i) => i === top || i.y >= top.y + top.h - 6)) {
+            top.html = `<h3>${lineHtml(top.holder)}</h3>`;
+        }
+        const head = title && title !== prevTitle && titleHtml ? `<h2>${titleHtml}</h2>` : '';
+        const body = arrange(items.filter((i) => i.html.trim()), false);
+        return { html: head + body + (notes ? `<div data-solution="1">${notes}</div>` : ''), title };
+    };
+    const slides = (root) => {
+        const out = [];
+        let prev = '';
+        for (const page of elements(root).filter((c) => c.name === 'draw:page')) {
+            slideStats.slides++;
+            const s = slide(page, prev);
+            if (s.title)
+                prev = s.title;
+            if (!s.html.trim())
+                continue;
+            // Jede Folie beginnt eine neue Seite.
+            if (out.length)
+                out.push(PAGEBREAK);
+            out.push(s.html);
+        }
+        return out.join('');
+    };
+    const html = slideBody ? slides(slideBody) : placeBeside(blocks(body));
     const meta = read('meta.xml');
     const metaTitle = meta ? textOf(find(parseXml(meta), 'dc:title') || '').trim() : '';
     const firstHeading = /<h[2-4][^>]*>([\s\S]*?)<\/h[2-4]>/.exec(html)?.[1].replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').trim();
     const fromFile = basename(fileName || '', extname(fileName || '')).replace(/[_-]+/g, ' ').trim();
-    const title = (usableTitle(metaTitle) ? metaTitle : '') || (firstHeading ? decodeHtml(firstHeading) : '') || fromFile || 'Arbeitsblatt';
+    // Präsentationen tragen in den Metadaten oft den Titel ihrer Vorlage – dort zählt der Dateiname.
+    const title = slideBody
+        ? fromFile || (firstHeading ? decodeHtml(firstHeading) : '') || 'Präsentation'
+        : (usableTitle(metaTitle) ? metaTitle : '') || (firstHeading ? decodeHtml(firstHeading) : '') || fromFile || 'Arbeitsblatt';
     const warnings = [];
+    if (slideBody && slideStats.slides) {
+        warnings.push(`${slideStats.slides} ${slideStats.slides === 1 ? 'Folie' : 'Folien'} übernommen: je Folie eine Seite mit Titel, Text, Listen und Bildern – ohne Folienvorlage (Logo, Fußzeile, Foliennummer), Schriftgrößen und Farben.`);
+    }
+    if (slideStats.backgrounds) {
+        warnings.push(`${slideStats.backgrounds} ${slideStats.backgrounds === 1 ? 'Bild füllte' : 'Bilder füllten'} fast die ganze Folie (Hintergrund) und ${slideStats.backgrounds === 1 ? 'ist' : 'sind'} weggelassen.`);
+    }
+    if (slideStats.notes) {
+        warnings.push(`Notizen zu ${slideStats.notes} ${slideStats.notes === 1 ? 'Folie' : 'Folien'} als ausgeblendete Lösung unter der Folie übernommen.`);
+    }
     if (stats.drawings) {
         warnings.push(`${stats.drawings} Zeichnung${stats.drawings === 1 ? '' : 'en'} als Bild übernommen – bitte kurz prüfen: Komplexe Formen werden vereinfacht, Schriften durch Arial ersetzt.`);
     }

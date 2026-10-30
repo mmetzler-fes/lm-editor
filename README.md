@@ -31,7 +31,8 @@ npm start -- --lan     # auch im Netz, z. B. fürs iPad: http://<IP des Rechners
 Auf der Startseite: **✨ Beispiel** öffnet ein Arbeitsblatt mit Karos, Formel
 und zwei Quizzen, **▦ Neues Karoblatt** ein leeres Blatt, **📂 .zlm öffnen**
 eine Datei (oder sie auf die Seite ziehen): eine `.zlm`, ein Writer-Dokument
-(`.odt`, wird zu Bausteinen) oder ein PDF (wird zu Bildern seiner Seiten) –
+(`.odt`, wird zu Bausteinen), Folien aus Impress oder Draw (`.odp`, `.odg`,
+je Folie eine Seite) oder ein PDF (wird zu Bildern seiner Seiten) –
 Übernommenes speichert der Editor als neue `.zlm`. Im Editor schreibt der Stift, der
 Finger scrollt und bedient die Quizze; **💾 Speichern** schreibt die `.zlm`.
 Jede Änderung bleibt außerdem als Entwurf im Browser (**Zuletzt geöffnet**).

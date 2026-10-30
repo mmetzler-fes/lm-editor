@@ -1,9 +1,11 @@
 // ==================== DATEIEN ÜBERNEHMEN ====================
 //
-// .odt und .pdf → neues Dokument (wie createZlm), samt Hinweisen, was nicht
-// mitkam. Läuft im Browser, ohne Server:
+// .odt, .odp, .odg und .pdf → neues Dokument (wie createZlm), samt Hinweisen,
+// was nicht mitkam. Läuft im Browser, ohne Server:
 //   .odt – Writer-Dokument lesen (odt.js) und zu Bausteinen machen
 //          (htmlToDocSpec), wie „📄 Übernehmen“ in LearningModules.
+//   .odp, .odg – Folien aus Impress bzw. Draw, derselbe Leser: je Folie eine
+//          Seite (PowerPoint geht nur über LearningModules, das LibreOffice braucht).
 //   .pdf – jede Seite als Bild (pdf.js), ohne den weißen Rand. Text mit
 //          Struktur erkennt erst der worksheet-renderer.
 // Bilder landen in media/, nicht als data:-Adresse im Dokument.
@@ -12,19 +14,20 @@ import { createZlm } from '../zlm/zlm.js';
 import { odtToHtml } from './odt.js';
 import { htmlToDocSpec } from '../doc/docspec-html.js';
 
-const ODT_MIME = 'application/vnd.oasis.opendocument.text';
+// Writer, Impress, Draw – alle liest odt.js.
+const ODF_MIME = /application\/vnd\.oasis\.opendocument\.(text|presentation|graphics)/;
 const EXT = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/gif': 'gif', 'image/webp': 'webp', 'image/svg+xml': 'svg' };
 // Satzbreite des A4-Blatts (src/css/paper.css): 21 cm − 2 cm − 2,5 cm.
 const TEXT_WIDTH_CM = 16.5;
 
-/** Art der Datei am Inhalt: 'zlm' | 'odt' | 'pdf' | null. */
+/** Art der Datei am Inhalt: 'zlm' | 'odt' (auch .odp, .odg) | 'pdf' | null. */
 export function sniff(bytes) {
   const head = new TextDecoder().decode(bytes.subarray(0, 120));
   if (head.startsWith('%PDF-')) return 'pdf';
   // ZIP mit unkomprimiertem mimetype vorne (ODF und .zlm)
   if (bytes[0] === 0x50 && bytes[1] === 0x4b) {
     if (head.includes('application/vnd.lm-editor.zlm+zip')) return 'zlm';
-    if (head.includes(ODT_MIME)) return 'odt';
+    if (ODF_MIME.test(head)) return 'odt';
   }
   return null;
 }

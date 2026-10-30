@@ -54,7 +54,7 @@ async function saveDraft(session) {
 
 const ZLM_TYPES = [{ description: 'lm-editor-Dokument', accept: { 'application/zip': ['.zlm'] } }];
 const OPEN_TYPES = [
-  { description: 'lm-editor, Writer, PDF', accept: { 'application/zip': ['.zlm'], 'application/vnd.oasis.opendocument.text': ['.odt', '.ott'], 'application/pdf': ['.pdf'] } },
+  { description: 'lm-editor, Writer, Folien, PDF', accept: { 'application/zip': ['.zlm'], 'application/vnd.oasis.opendocument.text': ['.odt', '.ott'], 'application/vnd.oasis.opendocument.presentation': ['.odp'], 'application/vnd.oasis.opendocument.graphics': ['.odg'], 'application/pdf': ['.pdf'] } },
 ];
 const fileNameOf = (title) => `${String(title || 'Dokument').replace(/[\\/:*?"<>|]+/g, '-').trim() || 'Dokument'}.zlm`;
 
@@ -73,7 +73,8 @@ async function pickFile() {
   return new Promise((resolve) => {
     const input = document.createElement('input');
     input.type = 'file';
-    input.accept = '.zlm,.odt,.ott,.pdf,application/zip,application/vnd.oasis.opendocument.text,application/pdf';
+    input.accept = '.zlm,.odt,.ott,.odp,.odg,.pdf,application/zip,application/vnd.oasis.opendocument.text,'
+      + 'application/vnd.oasis.opendocument.presentation,application/vnd.oasis.opendocument.graphics,application/pdf';
     input.onchange = async () => {
       const file = input.files[0];
       resolve(file ? { bytes: new Uint8Array(await file.arrayBuffer()), name: file.name, handle: null } : null);
@@ -185,7 +186,7 @@ async function openBytes(bytes, { fileName = '', handle = null } = {}) {
       try {
         result = await importPdfPages(bytes, fileName, { onProgress: (i, n) => { busy.textContent = `PDF wird übernommen: Seite ${i} von ${n} …`; } });
       } finally { busy.remove(); }
-    } else throw new Error('Diese Datei kenne ich nicht – geöffnet werden .zlm, .odt und .pdf.');
+    } else throw new Error('Diese Datei kenne ich nicht – geöffnet werden .zlm, .odt, .odp, .odg und .pdf.');
     const name = `${(fileName.replace(/^.*[\\/]/, '').replace(/\.[^.]+$/, '') || result.doc.manifest.title)}.zlm`;
     await openSession(result.doc, { fileName: name });
     notice(`Übernommen aus ${fileName || 'der Datei'}`, result.warnings);

@@ -35,14 +35,17 @@ const MAX_UNPACKED = 300 * 1024 * 1024;
 """)
 rep("""    return `<img src="data:image/svg+xml;base64,${Buffer.from(svg, 'utf8').toString('base64')}" alt="Zeichnung" width="${w}">`;""",
     """    return `<img src="data:image/svg+xml;base64,${b64(new TextEncoder().encode(svg))}" alt="Zeichnung" width="${w}">`;""")
-rep("""export function odtToHtml(buffer: Buffer, fileName = ''): OdtResult {
+rep("""  drawings?: Map<string, { svg: Buffer; widthMm: number }>;""",
+    """  drawings?: Map<string, { svg: Uint8Array; widthMm: number }>;""")
+rep("""data:image/svg+xml;base64,${d.svg.toString('base64')}""", """data:image/svg+xml;base64,${b64(d.svg)}""")
+rep("""export function odtToHtml(buffer: Buffer, fileName = '', opts: OdtOptions = {}): OdtResult {
   let zip: AdmZip;
   try {
     zip = new AdmZip(buffer);
   } catch {
     throw new Error('Die Datei ist kein gültiges OpenDocument (.odt).');
   }
-  const read = (entry: string) => zip.getEntry(entry)?.getData().toString('utf8');""","""export function odtToHtml(buffer: Uint8Array, fileName = ''): OdtResult {
+  const read = (entry: string) => zip.getEntry(entry)?.getData().toString('utf8');""","""export function odtToHtml(buffer: Uint8Array, fileName = '', opts: OdtOptions = {}): OdtResult {
   let files: Record<string, Uint8Array>;
   try {
     let count = 0;

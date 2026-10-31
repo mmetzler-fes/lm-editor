@@ -86,6 +86,12 @@ test('Stand des Stift-Editors ↔ Ebene der Datei', async () => {
   const doc = sample();
   doc.layers.teacher = layer;
   assert.deepEqual(readZlm(writeZlm(doc, { now })).layers.teacher, layer);
+
+  // Selbst eingefügte Schreibfelder (⊕) gehen hin und zurück mit.
+  const withInserts = { ...state, layer: { ...state.layer, inserts: [{ id: 'ins1', after: null, pattern: 'karo' }] } };
+  const layer2 = layerOf(withInserts);
+  assert.deepEqual(layer2.inserts, [{ id: 'ins1', after: null, pattern: 'karo' }]);
+  assert.deepEqual(editorStateOf(layer2), withInserts);
 });
 
 test('Dokument-ID: neu vergeben, fehlende beim Lesen ergänzt', () => {

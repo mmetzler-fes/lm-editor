@@ -155,12 +155,14 @@ export function specForView(doc) {
 export function editorStateOf(layer) {
   if (!layer) return null;
   const e = layer.editor || {};
-  return { v: 1, bg: e.bg || 'paper', ruler: e.ruler, pages: e.pages || [{ items: [] }], layer: { blocks: layer.blocks || {} } };
+  const inserts = Array.isArray(layer.inserts) && layer.inserts.length ? { inserts: layer.inserts } : {};
+  return { v: 1, bg: e.bg || 'paper', ruler: e.ruler, pages: e.pages || [{ items: [] }], layer: { blocks: layer.blocks || {}, ...inserts } };
 }
 
-/** Stand des Editors → Ebene für die Datei. */
+/** Stand des Editors → Ebene für die Datei – mit den selbst eingefügten Schreibfeldern (⊕). */
 export function layerOf(state, { id = 'teacher', role = 'teacher' } = {}) {
-  return { id, role, blocks: state.layer?.blocks || {}, editor: { bg: state.bg, ruler: state.ruler, pages: state.pages } };
+  const inserts = state.layer?.inserts?.length ? { inserts: state.layer.inserts } : {};
+  return { id, role, blocks: state.layer?.blocks || {}, ...inserts, editor: { bg: state.bg, ruler: state.ruler, pages: state.pages } };
 }
 
 function checkName(name, what) {

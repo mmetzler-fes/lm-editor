@@ -4,10 +4,11 @@
 // Hier wird gemessen, wo eine Seite voll ist, und dort eine Linie gezogen –
 // ungefähr wie im Druck: Bausteine (Schreibfeld, Bild, Formel, Tabellenzeile,
 // Überschrift …) rutschen ganz auf die nächste Seite, Absätze brechen
-// zwischen zwei Zeilen. Die Kopfzeile der Vorlage bleibt unberücksichtigt.
+// zwischen zwei Zeilen. Die Satzhöhe kommt vom Aufrufer (Seite der Vorlage
+// samt Kopfzeile), sonst A4 nach paper.css.
 
 const CM = 96 / 2.54;
-// Satzhöhe: Blatthöhe minus Rand oben (1,27 cm) und unten (1 cm).
+// Satzhöhe ohne Angabe: Blatthöhe minus Rand oben (1,27 cm) und unten (1 cm).
 const BODY_CM = { portrait: 29.7 - 2.27, landscape: 21 - 2.27 };
 
 // Was nicht über eine Seite hinweg geteilt wird.
@@ -18,13 +19,14 @@ const LINES = 'p, li, blockquote';
 /**
  * Seitenumbrüche in `sheet` (.lm-paper mit .docspec) messen und als Linien
  * einzeichnen. Das Blatt muss in natürlicher Größe (ohne zoom) auf der Seite
- * stehen. Liefert die Zahl der Seiten.
+ * stehen. `bodyCm`: Satzhöhe einer Seite in cm (sonst A4 hoch bzw. quer).
+ * Liefert die Zahl der Seiten.
  */
-export function markPageBreaks(sheet, { landscape = false } = {}) {
+export function markPageBreaks(sheet, { landscape = false, bodyCm = 0 } = {}) {
   sheet.querySelectorAll(':scope > .ds-autobreak').forEach((m) => m.remove());
   const docEl = sheet.querySelector('.docspec');
   if (!docEl) return 1;
-  const H = BODY_CM[landscape ? 'landscape' : 'portrait'] * CM;
+  const H = (bodyCm > 1 ? bodyCm : BODY_CM[landscape ? 'landscape' : 'portrait']) * CM;
   // Zoom der Seite (etwa der Inhaltsbereich der App): Die Rechtecke kommen
   // vergrößert, gerechnet und gezeichnet wird in Pixeln des Blatts.
   const z = sheet.getBoundingClientRect().width / (sheet.offsetWidth || 1) || 1;

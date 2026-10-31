@@ -25,9 +25,12 @@ export function markPageBreaks(sheet, { landscape = false } = {}) {
   const docEl = sheet.querySelector('.docspec');
   if (!docEl) return 1;
   const H = BODY_CM[landscape ? 'landscape' : 'portrait'] * CM;
+  // Zoom der Seite (etwa der Inhaltsbereich der App): Die Rechtecke kommen
+  // vergrößert, gerechnet und gezeichnet wird in Pixeln des Blatts.
+  const z = sheet.getBoundingClientRect().width / (sheet.offsetWidth || 1) || 1;
   const origin = docEl.getBoundingClientRect().top;
-  const top = (el) => el.getBoundingClientRect().top - origin;
-  const bottom = (el) => el.getBoundingClientRect().bottom - origin;
+  const top = (el) => (el.getBoundingClientRect().top - origin) / z;
+  const bottom = (el) => (el.getBoundingClientRect().bottom - origin) / z;
   // Eingefügte Seitenumbrüche, wo immer sie stehen (auch in einer Aufgabe):
   // Dahinter beginnt eine neue Seite.
   const manual = [...docEl.querySelectorAll('.ds-pagebreak')].filter((el) => el.offsetHeight)
@@ -76,7 +79,7 @@ export function markPageBreaks(sheet, { landscape = false } = {}) {
   [...docEl.children].forEach(visit);
 
   // Nummern in der Reihenfolge auf dem Blatt – eingefügte und berechnete Umbrüche zusammen.
-  const offset = docEl.getBoundingClientRect().top - sheet.getBoundingClientRect().top;
+  const offset = (docEl.getBoundingClientRect().top - sheet.getBoundingClientRect().top) / z;
   const all = [...breaks.map((y) => ({ y })), ...manual].sort((a, b) => a.y - b.y);
   all.forEach((brk, i) => {
     const label = `Seite ${i + 2}`;

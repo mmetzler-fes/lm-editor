@@ -33,6 +33,12 @@ sobald man online ist.
 Ohne Internet-Adresse geht dasselbe vom eigenen Rechner aus (`npm start`,
 dann `http://localhost:5180` installieren).
 
+Auf einem LearningModules-Server liegt der Editor unter `/lm-editor/`. Er ist
+dort eine **eigene App** neben „LernModule“: Das Manifest trägt die feste
+Kennung `"id": "/lm-editor/"`. Eine relative Kennung wie `"./"` würde der
+Browser gegen den Ursprung auflösen (also zu `/`) und den Editor für ein
+Update der LernModule-App halten.
+
 ## Mit Docker – PDF mit Vorlage, Word und PowerPoint
 
 Für den Druck mit der Schulvorlage (Logo, Kopfzeile) und um `.docx` und

@@ -28,37 +28,40 @@ export function markPageBreaks(sheet, { landscape = false } = {}) {
   const origin = docEl.getBoundingClientRect().top;
   const top = (el) => el.getBoundingClientRect().top - origin;
   const bottom = (el) => el.getBoundingClientRect().bottom - origin;
+  // Eingefügte Seitenumbrüche, wo immer sie stehen (auch in einer Aufgabe):
+  // Dahinter beginnt eine neue Seite.
+  const manual = [...docEl.querySelectorAll('.ds-pagebreak')].filter((el) => el.offsetHeight)
+    .map((el) => ({ el, y: top(el), end: bottom(el) })).sort((a, b) => a.y - b.y);
+  const pending = manual.slice();
   const breaks = [];
   let pageEnd = H;
-  let pages = 1;
 
   const visit = (el) => {
-    if (!el.offsetHeight) return;
+    if (!el.offsetHeight || el.matches('.ds-pagebreak')) return;
     const t = top(el);
     const b = bottom(el);
-    if (el.matches('.ds-pagebreak')) {
-      pages += 1;
-      pageEnd = b + H;
-      return;
-    }
+    // Liegt hinter einem eingefügten Umbruch: Die Seite beginnt dort neu.
+    while (pending.length && t >= pending[0].end - 0.5) pageEnd = pending.shift().end + H;
     // Ein Seitenumbruch im Baustein (etwa in einer Aufgabe) zählt auch, wenn alles passt.
     const inner = !el.matches(ATOMIC) && el.querySelector('.ds-pagebreak');
     if (b <= pageEnd + 0.5 && !inner) return;
     // Liegt ganz hinter dem Seitenende (etwa im Abstand davor): Umbruch im Abstand.
-    while (t >= pageEnd) { breaks.push({ y: pageEnd, page: ++pages }); pageEnd += H; }
+    while (t >= pageEnd) { breaks.push(pageEnd); pageEnd += H; }
     if (b <= pageEnd + 0.5 && !inner) return;
     const kids = [...el.children].filter((k) => k.offsetHeight);
     // Nebeneinander (Spalten, Bildgruppen): als Ganzes.
     const sideBySide = kids.some((k, i) => i && Math.abs(top(k) - top(kids[i - 1])) < 1 && kids[i - 1].getBoundingClientRect().right <= k.getBoundingClientRect().left + 1);
-    if (kids.length && !el.matches(ATOMIC) && !el.matches(LINES) && !sideBySide) {
+    // Text mit Bild, Formel … (etwa ein Listenpunkt mit Bild): nicht zeilenweise.
+    const lines = el.matches(LINES) && !el.querySelector(ATOMIC);
+    if (inner || (kids.length > (el.matches(LINES) ? 1 : 0) && !el.matches(ATOMIC) && !lines && !sideBySide)) {
       kids.forEach(visit);
       return;
     }
-    if (el.matches(LINES)) {
+    if (lines) {
       const lh = parseFloat(getComputedStyle(el).lineHeight) || 16;
       while (b > pageEnd + 0.5) {
         const y = Math.max(t, t + Math.floor((pageEnd - t) / lh) * lh);
-        breaks.push({ y, page: ++pages });
+        breaks.push(y);
         pageEnd = y + H;
       }
       return;
@@ -66,19 +69,28 @@ export function markPageBreaks(sheet, { landscape = false } = {}) {
     while (b > pageEnd + 0.5) {
       // Passt der Baustein auf eine Seite, rutscht er ganz hinüber – sonst wird er geteilt.
       const y = t > pageEnd - H + 1 && b - t <= H ? t : pageEnd;
-      breaks.push({ y, page: ++pages });
+      breaks.push(y);
       pageEnd = y + H;
     }
   };
   [...docEl.children].forEach(visit);
 
+  // Nummern in der Reihenfolge auf dem Blatt – eingefügte und berechnete Umbrüche zusammen.
   const offset = docEl.getBoundingClientRect().top - sheet.getBoundingClientRect().top;
-  for (const { y, page } of breaks) {
+  const all = [...breaks.map((y) => ({ y })), ...manual].sort((a, b) => a.y - b.y);
+  all.forEach((brk, i) => {
+    const label = `Seite ${i + 2}`;
+    if (brk.el) {
+      const span = brk.el.querySelector('span');
+      if (span) span.textContent = `Seitenumbruch · ${label}`;
+      return;
+    }
     const mark = document.createElement('div');
     mark.className = 'ds-autobreak';
-    mark.style.top = `${offset + y}px`;
-    mark.innerHTML = `<span>Seite ${page}</span>`;
+    mark.style.top = `${offset + brk.y}px`;
+    mark.innerHTML = `<span>${label}</span>`;
     sheet.appendChild(mark);
-  }
+  });
+  const pages = all.length + 1;
   return pages;
 }

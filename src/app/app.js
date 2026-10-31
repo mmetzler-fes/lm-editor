@@ -345,7 +345,11 @@ function installHowTo() {
   if (/iPad|iPhone/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1)) return 'In Safari auf <strong>Teilen</strong> (□↑) tippen und <strong>Zum Home-Bildschirm</strong> wählen.';
   if (/Firefox/.test(ua)) return 'Firefox kann Web-Apps nicht installieren – bitte die Seite in <strong>Edge</strong> oder <strong>Chrome</strong> öffnen.';
   if (/Safari/.test(ua) && !/Chrome|Edg/.test(ua)) return 'In Safari im Menü <strong>Ablage → Zum Dock hinzufügen</strong> wählen.';
-  return 'Oben in der Adressleiste auf <strong>Installieren</strong> (⊕) klicken – bzw. im Menü ⋮ / … <strong>App installieren</strong>.';
+  // Kein Angebot des Browsers: meist schon installiert – oder die Seite liegt im
+  // Bereich einer anderen installierten App (LernModule auf demselben Server).
+  const already = 'Steht dort „lm-editor öffnen“ oder „In App öffnen“, ist er schon installiert – bzw. die App LernModule dieses Servers fängt die Seite ab.';
+  if (/Edg\//.test(ua)) return `Im Menü <strong>…</strong> (oben rechts) <strong>Apps → lm-editor installieren</strong> wählen. ${already} Installierte Apps: <code>edge://apps</code>.`;
+  return `Im Menü <strong>⋮</strong> (oben rechts) <strong>Streamen, speichern und teilen → lm-editor installieren</strong> wählen. ${already} Installierte Apps: <code>chrome://apps</code>.`;
 }
 
 btnInstall.addEventListener('click', async () => {

@@ -318,6 +318,47 @@ document.addEventListener('drop', async (e) => {
 
 showStart();
 
+// ---------- Installieren ----------
+//
+// Edge/Chrome melden mit „beforeinstallprompt“, dass sich die Seite installieren
+// lässt; der Knopf zeigt dann deren Dialog. Sonst (Safari, Firefox, Dialog schon
+// abgelehnt) erklärt er, wie es von Hand geht. In der installierten App fehlt er.
+
+let installPrompt = null;
+const installed = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+const btnInstall = $('#btnInstall');
+btnInstall.hidden = installed() || !window.isSecureContext;
+
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  installPrompt = e;
+  btnInstall.hidden = false;
+});
+window.addEventListener('appinstalled', () => {
+  installPrompt = null;
+  btnInstall.hidden = true;
+  $('#installHint').hidden = true;
+});
+
+function installHowTo() {
+  const ua = navigator.userAgent;
+  if (/iPad|iPhone/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1)) return 'In Safari auf <strong>Teilen</strong> (□↑) tippen und <strong>Zum Home-Bildschirm</strong> wählen.';
+  if (/Firefox/.test(ua)) return 'Firefox kann Web-Apps nicht installieren – bitte die Seite in <strong>Edge</strong> oder <strong>Chrome</strong> öffnen.';
+  if (/Safari/.test(ua) && !/Chrome|Edg/.test(ua)) return 'In Safari im Menü <strong>Ablage → Zum Dock hinzufügen</strong> wählen.';
+  return 'Oben in der Adressleiste auf <strong>Installieren</strong> (⊕) klicken – bzw. im Menü ⋮ / … <strong>App installieren</strong>.';
+}
+
+btnInstall.addEventListener('click', async () => {
+  if (installPrompt) {
+    installPrompt.prompt();
+    const { outcome } = await installPrompt.userChoice;
+    installPrompt = null;
+    if (outcome === 'accepted') { btnInstall.hidden = true; return; }
+  }
+  $('#installHint').innerHTML = installHowTo();
+  $('#installHint').hidden = false;
+});
+
 // Installierte App: Rechte Maustaste → „Öffnen mit“ bzw. Doppelklick (Chrome/Edge,
 // manifest.webmanifest: file_handlers). Bei einer .zlm bleibt der Ort zum Speichern.
 if ('launchQueue' in window) {

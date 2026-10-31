@@ -5,6 +5,7 @@
 .app-start header p { color: var(--text-secondary); margin: 0 0 28px; }
 .app-start h2 { font-size: 1.05rem; margin: 32px 0 10px; }
 .app-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.app-actions [hidden], .app-hint[hidden] { display: none; }
 .app-recent { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .app-recent li { display: flex; gap: 6px; }
 .app-recent-open {

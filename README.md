@@ -22,7 +22,8 @@ in der Notizbuch-Vorschau und für Schüler über den Link.
 ## Als App installieren (Windows, macOS, Linux, iPad)
 
 Unter **https://mmetzler-fes.github.io/lm-editor/** in Edge oder Chrome
-öffnen und oben in der Adressleiste auf **Installieren** (⊕) klicken – auf dem
+öffnen und auf der Startseite **⬇️ Auf diesem Gerät installieren** bzw. oben
+in der Adressleiste **Installieren** (⊕) klicken – auf dem
 iPad in Safari **Teilen → Zum Home-Bildschirm**. Danach startet der Editor wie
 ein eigenes Programm, auch ohne Netz, und kommt unter **rechte Maustaste →
 Öffnen mit** für `.zlm`, `.odt`, `.odp`, `.odg` und `.pdf` vor (Windows/macOS,

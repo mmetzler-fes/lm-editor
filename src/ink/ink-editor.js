@@ -379,6 +379,9 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     const interact = overlay.querySelector('[data-tool="interact"]');
     if (interact) interact.hidden = doc.bg !== 'paper';
     $('.ink-bg-select').value = doc.bg;
+    // Bei einem Dokument ist es der Hintergrund – Karo- und Linienfelder kommen über ⊕ hinein. Die Auswahl
+    // bleibt nur, solange eine ältere Beschriftung auf anderen Seiten steht (sonst kämen sie nicht zurück).
+    $('.ink-bg-select').hidden = !!paper && doc.bg === 'paper';
     $('.ink-solution')?.classList.toggle('active', state.variant === 'loesung');
     if ($('.ink-solution')) $('.ink-solution').hidden = !(doc.bg === 'pdf' && loadPdf) && doc.bg !== 'paper';
     $('.ink-add-page').hidden = !['karo', 'linien', 'leer'].includes(doc.bg);

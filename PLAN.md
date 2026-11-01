@@ -1,6 +1,6 @@
 # Arbeitsplan lm-editor
 
-Stand: 23.10.2026. Abgehakte Punkte sind erledigt und im Repository.
+Stand: 01.11.2026. Abgehakte Punkte sind erledigt und im Repository.
 
 ## Ziel
 
@@ -58,9 +58,9 @@ nie, sie ist nur das Datenmodell darunter.
 - [x] Werkzeug „Bedienen“; der Finger bedient, solange er nicht zeichnet – eingebettete Quizze bleiben benutzbar
 - [x] in LearningModules: Notizbuch-Vorschau und Schüleransicht öffnen das Dokument; PDF bleibt als Hintergrund wählbar
 - [x] A4 quer in der Ansicht (`spec.orientation: landscape`)
-- [ ] A4 hoch/quer im Dokument-Editor umschalten
-- [ ] worksheet-renderer: Querformat (Seitenvorlage quer, Kopfzeile breiter)
-- [ ] Seitenumbrüche im Blatt anzeigen (wo der Druck umbricht)
+- [ ] A4 hoch/quer im Dokument-Editor umschalten – *Stand: Das Seitenformat kommt heute aus der Druckvorlage (.ott, z. B. A4 quer); Vorschau und Druck folgen ihr. `spec.orientation` gilt nur für die Ansicht und den Stift; ein eigener Umschalter fehlt, ebenso der Abgleich mit der Vorlage*
+- [ ] worksheet-renderer: Querformat (Seitenvorlage quer, Kopfzeile breiter) – *Stand: gelingt über eine Vorlage im Querformat; `spec.orientation` liest der Renderer nicht*
+- [x] Seitenumbrüche im Blatt anzeigen (wo der Druck umbricht): `src/doc/page-breaks.js`, im Dokument-Editor von LearningModules auf einem Blatt in Größe der Druckvorlage mit Seitenzahlen – *in der Standalone-App und im Stift-Editor noch nicht*
 - [x] Schreibfeld (Block `karo`): Breite (`width`) und Muster (`pattern`: Karo, Linien, leer) – im Renderer, in der Anzeige, im Dokument-Editor von LearningModules und im Stift-Editor (Anfasser rechts/Ecke, Umschalter beim Auswählen)
 - [x] Auswahl: Kopieren, Ausschneiden, Einfügen, Duplizieren, Gruppieren/Aufheben – Tastenkürzel, Kontextmenü (Rechtsklick, langes Drücken, Knopf ⋯)
 - [x] Werkzeug „Feld“: Rechteck aufziehen, deckt ab (Karo, Linien, weiß) – z. B. auf PDF-Seiten; Ecken ziehen, kopieren, gruppieren
@@ -79,7 +79,8 @@ nie, sie ist nur das Datenmodell darunter.
 - [x] Übernehmen ohne Server: `.odt` (Leser aus LearningModules nach `src/import/odt.js` übertragen, gleiche Ergebnisse geprüft; `docspec-html.js` liegt jetzt hier) und `.pdf` als Bilder der Seiten (pdf.js, weißer Rand abgeschnitten); Bilder nach `media/`; Hinweise, was nicht mitkam; gespeichert wird als neue `.zlm`
 - [ ] LearningModules liest `.odt` ebenfalls mit `src/import/odt.js` im Browser (der Server wandelt nur noch .docx um) – dann entfällt `odt.ts`
 - [x] installierbare Web-App (manifest.webmanifest, „Öffnen mit“ für .zlm/.odt/.odp/.odg/.pdf über launchQueue), offline über Service Worker (sw.js: online immer aktuell, ohne Netz aus dem Cache), veröffentlicht über GitHub Pages (.github/workflows/pages.yml)
-- [ ] Browser-Druck mit Druck-CSS als Rückfall ohne Renderer
+- [x] Browser-Druck mit Druck-CSS als Rückfall ohne Renderer – erledigt mit 🖨 im Stift-Editor (Phase 5)
+- [x] Übernehmen: `.xopp` (Xournal++, `src/import/xopp.js`): Striche, Textfelder und Bilder als Stift-Ebene – im Stift-Editor und in LearningModules
 
 ### 4 Docker
 - [x] Image `lm-editor` (ghcr.io, .github/workflows/docker.yml): liefert die Webapp aus und reicht `/renderer/` an den Renderer weiter (Token bleibt im Container) – gespeichert wird weiter über den Browser (Datei wählen), kein eigener Ordner
@@ -88,7 +89,7 @@ nie, sie ist nur das Datenmodell darunter.
 
 ### 5 Druck und Export
 - [x] Drucken/PDF im Browser (🖨): Arbeits- oder Lösungsblatt, mit oder ohne Beschriftung; Ränder wie die Schulvorlage auf jeder Seite, Seitenumbrüche aus dem Dokument, Felder/Bilder/Formeln werden nicht zerrissen, Beschriftung je Baustein als Vektorgrafik
-- [ ] Druckfassung je Quiztyp (bisher: das Quiz, wie es gerade aussieht – bei Richtig/Falsch nur die erste Frage)
+- [ ] Druckfassung je Quiztyp (bisher: das Quiz, wie es gerade aussieht – bei Richtig/Falsch nur die erste Frage) – *gehört mit dem Punkt „eingebettete Quizze“ darunter zusammen; im Renderer-Auftrag steht heute ein Kasten „Quiz: …“*
 - [x] `.zlm` → Renderer-Auftrag (Spec, Bilder, Stift-Ebene als SVG; src/print/render-job.js) – „PDF mit Vorlage“ im Druckmenü, wenn ein Renderer da ist
 - [ ] eingebettete Quizze: Druckfassung je Typ (Multiple Choice, Lückentext, Zuordnen, Wahr/Falsch …), sonst Bild der Vorschau – statt QR-Code
 - [ ] Renderer über LearningModules-Konto (Anmelden aus dem Editor, Weiterleitung durch den App-Server, Grenzen je Konto)
@@ -102,8 +103,8 @@ nie, sie ist nur das Datenmodell darunter.
 - [ ] Schülerfassung ohne Lösungen (für die Weitergabe als Datei)
 
 ### 7 Austausch mit LearningModules
-- [ ] `.zlm` in LearningModules importieren (Dokument + Module ins Lernthema)
-- [ ] Dokument aus LearningModules als `.zlm` exportieren
+- [ ] `.zlm` in LearningModules importieren (Dokument + Module ins Lernthema) – *Stand: LearningModules zeigt `.zlm` an (Doppelklick, „Öffnen mit“, `views/zlm-viewer.js`), legt sie aber noch nicht im Notizbuch ab*
+- [ ] Dokument aus LearningModules als `.zlm` exportieren – *Stand: das GitHub-Backup schreibt jedes Dokument als `.zlm` (`src/github-backup/zlm-export.ts`); ein Knopf zum Herunterladen am Dokument fehlt*
 
 ### 8 Tauri
 - [ ] Hülle mit Dateiverknüpfung `.zlm` (Windows, macOS, Linux)
@@ -116,7 +117,7 @@ Entscheidungen vom 01.11.2026:
 
 | Thema | Entscheidung |
 |---|---|
-| Formeln | LaTeX-Mathe-Syntax statt StarMath; Temml (MIT) wandelt in MathML – im Browser, auf dem Server (Node) und für den Druck dieselbe Umwandlung; LibreOffice liest MathML ohne StarMath-Anmerkung (geprüft mit LO 26.2, auch Rot über `mstyle`) |
+| Formeln | LaTeX-Mathe-Syntax statt StarMath; Temml (MIT) wandelt in MathML – im Browser, auf dem Server (Node) und für den Druck dieselbe Umwandlung; der Renderer übersetzt das MathML in StarMath (`tools/mathml_starmath.py`), weil der MathML-Import von LibreOffice Akzente, Unterklammern, Durchstreichen, `\|x\|`, `cases` und `aligned` nicht sauber setzt (geprüft mit LO 26.2) |
 | Dokumentmodell | ProseMirror-JSON mit eigenem Schema, Editor auf Tiptap v3 (nur MIT-Pakete, Version fest), einmal gebündelt nach `src/vendor/` |
 | Überschriften | flach (Überschrift mit `role`, Inhalt folgt); Behälter nur für Kasten, Lösung, Spalten, Tabellenzellen, Zeichenrahmen |
 | Konverter | reine JSON-Funktionen ohne Tiptap – Server, Renderer und Aufgabengenerator brauchen den Editor nicht |
@@ -124,7 +125,7 @@ Entscheidungen vom 01.11.2026:
 | Speicherformat | wird als Letztes umgestellt; bis dahin wandeln Editor und Druck in die heutige Spec um |
 
 Phasen:
-- [x] 9.1 Formeln in LaTeX: Temml unter `src/vendor/temml/`, Baustein `formula` mit `latex` (StarMath `math` wird weiter gelesen), Umwandler StarMath → LaTeX (beim Bearbeiten), MathML im Druckauftrag (`withFormulaMathml`, auch `inlineMathml`), Renderer setzt MathML ins Formelobjekt, Formeldialog mit Vorschau, Inline-Formeln `$…$` (Editor: beim schließenden $ gesetzt, Doppelklick = Text), KI-Prompt und PDF-Import liefern LaTeX
+- [x] 9.1 Formeln in LaTeX: Temml unter `src/vendor/temml/`, Baustein `formula` mit `latex` (StarMath `math` wird weiter gelesen), Umwandler StarMath → LaTeX (beim Bearbeiten), MathML im Druckauftrag (`withFormulaMathml`, auch `inlineMathml`), Renderer übersetzt es in StarMath fürs Formelobjekt (Unbekanntes bleibt MathML), Formeldialog mit Vorschau, Inline-Formeln `$…$` (Editor: beim schließenden $ gesetzt, Doppelklick = Text), KI-Prompt und PDF-Import liefern LaTeX
 - [ ] 9.2 Schema (Tiptap-Extensions) und Konverter Spec ⇄ ProseMirror-JSON, Hin- und Rückweg über alle vorhandenen Dokumente getestet; `docs/SCHEMA.md` und JSON Schema
 - [ ] 9.3 Markdown ⇄ ProseMirror-JSON (fenced divs); „Aus Markdown einfügen“, KI-Prompt liefert Markdown; `docs/MARKDOWN.md`
 - [ ] 9.4 Editor auf Tiptap (eigene Freischaltung, alter Editor parallel); Abnahme gegen `docs/dokumente.md` von LearningModules; Markdown-Reiter statt YAML

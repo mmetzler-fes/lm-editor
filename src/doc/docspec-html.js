@@ -247,8 +247,20 @@ function listBlock(el, images, warnings, lifted = []) {
   return block;
 }
 
-/** Kind einer Tabellenzelle, das nicht in den Zelltext passt: Überschrift, Liste, Hinweis, Baustein. */
-const richInCell = (n) => /^(H[1-6]|UL|OL|PRE)$/.test(n.tagName) || (n.tagName === 'P' && !!n.getAttribute('data-ds'))
+/**
+ * Absatz nur aus Code (`<code>` und Umbrüchen) – so kommen Absätze in Festbreitenschrift
+ * bzw. in der Vorlage „Quelltext“ aus der .odt (odt.ts). Aufeinanderfolgende werden ein Code-Baustein.
+ */
+const codeOnly = (el) => el.tagName === 'P' && !el.getAttribute('data-ds')
+  && [...el.childNodes].every((n) => (n.nodeType === 3 && !n.nodeValue.trim()) || (n.nodeType === 1 && (n.tagName === 'CODE' || n.tagName === 'BR')))
+  && [...el.childNodes].some((n) => n.nodeType === 1 && n.tagName === 'CODE' && n.textContent.trim());
+const codeText = (el) => {
+  const walk = (n) => (n.nodeType === 3 ? n.nodeValue : n.nodeType === 1 && n.tagName === 'BR' ? '\n' : [...n.childNodes].map(walk).join(''));
+  return walk(el).replace(/\u00a0/g, ' ').replace(/\u2003/g, '    ').replace(/\s+$/, '');
+};
+
+/** Kind einer Tabellenzelle, das nicht in den Zelltext passt: Überschrift, Liste, Hinweis, Baustein, Code. */
+const richInCell = (n) => /^(H[1-6]|UL|OL|PRE)$/.test(n.tagName) || (n.tagName === 'P' && !!n.getAttribute('data-ds')) || codeOnly(n)
   || (n.tagName === 'DIV' && (n.hasAttribute('data-block') || n.hasAttribute('data-solution')));
 
 function tableBlock(el, warnings, used = new Set()) {
@@ -427,6 +439,7 @@ function imagesBesideTable(el, warnings) {
 /** Blöcke aus den Kindern eines Elements. */
 function blocksOf(parent, warnings, used = new Set()) {
   const out = [];
+  const codeRuns = new Set(); // Code-Bausteine aus Absätzen – der nächste Code-Absatz kommt dazu
   const pushText = (text, align, el = null) => {
     if (!text) return;
     const prev = out[out.length - 1];
@@ -476,6 +489,10 @@ function blocksOf(parent, warnings, used = new Set()) {
     } else if (tag === 'P' && ds === 'note') {
       const text = cleanText(inline(el, [], warnings)).replace(/^\*([\s\S]*)\*$/, '$1');
       if (text) out.push(withId({ type: 'note', text }, takeId(el, used)));
+    } else if (codeOnly(el)) {
+      const prev = out[out.length - 1];
+      if (prev && codeRuns.has(prev)) prev.code += `\n${codeText(el)}`;
+      else { const block = { type: 'code', code: codeText(el) }; codeRuns.add(block); out.push(block); }
     } else if (tag === 'P' || tag === 'FIGURE' || tag === 'BLOCKQUOTE') {
       const images = [];
       const text = cleanText(inline(el, images, warnings));

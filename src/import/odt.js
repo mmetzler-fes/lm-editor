@@ -74,6 +74,9 @@ const find = (n, name) => {
     return undefined;
 };
 const textOf = (n) => typeof n === 'string' ? n : n.children.map(textOf).join('');
+// ---- Formatvorlagen ----
+const MONO_FONT_RE = /\b(mono|monospace|courier|consolas|menlo|monaco|typewriter|code|cousine|inconsolata)\b/i;
+const CODE_STYLE_RE = /^(source text|quelltext|preformatted text|vorformatierter text|code|source code)$/i;
 /** Name, unter dem die Standardvorlage für Zeichnungen geführt wird. */
 const DEFAULT_GRAPHIC = '#default-graphic';
 class Styles {
@@ -134,7 +137,15 @@ class Styles {
             const display = tp.attrs['text:display'];
             if (display)
                 info.hidden = display === 'none';
+            // Code: feste Zeichenbreite oder eine Festbreitenschrift; eine andere Schrift hebt es wieder auf.
+            const font = `${tp.attrs['style:font-name'] || ''} ${tp.attrs['fo:font-family'] || ''}`.trim();
+            if (tp.attrs['style:font-pitch'] === 'fixed' || MONO_FONT_RE.test(font))
+                info.mono = true;
+            else if (font)
+                info.mono = false;
         }
+        if (CODE_STYLE_RE.test(info.displayName || ''))
+            info.mono = true;
         const gp = elements(n).find((c) => c.name === 'style:graphic-properties');
         if (gp) {
             const g = gp.attrs;
@@ -832,6 +843,8 @@ export function odtToHtml(buffer, fileName = '', opts = {}) {
             html = `<sub>${html}</sub>`;
         if (pos === 'super')
             html = `<sup>${html}</sup>`;
+        if (styles.prop(styleName, 'mono'))
+            html = `<code>${html}</code>`;
         return html;
     };
     /**
@@ -1015,7 +1028,8 @@ export function odtToHtml(buffer, fileName = '', opts = {}) {
         const parts = [];
         let buffer = '';
         const flush = () => {
-            const html = buffer.replace(/^(\s|&nbsp;)+|(\s|&nbsp;)+$/g, '');
+            // Aneinanderstoßender Code (je Zeile bzw. Teilstück ein <code>) wird ein Stück.
+            const html = buffer.replace(/<\/code><code>/g, '').replace(/^(\s|&nbsp;)+|(\s|&nbsp;)+$/g, '');
             const visible = html.replace(/<br>|&nbsp;|&emsp;|\s/g, '');
             if (visible) {
                 parts.push(`<${tag}${alignAttr}>${wrap(html, styleName, isHeading)}</${tag}>`);

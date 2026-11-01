@@ -109,6 +109,29 @@ nie, sie ist nur das Datenmodell darunter.
 - [ ] Hülle mit Dateiverknüpfung `.zlm` (Windows, macOS, Linux)
 - [ ] prüfen: Stiftdruck unter Linux (WebKitGTK), iPad nur über App Store/MDM
 
+### 9 Standards: LaTeX-Formeln, Tiptap/ProseMirror-JSON, Markdown
+
+Ausführlich mit Begründungen und Beispielen: [docs/STANDARDS.md](docs/STANDARDS.md).
+Entscheidungen vom 01.11.2026:
+
+| Thema | Entscheidung |
+|---|---|
+| Formeln | LaTeX-Mathe-Syntax statt StarMath; Temml (MIT) wandelt in MathML – im Browser, auf dem Server (Node) und für den Druck dieselbe Umwandlung; LibreOffice liest MathML ohne StarMath-Anmerkung (geprüft mit LO 26.2, auch Rot über `mstyle`) |
+| Dokumentmodell | ProseMirror-JSON mit eigenem Schema, Editor auf Tiptap v3 (nur MIT-Pakete, Version fest), einmal gebündelt nach `src/vendor/` |
+| Überschriften | flach (Überschrift mit `role`, Inhalt folgt); Behälter nur für Kasten, Lösung, Spalten, Tabellenzellen, Zeichenrahmen |
+| Konverter | reine JSON-Funktionen ohne Tiptap – Server, Renderer und Aufgabengenerator brauchen den Editor nicht |
+| Austauschformat | Markdown nach Pandoc: fenced divs (`::: {.karo lines=6}`), Spans (`[Text]{.blau size=14pt}`), `x^2^`, `CO~2~`, `$…$` |
+| Speicherformat | wird als Letztes umgestellt; bis dahin wandeln Editor und Druck in die heutige Spec um |
+
+Phasen:
+- [x] 9.1 Formeln in LaTeX: Temml unter `src/vendor/temml/`, Baustein `formula` mit `latex` (StarMath `math` wird weiter gelesen), Umwandler StarMath → LaTeX (beim Bearbeiten), MathML im Druckauftrag (`withFormulaMathml`, auch `inlineMathml`), Renderer setzt MathML ins Formelobjekt, Formeldialog mit Vorschau, Inline-Formeln `$…$` (Editor: beim schließenden $ gesetzt, Doppelklick = Text), KI-Prompt und PDF-Import liefern LaTeX
+- [ ] 9.2 Schema (Tiptap-Extensions) und Konverter Spec ⇄ ProseMirror-JSON, Hin- und Rückweg über alle vorhandenen Dokumente getestet; `docs/SCHEMA.md` und JSON Schema
+- [ ] 9.3 Markdown ⇄ ProseMirror-JSON (fenced divs); „Aus Markdown einfügen“, KI-Prompt liefert Markdown; `docs/MARKDOWN.md`
+- [ ] 9.4 Editor auf Tiptap (eigene Freischaltung, alter Editor parallel); Abnahme gegen `docs/dokumente.md` von LearningModules; Markdown-Reiter statt YAML
+- [ ] 9.5 Speicherformat: `document.json` mit ProseMirror-JSON, `.zlm` Version 2 (Version 1 wird hochgestuft), Migration in LearningModules mit Sicherung
+- [ ] 9.6 worksheet-renderer liest ProseMirror-JSON direkt
+- [ ] 9.7 Aufgabengenerator (mmetzler1): Markdown als Eingabe
+
 ## Offene Fragen
 
 - Abgabe von Schülern außerhalb der App (Datei zurückgeben) – gewünscht oder nur über LearningModules?

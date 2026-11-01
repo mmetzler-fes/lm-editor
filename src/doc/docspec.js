@@ -281,12 +281,15 @@ function checkBlock(block, path, errors, inSolution, parent = '') {
         if (c && typeof c === 'object' && Array.isArray(c.blocks)) checkBlocks(c.blocks, `${path}.rows[${r}][${k}].blocks`, errors, inSolution, 'cell');
       }));
       break;
-    case 'formula':
-      need(isText(block.math) && String(block.math).trim() !== '', 'math (Formel) fehlt.');
-      if (isText(block.math)) {
-        try { starmathToMathml(String(block.math)); } catch (e) { errors.push(`${at}: Formel – ${e.message}`); }
+    case 'formula': {
+      const latex = isText(block.latex) && String(block.latex).trim() !== '';
+      need(latex || (isText(block.math) && String(block.math).trim() !== ''), 'latex (Formel) fehlt.');
+      // LaTeX nur prüfen, wo Temml angemeldet ist; StarMath liest docspec.js selbst.
+      if (latex ? hasLatexEngine() : isText(block.math)) {
+        try { formulaMathml(block); } catch (e) { errors.push(`${at}: Formel – ${e.message}`); }
       }
       break;
+    }
     case 'solution':
       need(!inSolution, 'Lösung in einer Lösung ist nicht möglich.');
       need(Array.isArray(block.blocks) || isText(block.text), 'blocks oder text fehlt.');
@@ -381,9 +384,13 @@ export function parseColorSpec(spec) {
   return out;
 }
 
+// Formel im Text wie bei Pandoc: $ direkt vor und hinter dem Inhalt, dahinter
+// keine Ziffer – „5 $“ und „$5 bis $10“ bleiben Text, \$ ist ein Dollarzeichen.
+export const INLINE_MATH_SOURCE = '\\$(?<math>[^\\s$](?:[^$\\n]*?[^\\s$\\\\])?)\\$(?!\\d)';
 const INLINE_RE = new RegExp([
-  '\\\\(?<esc>[\\\\*`\\[\\]^~+{}])',
+  '\\\\(?<esc>[\\\\*`\\[\\]^~+{}$])',
   '`(?<code>[^`\\n]+)`',
+  INLINE_MATH_SOURCE,
   '(?<![\\w*])\\*\\*\\*(?<bi>\\S(?:.*?\\S)?)\\*\\*\\*(?![\\w*])',
   '(?<![\\w*])\\*\\*(?<b>\\S(?:.*?\\S)?)\\*\\*(?![\\w*])',
   '(?<![\\w*])\\*(?<i>[^\\s*](?:.*?[^\\s*])?)\\*(?![\\w*])',
@@ -407,6 +414,13 @@ function plainText(text) {
   return html + esc(text.slice(pos).replace(/\\_/g, '_'));
 }
 
+/** Formel im Text; im Editor ein Ganzes (Doppelklick macht wieder Text daraus). */
+function inlineMathHtml(tex) {
+  let math;
+  try { math = latexToMathml(tex, false); } catch (_) { return `<span class="ds-math ds-missing" contenteditable="false" data-tex="${esc(tex)}">$${esc(tex)}$</span>`; }
+  return `<span class="ds-math" contenteditable="false" data-tex="${esc(tex)}">${math}</span>`;
+}
+
 /** Eine Zeile mit Auszeichnung → HTML. */
 export function inlineHtml(line) {
   let html = '';
@@ -420,6 +434,7 @@ export function inlineHtml(line) {
     if (g.esc !== undefined) { buf += g.esc; continue; }
     flush();
     if (g.code !== undefined) html += `<code>${esc(g.code)}</code>`;
+    else if (g.math !== undefined) html += inlineMathHtml(g.math);
     else if (g.bi !== undefined) html += `<strong><em>${inlineHtml(g.bi)}</em></strong>`;
     else if (g.b !== undefined) html += `<strong>${inlineHtml(g.b)}</strong>`;
     else if (g.i !== undefined) html += `<em>${inlineHtml(g.i)}</em>`;
@@ -519,6 +534,99 @@ const BRACKETS = { '(': '(', ')': ')', '[': '[', ']': ']', lbrace: '{', rbrace: 
 const STOP = new Set(['}', ')', ']', 'right']);
 const COLOR_RE = /^(black|blue|green|red|cyan|magenta|yellow|gray|grey|white|lime|maroon|navy|olive|purple|silver|teal|orange)$/;
 
+// Ausgabe des StarMath-Parsers: MathML für die Anzeige, LaTeX zum Umschreiben
+// alter Formeln (starmathToLatex). Beide bekommen dieselben Bausteine.
+const scriptsMathml = (base, sub, sup) => {
+  if (sub !== null && sup !== null) return `<msubsup><mrow>${base}</mrow><mrow>${sub}</mrow><mrow>${sup}</mrow></msubsup>`;
+  if (sub !== null) return `<msub><mrow>${base}</mrow><mrow>${sub}</mrow></msub>`;
+  if (sup !== null) return `<msup><mrow>${base}</mrow><mrow>${sup}</mrow></msup>`;
+  return base;
+};
+const MATHML_OUT = {
+  join: (a, b) => a + b,
+  rel: (k) => `<mo>${RELATIONS[k]}</mo>`,
+  sign: (k) => `<mo form="prefix">${SUMS[k]}</mo>`,
+  sum: (k) => `<mo>${SUMS[k]}</mo>`,
+  product: (k) => `<mo>${PRODUCTS[k]}</mo>`,
+  frac: (a, b) => `<mfrac><mrow>${a}</mrow><mrow>${b}</mrow></mfrac>`,
+  scripts: scriptsMathml,
+  num: (v) => `<mn>${esc(v)}</mn>`,
+  text: (v) => `<mtext>${esc(v)}</mtext>`,
+  greek: (ch, italic) => (italic ? `<mi>${ch}</mi>` : `<mi mathvariant="normal">${ch}</mi>`),
+  group: (x) => `<mrow>${x}</mrow>`,
+  paren: (open, x, close) => `<mrow><mo>${open}</mo>${x}<mo>${close}</mo></mrow>`,
+  space: (wide) => (wide ? '<mspace width="0.5em"></mspace>' : '<mspace width="0.17em"></mspace>'),
+  op: (v) => `<mo>${esc(v)}</mo>`,
+  sqrt: (x) => `<msqrt>${x}</msqrt>`,
+  nroot: (n, x) => `<mroot><mrow>${x}</mrow><mrow>${n}</mrow></mroot>`,
+  abs: (x) => `<mrow><mo>|</mo>${x}<mo>|</mo></mrow>`,
+  leftRight: (open, x, close) => `<mrow><mo stretchy="true">${esc(BRACKETS[open])}</mo>${x}<mo stretchy="true">${esc(BRACKETS[close])}</mo></mrow>`,
+  funcName: (name) => `<mi mathvariant="normal">${esc(name)}</mi>`,
+  color: (c, x) => `<mstyle mathcolor="${c}">${x}</mstyle>`,
+  bold: (x) => `<mstyle mathvariant="bold">${x}</mstyle>`,
+  fn: (name) => `<mi>${name}</mi>`,
+  symbol: (k) => `<mi mathvariant="normal">${SYMBOLS[k]}</mi>`,
+  ident: (v) => (v.length === 1 ? `<mi>${esc(v)}</mi>` : `<mi style="font-style:italic">${esc(v)}</mi>`),
+};
+
+const TEX_RELATIONS = { '=': '=', '<>': '\\neq', '<': '<', '>': '>', '<=': '\\leq', '>=': '\\geq', '->': '\\to',
+  approx: '\\approx', ne: '\\neq', le: '\\leq', ge: '\\geq', leslant: '\\leqslant', geslant: '\\geqslant',
+  sim: '\\sim', simeq: '\\simeq', equiv: '\\equiv', prop: '\\propto', toward: '\\to', def: '\\overset{\\text{def}}{=}' };
+const TEX_PRODUCTS = { cdot: '\\cdot', times: '\\times', div: '\\div', '/': '/', '*': '\\ast' };
+const TEX_SUMS = { '+': '+', '-': '-', '+-': '\\pm', '-+': '\\mp', plusminus: '\\pm', minusplus: '\\mp' };
+const TEX_SYMBOLS = { infinity: '\\infty', infty: '\\infty', partial: '\\partial', nabla: '\\nabla', dlarrow: '\\Leftarrow',
+  drarrow: '\\Rightarrow', dlrarrow: '\\Leftrightarrow', degree: '{}^{\\circ}', dotsaxis: '\\cdots', dotslow: '\\ldots', percent: '\\%' };
+const TEX_BRACKETS = { '(': '(', ')': ')', '[': '[', ']': ']', lbrace: '\\{', rbrace: '\\}', langle: '\\langle',
+  rangle: '\\rangle', lline: '|', rline: '|', ldline: '\\|', rdline: '\\|', lfloor: '\\lfloor', rfloor: '\\rfloor',
+  lceil: '\\lceil', rceil: '\\rceil', none: '.' };
+// Griechische Großbuchstaben, die LaTeX als eigenen Befehl kennt; die übrigen sehen aus wie lateinische.
+const TEX_GREEK_UPPER = new Set(['Gamma', 'Delta', 'Theta', 'Lambda', 'Xi', 'Pi', 'Sigma', 'Upsilon', 'Phi', 'Psi', 'Omega']);
+const texText = (v) => v.replace(/[\\{}$&#%_^~]/g, (c) => ({ '\\': '\\textbackslash{}', '~': '\\textasciitilde{}', '^': '\\textasciicircum{}' }[c] || `\\${c}`));
+// Genau eine Klammer um ein Argument – eine Gruppe `{…}` bringt ihre schon mit.
+const texBraced = (x) => {
+  if (x[0] !== '{' || x[x.length - 1] !== '}') return false;
+  let depth = 0;
+  for (let i = 0; i < x.length; i++) {
+    if (x[i] === '\\') { i++; continue; }
+    if (x[i] === '{') depth++;
+    else if (x[i] === '}' && --depth === 0 && i < x.length - 1) return false;
+  }
+  return true;
+};
+const texArg = (x) => (texBraced(x) ? x : `{${x}}`);
+const texScript = (x) => (/^[A-Za-z0-9]$/.test(x) ? x : texArg(x));
+const LATEX_OUT = {
+  join: (a, b) => (a && b ? `${a} ${b}` : a || b),
+  rel: (k) => TEX_RELATIONS[k],
+  sign: (k) => TEX_SUMS[k],
+  sum: (k) => TEX_SUMS[k],
+  product: (k) => TEX_PRODUCTS[k],
+  frac: (a, b) => `\\frac${texArg(a)}${texArg(b)}`,
+  scripts: (base, sub, sup) => `${/^(\\[A-Za-z]+|[A-Za-z0-9])$/.test(base) ? base : texArg(base)}${sub !== null ? `_${texScript(sub)}` : ''}${sup !== null ? `^${texScript(sup)}` : ''}`,
+  num: (v) => v.replace(',', '{,}'),
+  text: (v) => `\\text{${texText(v)}}`,
+  greek: (_ch, _italic, name) => {
+    const lower = name.toLowerCase();
+    if (name[0] === name[0].toLowerCase()) return `\\${lower}`;
+    const upper = lower[0].toUpperCase() + lower.slice(1);
+    return TEX_GREEK_UPPER.has(upper) ? `\\${upper}` : `\\mathrm{${GREEK[lower].toUpperCase()}}`;
+  },
+  group: (x) => texArg(x),
+  paren: (open, x, close) => `${open}${x}${close}`,
+  space: (wide) => (wide ? '\\enspace' : '\\,'),
+  op: (v) => ({ '|': '|', "'": "'" }[v] || v),
+  sqrt: (x) => `\\sqrt${texArg(x)}`,
+  nroot: (n, x) => `\\sqrt[${texBraced(n) ? n.slice(1, -1) : n}]${texArg(x)}`,
+  abs: (x) => `\\left|${x}\\right|`,
+  leftRight: (open, x, close) => `\\left${TEX_BRACKETS[open]} ${x} \\right${TEX_BRACKETS[close]}`,
+  funcName: (name) => `\\operatorname{${name}}`,
+  color: (c, x) => `\\textcolor{${c}}${texArg(x)}`,
+  bold: (x) => `\\mathbf${texArg(x)}`,
+  fn: (name) => `\\${name}`,
+  symbol: (k) => TEX_SYMBOLS[k],
+  ident: (v) => (v.length === 1 ? v : `\\mathit{${v}}`),
+};
+
 function tokenize(src) {
   const tokens = [];
   const re = /\s+|"([^"]*)"|%([A-Za-z]+)|(\d+(?:[.,]\d+)?)|([A-Za-zÄÖÜäöüß][A-Za-z0-9ÄÖÜäöüß]*)|(<=|>=|<>|->|\+-|-\+|[{}()[\]^_~`=<>+\-*/,;:!'|.])/y;
@@ -538,9 +646,10 @@ function tokenize(src) {
 }
 
 class StarMathParser {
-  constructor(src) {
+  constructor(src, out = MATHML_OUT) {
     this.tokens = tokenize(src);
     this.i = 0;
+    this.out = out;
   }
 
   peek() { return this.tokens[this.i]; }
@@ -563,47 +672,63 @@ class StarMathParser {
     return out;
   }
 
-  /** Relationen: a = b approx c */
+  /**
+   * Nebeneinander stehende Teile (`"3." ~~ {U_A} over {U_E}`) – wie im
+   * Formeleditor schwächer gebunden als alles andere: `over` nimmt nur
+   * {U_A}, nicht „3.“.
+   */
   expression() {
+    const o = this.out;
+    let out = this.relation();
+    for (;;) {
+      const t = this.peek();
+      if (!t || this.atStop() || !this.startsTerm(t)) return out;
+      out = o.join(out, this.relation());
+    }
+  }
+
+  /** Relationen: a = b approx c */
+  relation() {
+    const o = this.out;
     let out = this.sum();
     for (;;) {
       const t = this.peek();
       if (t && (t.kind === 'op' || t.kind === 'id') && Object.prototype.hasOwnProperty.call(RELATIONS, t.value)) {
         this.next();
-        out += `<mo>${RELATIONS[t.value]}</mo>` + this.sum();
+        out = o.join(o.join(out, o.rel(t.value)), this.sum());
       } else return out;
     }
   }
 
   sum() {
+    const o = this.out;
     let out = '';
     const sign = this.peek();
-    if (sign && sign.kind === 'op' && SUMS[sign.value]) { this.next(); out += `<mo form="prefix">${SUMS[sign.value]}</mo>`; }
+    if (sign && sign.kind === 'op' && SUMS[sign.value]) { this.next(); out = o.sign(sign.value); }
     if (this.atStop()) return out;
-    out += this.product();
+    out = o.join(out, this.product());
     for (;;) {
       const t = this.peek();
       if (t && (t.kind === 'op' || t.kind === 'id') && SUMS[t.value]) {
         this.next();
-        out += `<mo>${SUMS[t.value]}</mo>` + this.product();
+        out = o.join(o.join(out, o.sum(t.value)), this.product());
       } else return out;
     }
   }
 
-  /** Produkt, Bruch (`over`) und Nebeneinanderstellen (`2 x`, `"Text" ~ x`). */
+  /** Produkt und Bruch (`over`); Nebeneinanderstehendes sammelt expression(). */
   product() {
+    const o = this.out;
     let out = this.power();
     for (;;) {
       const t = this.peek();
       if (!t || this.atStop()) return out;
       if (t.kind === 'id' && t.value === 'over') {
         this.next();
-        out = `<mfrac><mrow>${out}</mrow><mrow>${this.power()}</mrow></mfrac>`;
+        out = o.frac(out, this.power());
       } else if ((t.kind === 'op' || t.kind === 'id') && PRODUCTS[t.value]) {
         this.next();
-        out += `<mo>${PRODUCTS[t.value]}</mo>` + this.power();
-      } else if (this.startsTerm(t)) {
-        out += this.power();
+        out = o.join(o.join(out, o.product(t.value)), this.power());
       } else return out;
     }
   }
@@ -628,10 +753,7 @@ class StarMathParser {
       else if (this.is('^') || this.is('sup')) { this.next(); sup = this.term(); }
       else break;
     }
-    if (sub !== null && sup !== null) return `<msubsup><mrow>${base}</mrow><mrow>${sub}</mrow><mrow>${sup}</mrow></msubsup>`;
-    if (sub !== null) return `<msub><mrow>${base}</mrow><mrow>${sub}</mrow></msub>`;
-    if (sup !== null) return `<msup><mrow>${base}</mrow><mrow>${sup}</mrow></msup>`;
-    return base;
+    return sub === null && sup === null ? base : this.out.scripts(base, sub, sup);
   }
 
   group(close) {
@@ -645,14 +767,15 @@ class StarMathParser {
     if (!t || !Object.prototype.hasOwnProperty.call(BRACKETS, t.value)) {
       throw new StarMathError(`Klammer nach left/right erwartet${t ? `, gefunden „${t.value}“` : ''}`);
     }
-    return BRACKETS[t.value];
+    return t.value;
   }
 
   term() {
+    const o = this.out;
     const t = this.next();
     if (!t) throw new StarMathError('Formel endet unerwartet');
-    if (t.kind === 'num') return `<mn>${esc(t.value)}</mn>`;
-    if (t.kind === 'text') return `<mtext>${esc(t.value)}</mtext>`;
+    if (t.kind === 'num') return o.num(t.value);
+    if (t.kind === 'text') return o.text(t.value);
     if (t.kind === 'greek') {
       // %pi steil, %ipi kursiv (wie im Formeleditor); %iota ist ein Buchstabe.
       let name = t.value;
@@ -661,54 +784,54 @@ class StarMathParser {
       const lower = name.toLowerCase();
       if (!GREEK[lower]) throw new StarMathError(`unbekanntes Symbol %${t.value}`);
       const ch = name[0] === name[0].toUpperCase() ? GREEK[lower].toUpperCase() : GREEK[lower];
-      return italic ? `<mi>${ch}</mi>` : `<mi mathvariant="normal">${ch}</mi>`;
+      return o.greek(ch, italic, name);
     }
     if (t.kind === 'op') {
       switch (t.value) {
-        case '{': return `<mrow>${this.group('}')}</mrow>`;
-        case '(': return `<mrow><mo>(</mo>${this.group(')')}<mo>)</mo></mrow>`;
-        case '[': return `<mrow><mo>[</mo>${this.group(']')}<mo>]</mo></mrow>`;
-        case '~': return '<mspace width="0.5em"></mspace>';
-        case '`': return '<mspace width="0.17em"></mspace>';
+        case '{': return o.group(this.group('}'));
+        case '(': return o.paren('(', this.group(')'), ')');
+        case '[': return o.paren('[', this.group(']'), ']');
+        case '~': return o.space(true);
+        case '`': return o.space(false);
         default:
           if (STOP.has(t.value) || t.value === '^' || t.value === '_') throw new StarMathError(`„${t.value}“ an unerwarteter Stelle`);
-          return `<mo>${esc(t.value)}</mo>`;
+          return o.op(t.value);
       }
     }
     // Wörter
     switch (t.value) {
-      case 'sqrt': return `<msqrt>${this.power()}</msqrt>`;
+      case 'sqrt': return o.sqrt(this.power());
       case 'nroot': {
         const n = this.term();
-        return `<mroot><mrow>${this.power()}</mrow><mrow>${n}</mrow></mroot>`;
+        return o.nroot(n, this.power());
       }
-      case 'abs': return `<mrow><mo>|</mo>${this.power()}<mo>|</mo></mrow>`;
+      case 'abs': return o.abs(this.power());
       case 'left': {
         const open = this.bracket();
         const inner = this.expression();
         this.expect('right');
         const close = this.bracket();
-        return `<mrow><mo stretchy="true">${esc(open)}</mo>${inner}<mo stretchy="true">${esc(close)}</mo></mrow>`;
+        return o.leftRight(open, inner, close);
       }
       case 'func': {
         const name = this.next();
         if (!name || name.kind !== 'id') throw new StarMathError('Name nach func erwartet');
-        return `<mi mathvariant="normal">${esc(name.value)}</mi>`;
+        return o.funcName(name.value);
       }
       case 'color': {
         const c = this.next();
         if (!c || !COLOR_RE.test(c.value)) throw new StarMathError('Farbe nach color erwartet');
-        return `<mstyle mathcolor="${c.value}">${this.power()}</mstyle>`;
+        return o.color(c.value, this.power());
       }
-      case 'bold': return `<mstyle mathvariant="bold">${this.power()}</mstyle>`;
+      case 'bold': return o.bold(this.power());
       case 'ital': case 'nitalic': case 'nbold': case 'italic': return this.power();
       default: break;
     }
-    if (FUNCTIONS.has(t.value)) return `<mi>${t.value}</mi>`;
-    if (SYMBOLS[t.value]) return `<mi mathvariant="normal">${SYMBOLS[t.value]}</mi>`;
+    if (FUNCTIONS.has(t.value)) return o.fn(t.value);
+    if (SYMBOLS[t.value]) return o.symbol(t.value);
     if (['over', 'sub', 'sup', 'right'].includes(t.value)) throw new StarMathError(`„${t.value}“ an unerwarteter Stelle`);
     // Variablen kursiv wie im Formeleditor – auch mehrbuchstabige.
-    return t.value.length === 1 ? `<mi>${esc(t.value)}</mi>` : `<mi style="font-style:italic">${esc(t.value)}</mi>`;
+    return o.ident(t.value);
   }
 }
 
@@ -717,6 +840,86 @@ export function starmathToMathml(src) {
   const body = new StarMathParser(String(src)).parse();
   return `<math display="block"><mrow>${body}</mrow></math>`;
 }
+
+/**
+ * StarMath → LaTeX, zum Umschreiben alter Formeln beim Bearbeiten. Liest
+ * alles, was starmathToMathml liest; sonst StarMathError (dann bleibt die
+ * Formel StarMath).
+ */
+export function starmathToLatex(src) {
+  return new StarMathParser(String(src), LATEX_OUT).parse().trim();
+}
+
+// ==================== Formeln (LaTeX → MathML) ====================
+
+export class LatexError extends Error {}
+
+// docspec.js importiert nichts (der Server lädt die Datei ohne Module) – Temml
+// meldet src/doc/latex.js im Browser bzw. der Server (docspec.ts) an.
+let latexEngine = null;
+
+/** Meldet Temml an (das Objekt aus src/vendor/temml/temml.mjs). */
+export function useTemml(temml) {
+  latexEngine = (tex, display) => temml.renderToString(tex, { displayMode: display, xml: true, annotate: true, throwOnError: true });
+}
+
+export function hasLatexEngine() {
+  return !!latexEngine;
+}
+
+/** LaTeX (Mathe-Modus) → MathML. Wirft LatexError. */
+export function latexToMathml(src, display = true) {
+  if (!latexEngine) throw new LatexError('LaTeX-Formeln lassen sich hier nicht setzen');
+  try {
+    return latexEngine(String(src), display);
+  } catch (e) {
+    throw new LatexError(String(e?.message || e).replace(/^Temml (parse error|strict-mode warning): /, ''));
+  }
+}
+
+/** MathML einer Formel (Baustein `formula`): `latex` vor `math` (StarMath). */
+export function formulaMathml(block) {
+  if (isText(block?.latex) && String(block.latex).trim() !== '') return latexToMathml(block.latex);
+  return starmathToMathml(block?.math ?? '');
+}
+
+/**
+ * Für den Druck: Kopie der Spec, in der jede LaTeX-Formel ihr MathML trägt
+ * (`mathml`) – der Renderer setzt es ins Formelobjekt und braucht selbst kein
+ * LaTeX. Formeln im Text ($…$) stehen oben in `inlineMathml` (LaTeX → MathML).
+ * Formeln mit Fehler bleiben ohne; der Renderer druckt dann die Quelle.
+ */
+export function withFormulaMathml(value) {
+  const inline = {};
+  const walk = (v, key) => {
+    if (typeof v === 'string') {
+      if (!NO_MATH_KEYS.includes(key) && v.includes('$')) {
+        for (const m of v.matchAll(new RegExp(INLINE_MATH_SOURCE, 'g'))) {
+          const tex = m.groups.math;
+          if (inline[tex] === undefined && latexEngine) {
+            try { inline[tex] = latexToMathml(tex, false); } catch (_) { inline[tex] = null; }
+          }
+        }
+      }
+      return v;
+    }
+    if (Array.isArray(v)) return v.map((x) => walk(x, key));
+    if (!v || typeof v !== 'object') return v;
+    const out = {};
+    for (const [k, x] of Object.entries(v)) out[k] = walk(x, k);
+    if (out.type === 'formula' && isText(out.latex) && String(out.latex).trim() !== '' && latexEngine) {
+      try { out.mathml = latexToMathml(out.latex); } catch (_) { delete out.mathml; }
+    }
+    return out;
+  };
+  const out = walk(value, '');
+  // Formeln im Text ($…$): einmal je Formel, für den ganzen Druckauftrag.
+  for (const k of Object.keys(inline)) if (inline[k] === null) delete inline[k];
+  if (Object.keys(inline).length && out && typeof out === 'object' && !Array.isArray(out)) out.inlineMathml = inline;
+  return out;
+}
+// Felder ohne Formeln im Text ($ ist dort wörtlich gemeint).
+const NO_MATH_KEYS = ['code', 'math', 'latex', 'mathml', 'src', 'file', 'id', 'href'];
 
 // ==================== HTML ====================
 
@@ -923,7 +1126,7 @@ function renderBlockHtml(block, ctx) {
     case 'formula': {
       const align = block.align === 'left' ? ' ds-formula-left' : '';
       let math;
-      try { math = starmathToMathml(block.math ?? ''); } catch (e) { math = `<code class="ds-missing">${esc(block.math ?? '')}</code>`; }
+      try { math = formulaMathml(block); } catch (e) { math = `<code class="ds-missing">${esc(block.latex ?? block.math ?? '')}</code>`; }
       return `<div class="ds-formula${align}">${math}</div>`;
     }
     case 'solution': {

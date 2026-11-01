@@ -7,7 +7,7 @@
 // Was sich so nicht drucken lässt, steht als Hinweis im Blatt und in `warnings`.
 // Ohne DOM – testbar in Node.
 
-import { resolveDocRefs } from '../doc/docspec.js';
+import { resolveDocRefs, withFormulaMathml } from '../doc/docspec.js';
 
 const PRINTABLE = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/svg+xml': 'svg' };
 const BY_EXT = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', svg: 'image/svg+xml', gif: 'image/gif', webp: 'image/webp' };
@@ -148,7 +148,8 @@ export function renderJob(spec, { title = '', media = {}, modules = {}, outputs 
     return out;
   }
 
-  const resolved = resolveDocRefs(spec, null);
+  // LaTeX-Formeln tragen ihr MathML mit – der Renderer setzt es ins Formelobjekt.
+  const resolved = withFormulaMathml(resolveDocRefs(spec, null));
   const { titel: _t, nummer: _n, kurs: _k, titelmuster: _m, ...rest } = resolved;
   const head = title || spec.titel || 'Dokument';
   const meta = { ...(rest.meta || {}) };

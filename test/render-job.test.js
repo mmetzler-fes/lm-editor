@@ -39,3 +39,10 @@ test('Breiten und erlaubte Beschriftung', () => {
   assert.equal(safeInkSvg('<svg><g><path d="M0 0"/></g></svg>'), true);
   assert.equal(safeInkSvg('<svg><image href="x"/></svg>'), false);
 });
+
+test('Druckauftrag: LaTeX-Formeln mit MathML', async () => {
+  await import('../src/doc/latex.js');
+  const { job } = renderJob({ content: [{ type: 'formula', latex: '\\frac{U}{R}' }, { type: 'formula', math: 'U over R' }] });
+  assert.match(job.spec.content[0].mathml, /<mfrac>/);
+  assert.equal(job.spec.content[1].mathml, undefined);
+});

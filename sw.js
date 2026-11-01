@@ -9,6 +9,7 @@ const CORE = [
   './', 'index.html', 'manifest.webmanifest', 'icons/app-192.png',
   'src/app/app.js', 'src/app/app.css', 'src/css/modules.css', 'src/css/ink.css', 'src/css/paper.css',
   'src/vendor/pdfjs/pdf.min.mjs', 'src/vendor/pdfjs/pdf.worker.min.mjs', 'examples/ohm.json',
+  'src/vendor/temml/temml.mjs', 'src/vendor/temml/temml.css',
 ];
 
 self.addEventListener('install', (e) => {

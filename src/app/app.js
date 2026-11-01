@@ -10,6 +10,7 @@
 
 import { createZlm, readZlm, writeZlm, editorStateOf, layerOf, specForView, ZlmError } from '../zlm/zlm.js';
 import { stampBlockIds } from '../doc/ids.js';
+import '../doc/latex.js'; // LaTeX-Formeln
 import { openInkEditor } from '../ink/ink-editor.js';
 import { H5pRenderer } from '../modules/h5p-renderer.js';
 import { sniff, importOdt, importPdfPages } from '../import/import.js';

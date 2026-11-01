@@ -16,7 +16,7 @@
  * Feste Block-IDs (ids.js) reisen als data-id mit – an ihnen hängen die
  * Striche der Schüler.
  */
-import { richText, renderDocSpecHtml, tableColgroup, tableRowAttr, tableLineStyle, TABLE_LINE_STYLES, TEXT_COLORS, HIGHLIGHTS, FONT_SIZES, BASE_FONT_PT, LINE_HEIGHTS, LIST_MARKERS, LIST_NUMBERINGS, LINE_COLORS, CELL_BACKGROUNDS, CELL_VALIGNS, paraStyle } from './docspec.js';
+import { richText, renderDocSpecHtml, tableColgroup, tableRowAttr, tableLineStyle, TABLE_LINE_STYLES, TEXT_COLORS, HIGHLIGHTS, FONT_SIZES, BASE_FONT_PT, LINE_HEIGHTS, LIST_MARKERS, LIST_NUMBERINGS, LINE_COLORS, CELL_BACKGROUNDS, CELL_VALIGNS, paraStyle, INLINE_MATH_SOURCE } from './docspec.js';
 import { isBlockId } from './ids.js';
 
 const MARKUP_CHARS = /[\\*`[\]]/g;
@@ -31,6 +31,20 @@ export function escapeMarkup(text) {
     .replace(/_\{/g, '\\_{')
     // `n_S` wäre sonst ein Index – im HTML war es keiner.
     .replace(/(?<![0-9A-Za-zÄÖÜäöüß_\\])([A-Za-zΑ-Ωα-ω])_(?=[A-Za-z0-9ÄÖÜäöü])/g, '$1\\_');
+}
+
+/**
+ * Getippter Text → Auszeichnung. Getippte Formeln ($x^2$) bleiben, wie sie
+ * sind, und werden so zur Formel; alles andere wird geschützt (escapeMarkup).
+ */
+function textMarkup(text) {
+  let out = '';
+  let pos = 0;
+  for (const m of text.matchAll(new RegExp(INLINE_MATH_SOURCE, 'g'))) {
+    out += escapeMarkup(text.slice(pos, m.index)) + m[0];
+    pos = m.index + m[0].length;
+  }
+  return out + escapeMarkup(text.slice(pos));
 }
 
 /** Auszeichnung um Text legen; Leerraum am Rand bleibt außerhalb der Zeichen. */
@@ -54,9 +68,11 @@ function paletteName(css, palette) {
 function inline(node, images, warnings) {
   let out = '';
   for (const c of node.childNodes) {
-    if (c.nodeType === 3) { out += escapeMarkup(c.nodeValue.replace(/\s*\n\s*/g, ' ')); continue; }
+    if (c.nodeType === 3) { out += textMarkup(c.nodeValue.replace(/\s*\n\s*/g, ' ')); continue; }
     if (c.nodeType !== 1) continue;
     const tag = c.tagName;
+    // Formel im Text: zurück zu $…$ (die MathML darin ist nur Anzeige).
+    if (c.classList?.contains('ds-math') && c.dataset?.tex !== undefined) { out += `$${c.dataset.tex}$`; continue; }
     if (tag === 'BR') { out += '\\\n'; continue; }
     if (tag === 'IMG') { images.push(c); continue; }
     if (BLOCK_TAGS.has(tag)) {

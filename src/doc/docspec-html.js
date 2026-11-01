@@ -16,7 +16,7 @@
  * Feste Block-IDs (ids.js) reisen als data-id mit – an ihnen hängen die
  * Striche der Schüler.
  */
-import { richText, renderDocSpecHtml, tableColgroup, tableRowAttr, tableLineStyle, TABLE_LINE_STYLES, TEXT_COLORS, HIGHLIGHTS, FONT_SIZES, BASE_FONT_PT, LINE_HEIGHTS, LIST_MARKERS, LIST_NUMBERINGS, LINE_COLORS, CELL_BACKGROUNDS, CELL_VALIGNS, paraStyle, INLINE_MATH_SOURCE } from './docspec.js';
+import { richText, renderDocSpecHtml, tableColgroup, tableRowAttr, tableLineStyle, TABLE_LINE_STYLES, TEXT_COLORS, HIGHLIGHTS, FONT_SIZES, BASE_FONT_PT, LINE_HEIGHTS, LIST_MARKERS, LIST_NUMBERINGS, LINE_COLORS, CELL_BACKGROUNDS, CELL_VALIGNS, paraStyle, INLINE_MATH_SOURCE, CODE_SIZES, CODE_SIZE_PT } from './docspec.js';
 import { isBlockId } from './ids.js';
 
 const MARKUP_CHARS = /[\\*`[\]]/g;
@@ -492,7 +492,14 @@ function blocksOf(parent, warnings, used = new Set()) {
     } else if (codeOnly(el)) {
       const prev = out[out.length - 1];
       if (prev && codeRuns.has(prev)) prev.code += `\n${codeText(el)}`;
-      else { const block = { type: 'code', code: codeText(el) }; codeRuns.add(block); out.push(block); }
+      else {
+        // Schriftgröße aus der .odt (data-pt) – die nächste der Liste; 9 pt ist die Vorgabe und entfällt.
+        const pt = Number(el.querySelector('code[data-pt]')?.getAttribute('data-pt'));
+        const size = pt > 0 ? CODE_SIZES.reduce((best, x) => (Math.abs(x - pt) < Math.abs(best - pt) ? x : best), CODE_SIZE_PT) : null;
+        const block = { type: 'code', code: codeText(el), ...(size && size !== CODE_SIZE_PT ? { size } : {}) };
+        codeRuns.add(block);
+        out.push(block);
+      }
     } else if (tag === 'P' || tag === 'FIGURE' || tag === 'BLOCKQUOTE') {
       const images = [];
       const text = cleanText(inline(el, images, warnings));

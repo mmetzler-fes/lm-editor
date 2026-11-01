@@ -233,6 +233,7 @@ function checkBlock(block, path, errors, inSolution, parent = '') {
       break;
     case 'code':
       need(isText(block.code) || isText(block.file), 'code fehlt.');
+      if (block.size !== undefined) need(CODE_SIZES.includes(block.size), `size: Schriftgröße in pt, eine von ${CODE_SIZES.join(', ')} (ohne Angabe ${CODE_SIZE_PT}).`);
       break;
     case 'image':
       need(isText(block.src) || isText(block.file), 'src (Bild) fehlt.');
@@ -371,6 +372,9 @@ export const HIGHLIGHTS = { gelb: '#fef08a', gruen: '#bbf7d0', blau: '#bfdbfe', 
 export const FONT_SIZES = [8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 28, 32, 36];
 /** Grundschrift der Vorlage in pt – die Ansicht rechnet Größen relativ dazu (em), damit A−/A+ mitgeht. */
 export const BASE_FONT_PT = 11;
+/** Schriftgrößen für Code-Bausteine (size, pt); ohne Angabe wie die Vorlage „Quelltext“. */
+export const CODE_SIZES = [7, 8, 9, 10, 11, 12];
+export const CODE_SIZE_PT = 9;
 
 /** `blau,hl-gelb,14pt` → { color, hl, size } (nur bekannte Namen und Größen). */
 export function parseColorSpec(spec) {
@@ -1083,7 +1087,9 @@ function renderBlockHtml(block, ctx) {
       const code = isText(block.code)
         ? esc(block.code)
         : `<span class="ds-missing">Code aus Datei ${esc(block.file ?? '')}</span>`;
-      return `${caption}<pre class="ds-code"><code>${code}</code></pre>`;
+      // Eigene Schriftgröße (size, pt) relativ zur Grundschrift – wie Textgrößen; ohne Angabe 9 pt (CSS).
+      const size = CODE_SIZES.includes(block.size) ? ` style="font-size:${Math.round((block.size / BASE_FONT_PT) * 1000) / 1000}em"` : '';
+      return `${caption}<pre class="ds-code"${size}><code>${code}</code></pre>`;
     }
     case 'image': {
       const width = CSS_LENGTH_RE.test(String(block.width ?? '')) ? ` style="width:${block.width}"` : '';

@@ -1121,7 +1121,8 @@ function renderBlockHtml(block, ctx) {
         ? `<thead><tr${tableRowAttr(block, 0)}>${block.header.map((c) => cellHtml('th', c ?? '', ctx)).join('')}</tr></thead>` : '';
       const rows = (block.rows || []).filter(Array.isArray)
         .map((r, i) => `<tr${tableRowAttr(block, i + off)}>${r.map((c) => cellHtml('td', c ?? '', ctx)).join('')}</tr>`).join('');
-      return `${caption}<div class="ds-table-wrap"><table class="ds-table${block.border === false ? ' ds-table-plain' : ''}${CELL_ALIGNS.includes(block.align) ? ` ds-align-${block.align}` : ''}${CELL_VALIGNS.includes(block.valign) ? ` ds-valign-${block.valign}` : ''}"${tableLineStyle(block)}>${tableColgroup(block)}${head}<tbody>${rows}</tbody></table></div>`;
+      // Eigener Abstand unten (spaceAfter) ersetzt den der Hülle – wie im Druck.
+      return `${caption}<div class="ds-table-wrap"${spaceOk(block.spaceAfter) ? ' style="margin-bottom:0"' : ''}><table class="ds-table${block.border === false ? ' ds-table-plain' : ''}${CELL_ALIGNS.includes(block.align) ? ` ds-align-${block.align}` : ''}${CELL_VALIGNS.includes(block.valign) ? ` ds-valign-${block.valign}` : ''}"${tableLineStyle(block)}>${tableColgroup(block)}${head}<tbody>${rows}</tbody></table></div>`;
     }
     case 'formula': {
       const align = block.align === 'left' ? ' ds-formula-left' : '';

@@ -103,8 +103,8 @@ nie, sie ist nur das Datenmodell darunter.
 - [ ] Schülerfassung ohne Lösungen (für die Weitergabe als Datei)
 
 ### 7 Austausch mit LearningModules
-- [ ] `.zlm` in LearningModules importieren (Dokument + Module ins Lernthema) – *Stand: LearningModules zeigt `.zlm` an (Doppelklick, „Öffnen mit“, `views/zlm-viewer.js`), legt sie aber noch nicht im Notizbuch ab*
-- [ ] Dokument aus LearningModules als `.zlm` exportieren – *Stand: das GitHub-Backup schreibt jedes Dokument als `.zlm` (`src/github-backup/zlm-export.ts`); ein Knopf zum Herunterladen am Dokument fehlt*
+- [x] `.zlm` in LearningModules importieren (Dokument + Module ins Lernthema): im Betrachter (Doppelklick, „Öffnen mit“) **📓 Im Notizbuch ablegen…** – Quizze mit neuen IDs, Beschriftung wird die der Lehrkraft
+- [x] Dokument aus LearningModules als `.zlm` exportieren: **⬇ .zlm** im Druckmenü des Dokument-Editors (`GET /api/github-backup/zlm`, gespeicherter Stand, nur eigene Dokumente); dazu das GitHub-Backup
 
 ### 8 Tauri
 - [ ] Hülle mit Dateiverknüpfung `.zlm` (Windows, macOS, Linux)

@@ -75,6 +75,40 @@ const find = (n, name) => {
 };
 const textOf = (n) => typeof n === 'string' ? n : n.children.map(textOf).join('');
 // ---- Formatvorlagen ----
+/** Ungefähre Breite in px (Arial: Zeichenbreiten in em) – genug, um wie LibreOffice umzubrechen. */
+function textWidth(s, size, bold) {
+    let em = 0;
+    for (const ch of s) {
+        em += ch === ' ' ? 0.278 : /[il.,:;!|'j]/.test(ch) ? 0.24 : /[tfrI\-()[\]\/]/.test(ch) ? 0.333
+            : /[mwMW]/.test(ch) ? 0.833 : /[A-ZÄÖÜ]/.test(ch) ? 0.667 : /[0-9]/.test(ch) ? 0.556 : 0.52;
+    }
+    return em * size * (bold ? 1.06 : 1);
+}
+/**
+ * Eine Zeile auf `maxWidth` umbrechen: an Leerzeichen, nach „-“ und an weichen Trennstellen
+ * (U+00AD, dort dann mit „-“). Ein Wort, das allein zu breit ist, bleibt ganz.
+ */
+export function wrapLine(text, size, bold, maxWidth) {
+    const clean = (t) => t.replace(/\u00ad/g, '');
+    if (!(maxWidth > 0) || textWidth(clean(text), size, bold) <= maxWidth * 1.02)
+        return [clean(text)];
+    const pieces = text.split(/(?<=[ \-\u00ad])/);
+    const out = [];
+    let line = '';
+    for (const piece of pieces) {
+        const next = line + piece;
+        const shown = clean(next).replace(/ +$/, '');
+        if (line && textWidth(shown, size, bold) > maxWidth * 1.02) {
+            out.push(clean(line).replace(/ +$/, '') + (line.endsWith('\u00ad') ? '-' : ''));
+            line = piece;
+        }
+        else
+            line = next;
+    }
+    if (line)
+        out.push(clean(line).replace(/ +$/, ''));
+    return out;
+}
 const MONO_FONT_RE = /\b(mono|monospace|courier|consolas|menlo|monaco|typewriter|code|cousine|inconsolata)\b/i;
 const CODE_STYLE_RE = /^(source text|quelltext|preformatted text|vorformatierter text|code|source code)$/i;
 /** Name, unter dem die Standardvorlage für Zeichnungen geführt wird. */
@@ -517,8 +551,11 @@ class DrawingSvg {
             const span = elements(p).find((c) => c.name === 'text:span');
             const bold = !!(this.styles.prop(style, 'bold') || this.styles.prop(span?.attrs['text:style-name'], 'bold'));
             const color = this.styles.prop(style, 'fontColor') || this.styles.prop(span?.attrs['text:style-name'], 'fontColor') || opts.color || '#000000';
-            for (const text of this.lineText(p))
-                lines.push({ text: text.replace(/\s+$/, ''), size, align, bold, color });
+            // Umbrechen wie LibreOffice: an Leerzeichen, nach Bindestrichen und weichen Trennstellen.
+            for (const text of this.lineText(p)) {
+                for (const part of wrapLine(text.replace(/\s+$/, ''), size, bold, b.w - 2 * opts.pad))
+                    lines.push({ text: part, size, align, bold, color });
+            }
         }
         // Leerzeilen am Ende fallen weg; die am Anfang sind oft gewollter Abstand.
         while (lines.length && !lines[lines.length - 1].text.trim())

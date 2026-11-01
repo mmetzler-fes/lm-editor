@@ -454,9 +454,9 @@ export class H5pRenderer {
           tfQuestion.textContent = q.question || '';
           if (tfProgress) tfProgress.textContent = `Frage ${tfIdx + 1} von ${tfQuestions.length}`;
           if (tfResults[tfIdx] !== null) {
-            // In exam mode: keep buttons enabled to allow changing answer before moving on
-            tfTrue.disabled = suppressFeedback ? false : true;
-            tfFalse.disabled = suppressFeedback ? false : true;
+            // Die Antwort bleibt änderbar (wie bei Multiple Choice); es zählt die zuletzt gewählte.
+            tfTrue.disabled = false;
+            tfFalse.disabled = false;
             tfTrue.classList.remove('tf-selected'); tfFalse.classList.remove('tf-selected');
             if (q._userAnswer === 'true') tfTrue.classList.add('tf-selected');
             if (q._userAnswer === 'false') tfFalse.classList.add('tf-selected');
@@ -478,7 +478,6 @@ export class H5pRenderer {
         };
 
         const handleTfAnswer = (val) => {
-          if (tfResults[tfIdx] !== null && !suppressFeedback) return;
           const q = tfQuestions[tfIdx];
           q._userAnswer = val;
           tfResults[tfIdx] = q.correctAnswer === val;

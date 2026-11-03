@@ -222,7 +222,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
       <span class="ink-group ink-tools">
         ${paper ? tool('interact', 'pointer', 'Bedienen: Quizze im Blatt ausfüllen – beim Auswählen springt es auf einem Quiz von selbst hierher; der Finger bedient Quizze immer') : ''}
         ${tool('select', 'select', 'Auswählen: Strich antippen oder Rechteck aufziehen')}
-        ${tool('pen', 'pen', 'Stift – am Ende kurz halten: gerade Linie')}
+        ${tool('pen', 'pen', 'Stift – zeichnet auch mit dem Finger, das Blatt steht still (scrollen mit zwei Fingern oder der Scrollleiste); am Ende kurz halten: gerade Linie')}
         ${tool('marker', 'marker', 'Textmarker')}
         ${tool('eraser', 'eraser', 'Radierer – löscht ganze Striche')}
         ${tool('text', 'text', 'Textfeld: auf die Seite tippen und schreiben')}
@@ -370,6 +370,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     $('.ink-more').hidden = !state.selection?.ids.size && !(state.tool === 'select' && clipboard);
     overlay.classList.toggle('ink-tool-text', state.tool === 'text');
     overlay.classList.toggle('ink-tool-interact', state.tool === 'interact');
+    overlay.classList.toggle('ink-tool-pen', state.tool === 'pen');
     overlay.classList.toggle('ink-tool-select', state.tool === 'select');
     overlay.classList.toggle('ink-tool-laser', state.tool === 'laser');
     overlay.classList.toggle('ink-paper-mode', doc.bg === 'paper');
@@ -488,7 +489,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
   });
   // Apple Pencil: Safari scrollt mit dem Stift wie mit dem Finger. Berührungen
   // des Stifts (touchType 'stylus') deshalb anhalten, bevor Safari scrollt –
-  // gescrollt wird mit zwei Fingern (beim Bedienen auch mit einem).
+  // gescrollt wird mit dem Finger (bei gewähltem Stift nur mit zweien).
   const holdStylus = (e) => {
     if (e.target.closest?.('.ink-text')) return; // ins Textfeld tippen bleibt möglich
     if (state.tool === 'interact') return; // Stift bedient Quizze
@@ -1979,14 +1980,48 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
   let penDown = false;
   let penLiftAt = 0;
 
+  function placeText(p, x, y) {
+    snapshot();
+    const size = state.textSize;
+    const item = { id: uid(), type: 'text', x, y: y - size * 0.7, w: 160, h: size * 1.4, text: '', color: state.color, size };
+    doc.pages[p.i].items.push(item);
+    const box = textBox(p, item);
+    p.texts.appendChild(box);
+    setTimeout(() => box.focus(), 0);
+    state.undo.pop(); // erst beim Schreiben zählt es (blur)
+  }
+
+  /** Was ein angetippter Finger bewirkt, wenn er sonst scrollt (alles außer dem Stift) – oder null. */
+  function fingerTap(p, tool, x, y) {
+    if (tool === 'text') return () => placeText(p, x, y);
+    if (tool === 'shape' && state.shapeKind === 'polygon') return () => polygonClick(p.i, x, y);
+    if (tool === 'eraser') {
+      return () => {
+        const g = { removed: false };
+        erase(p.i, x, y, g);
+        if (g.removed) changed();
+      };
+    }
+    if (tool === 'select') {
+      return () => {
+        const hit = itemAt(doc.pages[p.i].items, x, y, 6 / state.zoom);
+        if (!hit) { clearSelection(); return; }
+        state.selection = { page: p.i, ids: withGroups(p.i, new Set([hit.id])) };
+        paintSelection();
+        paintToolbar();
+      };
+    }
+    return null;
+  }
+
   function bindInput(p) {
     const toPage = (e) => {
       const r = p.svg.getBoundingClientRect();
       return [((e.clientX - r.left) / r.width) * p.w, ((e.clientY - r.top) / r.height) * p.h];
     };
     let gesture = null;
-    // Der Finger arbeitet mit dem Werkzeug wie der Stift (nur beim Bedienen scrollt er);
-    // zwei Finger scrollen das Blatt (der begonnene Strich entfällt).
+    // Bei gewähltem Stift zeichnet der Finger und das Blatt steht still; zwei Finger
+    // scrollen es (der begonnene Strich entfällt). Sonst scrollt der Browser (touch-action).
     const touches = new Map(); // pointerId → [clientX, clientY]
     let pan = null;            // { mid: [x, y] }
     const midOf = () => {
@@ -2044,7 +2079,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
       if (penErases) penEraseAt = Date.now();
       // Rechte Taste, Ctrl+Klick (Mac): Kontextmenü, nicht zeichnen.
       if (!penErases && ((e.button > 0 && e.button !== 5) || (e.buttons & 2) || (e.ctrlKey && e.pointerType === 'mouse'))) return;
-      if (e.pointerType === 'touch' && !rulerDrag) {
+      if (e.pointerType === 'touch' && state.tool === 'pen' && !rulerDrag) {
         touches.set(e.pointerId, [e.clientX, e.clientY]);
         if (pan) return;
         if (touches.size === 2) {
@@ -2059,6 +2094,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
       }
       const [x, y] = toPage(e);
       const tool = penErases || e.button === 5 || (e.buttons & 32) ? 'eraser' : state.tool;
+      const draws = e.pointerType !== 'touch' || state.tool === 'pen';
       // Geodreieck: Griffe drehen/vergrößern; setzt der Stift an einer Kante
       // an, läuft der Strich genau an ihr entlang; sonst wird es verschoben.
       const ruler = doc.ruler?.visible && doc.ruler.page === p.i ? doc.ruler : null;
@@ -2069,7 +2105,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
       if (ruler && !selectsHere) {
         const inside = inRuler(ruler, x, y);
         const handle = inside ? rulerHandleAt(ruler, x, y) : null;
-        if (!handle && (tool === 'pen' || tool === 'marker')) snap = nearEdge(ruler, x, y, RULER_REACH / state.zoom);
+        if (!handle && draws && (tool === 'pen' || tool === 'marker')) snap = nearEdge(ruler, x, y, RULER_REACH / state.zoom);
         if (handle || (inside && !snap) || (rulerDrag && e.pointerType === 'touch' && inside)) {
           e.preventDefault();
           if (p.paper) e.stopPropagation();
@@ -2079,6 +2115,13 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
         }
       }
 
+      // Außer beim Stift scrollt der Finger. Antippen wirkt trotzdem: Scrollt er
+      // stattdessen, bricht der Browser die Berührung ab (pointercancel).
+      if (!draws) {
+        const run = fingerTap(p, tool, x, y);
+        if (run) { gesture = { kind: 'tap', id: e.pointerId, run }; p.busy = true; }
+        return;
+      }
       e.preventDefault();
       // Im Dokument erreicht der Strich kein Quiz darunter (auch nicht dessen Ziehen).
       if (p.paper) e.stopPropagation();
@@ -2146,24 +2189,10 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
         gesture = { kind: 'rect', id: e.pointerId, from: [x, y], field: true };
       } else if (tool === 'shape') {
         clearSelection();
-        if (state.shapeKind === 'polygon') {
-          if (e.pointerType === 'touch') gesture = { kind: 'tap', id: e.pointerId, run: () => polygonClick(p.i, x, y) };
-          else polygonClick(p.i, x, y);
-        } else gesture = { kind: 'shape', id: e.pointerId, from: [x, y] };
+        if (state.shapeKind === 'polygon') polygonClick(p.i, x, y);
+        else gesture = { kind: 'shape', id: e.pointerId, from: [x, y] };
       } else if (tool === 'text') {
-        const place = () => {
-          snapshot();
-          const size = state.textSize;
-          const item = { id: uid(), type: 'text', x, y: y - size * 0.7, w: 160, h: size * 1.4, text: '', color: state.color, size };
-          doc.pages[p.i].items.push(item);
-          const box = textBox(p, item);
-          p.texts.appendChild(box);
-          setTimeout(() => box.focus(), 0);
-          state.undo.pop(); // erst beim Schreiben zählt es (blur)
-        };
-        // Der Finger erst beim Abheben: Es könnte der Anfang von Scrollen mit zwei Fingern sein.
-        if (e.pointerType === 'touch') gesture = { kind: 'tap', id: e.pointerId, run: place };
-        else place();
+        placeText(p, x, y);
       }
       p.busy = !!gesture;
     }, { capture: !!p.paper });

@@ -80,8 +80,9 @@ body.ink-open { overflow: hidden; }
 .ink-bg, .ink-svg, .ink-texts, .ink-top { position: absolute; inset: 0; width: 100%; height: 100%; }
 /* Anfasser über allem (auch über dem Geodreieck); getroffen wird rechnerisch. */
 .ink-top { z-index: 4; pointer-events: none; overflow: visible; }
-/* Finger zeichnet wie Stift und Maus, zwei Finger scrollen (siehe bindInput); beim Bedienen scrollt auch einer. */
-.ink-page { touch-action: none; }
+/* Der Finger scrollt – nur bei gewähltem Stift zeichnet er, und zwei Finger scrollen (siehe bindInput). */
+.ink-page { touch-action: pan-x pan-y; }
+.ink-tool-pen .ink-page { touch-action: none; }
 /* 📌 Seite festgestellt: nichts scrollt, weder Stift noch Finger. */
 .ink-svg { overflow: visible; }
 .ink-marker { mix-blend-mode: multiply; opacity: 0.55; }
@@ -145,7 +146,6 @@ body.ink-open { overflow: hidden; }
    beim Bedienen (Quizze) und beim Finger, solange er nicht zeichnet. */
 .ink-paper-host { position: absolute; left: 0; top: 0; }
 .ink-paper-mode .ink-svg, .ink-paper-mode .ink-texts { pointer-events: none; }
-.ink-tool-interact .ink-page { touch-action: pan-x pan-y; }
 .ink-overlay .ink-paper-host input, .ink-overlay .ink-paper-host textarea { -webkit-user-select: text; user-select: text; }
 /* Schreibfeld: unten die Höhe (immer), mit „Auswählen“ rechts die Breite, an der Ecke beides, oben das Muster. */
 .ink-karo-handle {

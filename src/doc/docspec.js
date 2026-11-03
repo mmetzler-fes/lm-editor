@@ -331,7 +331,7 @@ const LIST_START_RE = /^\s*(?:\(?[a-z]\)|\d+[.)]|[–•-])\s/;
 const GAP_RE = /\S {2,}\S/;
 const ASSIGN_START_RE = /^\s*[^\s=:]+(?: \([^)]*\))? ?:?= /;
 // `n_S`, `P_{Schlupf}` → tiefgestellt; Bezeichner wie `to_line` bleiben.
-const SUBSCRIPT_RE = /(?<![0-9A-Za-zÄÖÜäöüß_\\])([A-Za-zΑ-Ωα-ω])_(?:\{([^}]{1,24})\}|([A-Za-z0-9ÄÖÜäöü]{1,8}))/g;
+export const SUBSCRIPT_RE = /(?<![0-9A-Za-zÄÖÜäöüß_\\])([A-Za-zΑ-Ωα-ω])_(?:\{([^}]{1,24})\}|([A-Za-z0-9ÄÖÜäöü]{1,8}))/g;
 
 /** Zeilen, die einzeln stehen sollen (text_lines im Generator). */
 export function textLines(text) {
@@ -391,7 +391,7 @@ export function parseColorSpec(spec) {
 // Formel im Text wie bei Pandoc: $ direkt vor und hinter dem Inhalt, dahinter
 // keine Ziffer – „5 $“ und „$5 bis $10“ bleiben Text, \$ ist ein Dollarzeichen.
 export const INLINE_MATH_SOURCE = '\\$(?<math>[^\\s$](?:[^$\\n]*?[^\\s$\\\\])?)\\$(?!\\d)';
-const INLINE_RE = new RegExp([
+export const INLINE_RE = new RegExp([
   '\\\\(?<esc>[\\\\*`\\[\\]^~+{}$])',
   '`(?<code>[^`\\n]+)`',
   INLINE_MATH_SOURCE,

@@ -126,7 +126,7 @@ Entscheidungen vom 01.11.2026:
 
 Phasen:
 - [x] 9.1 Formeln in LaTeX: Temml unter `src/vendor/temml/`, Baustein `formula` mit `latex` (StarMath `math` wird weiter gelesen), Umwandler StarMath → LaTeX (beim Bearbeiten), MathML im Druckauftrag (`withFormulaMathml`, auch `inlineMathml`), Renderer übersetzt es in StarMath fürs Formelobjekt (Unbekanntes bleibt MathML), Formeldialog mit Vorschau, Inline-Formeln `$…$` (Editor: beim schließenden $ gesetzt, Doppelklick = Text), KI-Prompt und PDF-Import liefern LaTeX
-- [ ] 9.2 Schema (Tiptap-Extensions) und Konverter Spec ⇄ ProseMirror-JSON, Hin- und Rückweg über alle vorhandenen Dokumente getestet; `docs/SCHEMA.md` und JSON Schema
+- [x] 9.2 Schema und Konverter Spec ⇄ ProseMirror-JSON: `src/doc/pm-schema.js`, `pm-convert.js`, `pm-tiptap.js`, `docs/SCHEMA.md`, `docs/pm-doc.schema.json`, Tiptap gebündelt (`src/vendor/tiptap/`, noch ohne Tabellen-Extension). Geprüft mit `scripts/check-doc-pm.mjs` von LearningModules gegen 509 Dokumente aus dem Lehrer-Backup der FESCloud (19.630 Bausteine); der Druck über den Renderer ist dabei nicht geprüft.
 - [ ] 9.3 Markdown ⇄ ProseMirror-JSON (fenced divs); KI-Prompt liefert Markdown; `docs/MARKDOWN.md`
   - [x] Vorgezogen: Einfügen aus der Zwischenablage (`src/doc/paste.js`, markdown-it unter `src/vendor/`): Text, Markdown und Webseiten über HTML → Spec, ohne fremde Stile. Noch ohne fenced divs und Spans.
 - [ ] 9.4 Editor auf Tiptap (eigene Freischaltung, alter Editor parallel); Abnahme gegen `docs/dokumente.md` von LearningModules; Markdown-Reiter statt YAML

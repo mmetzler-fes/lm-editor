@@ -1,0 +1,958 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/mmetzler-fes/lm-editor/docs/pm-doc.schema.json",
+  "title": "Dokument (ProseMirror-JSON) – siehe docs/SCHEMA.md",
+  "description": "Erzeugt aus src/doc/pm-schema.js. Prüft Knoten, Felder und Auszeichnungen; welche Knoten worin stehen dürfen, regelt der content-Ausdruck des Schemas.",
+  "allOf": [
+    {
+      "$ref": "#/$defs/node"
+    },
+    {
+      "properties": {
+        "type": {
+          "const": "doc"
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "node": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/node_doc"
+        },
+        {
+          "$ref": "#/$defs/node_text"
+        },
+        {
+          "$ref": "#/$defs/node_hardBreak"
+        },
+        {
+          "$ref": "#/$defs/node_inlineMath"
+        },
+        {
+          "$ref": "#/$defs/node_paragraph"
+        },
+        {
+          "$ref": "#/$defs/node_heading"
+        },
+        {
+          "$ref": "#/$defs/node_note"
+        },
+        {
+          "$ref": "#/$defs/node_bulletList"
+        },
+        {
+          "$ref": "#/$defs/node_orderedList"
+        },
+        {
+          "$ref": "#/$defs/node_listItem"
+        },
+        {
+          "$ref": "#/$defs/node_codeBlock"
+        },
+        {
+          "$ref": "#/$defs/node_box"
+        },
+        {
+          "$ref": "#/$defs/node_solution"
+        },
+        {
+          "$ref": "#/$defs/node_columns"
+        },
+        {
+          "$ref": "#/$defs/node_column"
+        },
+        {
+          "$ref": "#/$defs/node_table"
+        },
+        {
+          "$ref": "#/$defs/node_tableRow"
+        },
+        {
+          "$ref": "#/$defs/node_tableCell"
+        },
+        {
+          "$ref": "#/$defs/node_tableHeader"
+        },
+        {
+          "$ref": "#/$defs/node_image"
+        },
+        {
+          "$ref": "#/$defs/node_group"
+        },
+        {
+          "$ref": "#/$defs/node_formula"
+        },
+        {
+          "$ref": "#/$defs/node_karo"
+        },
+        {
+          "$ref": "#/$defs/node_spacer"
+        },
+        {
+          "$ref": "#/$defs/node_pagebreak"
+        },
+        {
+          "$ref": "#/$defs/node_quiz"
+        },
+        {
+          "$ref": "#/$defs/node_rawBlock"
+        }
+      ]
+    },
+    "mark": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "type"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "link"
+            },
+            "attrs": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "href": {}
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "type"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "textStyle"
+            },
+            "attrs": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "color": {},
+                "fontSize": {}
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "type"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "highlight"
+            },
+            "attrs": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "color": {}
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "type"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "bold"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "type"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "italic"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "type"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "underline"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "type"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "strike"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "type"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "code"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "type"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "superscript"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "type"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "subscript"
+            }
+          }
+        }
+      ]
+    },
+    "node_doc": {
+      "type": "object",
+      "required": [
+        "type"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "doc"
+        },
+        "attrs": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "meta": {}
+          }
+        },
+        "content": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/node"
+          }
+        }
+      }
+    },
+    "node_text": {
+      "type": "object",
+      "required": [
+        "type",
+        "text"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "text"
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1
+        },
+        "marks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/mark"
+          }
+        }
+      }
+    },
+    "node_hardBreak": {
+      "type": "object",
+      "required": [
+        "type"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "hardBreak"
+        },
+        "marks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/mark"
+          }
+        }
+      }
+    },
+    "node_inlineMath": {
+      "type": "object",
+      "required": [
+        "type"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "inlineMath"
+        },
+        "attrs": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "latex": {}
+          }
+        },
+        "marks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/mark"
+          }
+        }
+      }
+    },
+    "node_paragraph": {
+      "type": "object",
+      "required": [
+        "type"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "paragraph"
+        },
+        "attrs": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "id": {},
+            "joined": {},
+            "align": {},
+            "indent": {},
+            "firstLine": {},
+            "spaceBefore": {},
+            "spaceAfter": {},
+            "lineHeight": {},
+            "extra": {}
+          }
+        },
+        "content": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/node"
+          }
+        }
+      }
+    },
+    "node_heading": {
+      "type": "object",
+      "required": [
+        "type"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "heading"
+        },
+        "attrs": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "id": {},
+            "role": {},
+            "level": {},
+            "extra": {}
+          }
+        },
+        "content": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/node"
+          }
+        }
+      }
+    },
+    "node_note": {
+      "type": "object",
+      "required": [
+        "type"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "note"
+        },
+        "attrs": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "id": {},
+            "extra": {}
+          }
+        },
+        "content": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/node"
+          }
+        }
+      }
+    },
+    "node_bulletList": {
+      "type": "object",
+      "required": [
+        "type"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "bulletList"
+        },
+        "attrs": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "id": {},
+            "marker": {},
+            "numbering": {},
+            "lineHeight": {},
+            "spaceBefore": {},
+            "spaceAfter": {},
+            "extra": {}
+          }
+        },
+        "content": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/node"
+          }
+        }
+      }
+    },
+    "node_orderedList": {
+      "type": "object",
+      "required": [
+        "type"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "orderedList"
+        },
+        "attrs": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "id": {},
+            "marker": {},
+            "numbering": {},
+            "lineHeight": {},
+            "spaceBefore": {},
+            "spaceAfter": {},
+            "extra": {}
+          }
+        },
+        "content": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/node"
+          }
+        }
+      }
+    },
+    "node_listItem": {
+      "type": "object",
+      "required": [
+        "type"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "listItem"
+        },
+        "content": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/node"
+          }
+        }
+      }
+    },
+    "node_codeBlock": {
+      "type": "object",
+      "required": [
+        "type"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "codeBlock"
+        },
+        "attrs": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "id": {},
+            "caption": {},
+            "size": {},
+            "file": {},
+            "extra": {}
+          }
+        },
+        "content": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/node"
+          }
+        }
+      }
+    },
+    "node_box": {
+      "type": "object",
+      "required": [
+        "type"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "box"
+        },
+        "attrs": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "id": {},
+            "title": {},
+            "shaded": {},
+            "extra": {}
+          }
+        },
+        "content": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/node"
+          }
+        }
+      }
+    },
+    "node_solution": {
+      "type": "object",
+      "required": [
+        "type"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "solution"
+        },
+        "attrs": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "id": {},
+            "title": {},
+            "extra": {}
+          }
+        },
+        "content": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/node"
+          }
+        }
+      }
+    },
+    "node_columns": {
+      "type": "object",
+      "required": [
+        "type"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "columns"
+        },
+        "attrs": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "id": {},
+            "extra": {}
+          }
+        },
+        "content": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/node"
+          }
+        }
+      }
+    },
+    "node_column": {
+      "type": "object",
+      "required": [
+        "type"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "column"
+        },
+        "attrs": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "id": {},
+            "width": {},
+            "extra": {}
+          }
+        },
+        "content": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/node"
+          }
+        }
+      }
+    },
+    "node_table": {
+      "type": "object",
+      "required": [
+        "type"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "table"
+        },
+        "attrs": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "id": {},
+            "caption": {},
+            "widths": {},
+            "heights": {},
+            "lineWidth": {},
+            "lineStyle": {},
+            "lineColor": {},
+            "width": {},
+            "position": {},
+            "spaceBefore": {},
+            "spaceAfter": {},
+            "padding": {},
+            "align": {},
+            "valign": {},
+            "border": {},
+            "extra": {}
+          }
+        },
+        "content": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/node"
+          }
+        }
+      }
+    },
+    "node_tableRow": {
+      "type": "object",
+      "required": [
+        "type"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "tableRow"
+        },
+        "attrs": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "header": {}
+          }
+        },
+        "content": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/node"
+          }
+        }
+      }
+    },
+    "node_tableCell": {
+      "type": "object",
+      "required": [
+        "type"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "tableCell"
+        },
+        "attrs": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "colspan": {},
+            "rowspan": {},
+            "align": {},
+            "valign": {},
+            "background": {},
+            "images": {},
+            "beside": {},
+            "extra": {}
+          }
+        },
+        "content": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/node"
+          }
+        }
+      }
+    },
+    "node_tableHeader": {
+      "type": "object",
+      "required": [
+        "type"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "tableHeader"
+        },
+        "attrs": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "colspan": {},
+            "rowspan": {},
+            "align": {},
+            "valign": {},
+            "background": {},
+            "images": {},
+            "beside": {},
+            "extra": {}
+          }
+        },
+        "content": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/node"
+          }
+        }
+      }
+    },
+    "node_image": {
+      "type": "object",
+      "required": [
+        "type"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "image"
+        },
+        "attrs": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "id": {},
+            "src": {},
+            "file": {},
+            "alt": {},
+            "caption": {},
+            "width": {},
+            "float": {},
+            "align": {},
+            "border": {},
+            "extra": {}
+          }
+        }
+      }
+    },
+    "node_group": {
+      "type": "object",
+      "required": [
+        "type"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "group"
+        },
+        "attrs": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "id": {},
+            "items": {},
+            "ratio": {},
+            "width": {},
+            "align": {},
+            "border": {},
+            "caption": {},
+            "extra": {}
+          }
+        }
+      }
+    },
+    "node_formula": {
+      "type": "object",
+      "required": [
+        "type"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "formula"
+        },
+        "attrs": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "id": {},
+            "latex": {},
+            "math": {},
+            "align": {},
+            "extra": {}
+          }
+        }
+      }
+    },
+    "node_karo": {
+      "type": "object",
+      "required": [
+        "type"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "karo"
+        },
+        "attrs": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "id": {},
+            "lines": {},
+            "width": {},
+            "pattern": {},
+            "extra": {}
+          }
+        }
+      }
+    },
+    "node_spacer": {
+      "type": "object",
+      "required": [
+        "type"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "spacer"
+        },
+        "attrs": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "id": {},
+            "lines": {},
+            "extra": {}
+          }
+        }
+      }
+    },
+    "node_pagebreak": {
+      "type": "object",
+      "required": [
+        "type"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "pagebreak"
+        },
+        "attrs": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "id": {},
+            "extra": {}
+          }
+        }
+      }
+    },
+    "node_quiz": {
+      "type": "object",
+      "required": [
+        "type"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "quiz"
+        },
+        "attrs": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "id": {},
+            "module": {},
+            "title": {},
+            "scale": {},
+            "extra": {}
+          }
+        }
+      }
+    },
+    "node_rawBlock": {
+      "type": "object",
+      "required": [
+        "type"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "rawBlock"
+        },
+        "attrs": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "block": {}
+          }
+        }
+      }
+    }
+  }
+}

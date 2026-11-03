@@ -69,8 +69,8 @@ und zwei Quizzen, **▦ Neues Karoblatt** ein leeres Blatt, **📂 .zlm öffnen*
 eine Datei (oder sie auf die Seite ziehen): eine `.zlm`, ein Writer-Dokument
 (`.odt`, wird zu Bausteinen), Folien aus Impress oder Draw (`.odp`, `.odg`,
 je Folie eine Seite) oder ein PDF (wird zu Bildern seiner Seiten) –
-Übernommenes speichert der Editor als neue `.zlm`. Im Editor schreibt der Stift, der
-Finger scrollt und bedient die Quizze; **💾 Speichern** schreibt die `.zlm`.
+Übernommenes speichert der Editor als neue `.zlm`. Im Editor schreiben Stift und Finger, zwei
+Finger scrollen, ein Finger bedient die Quizze; **💾 Speichern** schreibt die `.zlm`.
 Jede Änderung bleibt außerdem als Entwurf im Browser (**Zuletzt geöffnet**).
 **🖨** druckt das Blatt oder speichert es als PDF – Arbeits- oder Lösungsblatt,
 mit oder ohne Beschriftung.

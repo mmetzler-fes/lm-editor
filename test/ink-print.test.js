@@ -9,6 +9,15 @@ describe('Druck über den Renderer: applyInkToSpec', () => {
   ] };
   const ink = { svg: '<svg/>', x: 10, y: -2, w: 50, h: 20 };
 
+  it('volle Breite eines Felds: im Querformat erst ab 25 cm', () => {
+    const k = { content: [{ type: 'karo', lines: 2, id: 'a' }, { type: 'karo', lines: 2, id: 'b' }] };
+    const hoch = applyInkToSpec(k, { karo: [{ path: '0', width: 20 }] });
+    expect(hoch.content[0].width).toBe(undefined);
+    const quer = applyInkToSpec({ ...k, orientation: 'landscape' }, { karo: [{ path: '0', width: 20 }, { path: '1', width: 25 }] });
+    expect(quer.content[0].width).toBe('20cm');
+    expect(quer.content[1].width).toBe(undefined);
+  });
+
   it('Striche und Feldmaße an den Bausteinen, Original unverändert', () => {
     const out = applyInkToSpec(spec, {
       overlays: [{ path: '1.1', ...ink }, { path: '1.0', ...ink }],

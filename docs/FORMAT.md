@@ -53,7 +53,8 @@ mit dem Hinweis, das Programm zu aktualisieren.
   `pos2x0` für `content[2].blocks[0]`), unter der ältere Striche als `p:3`
   bzw. `p:2.0` gespeichert sind, sonst eine neue zufällige.
 - **`orientation`** auf oberster Ebene: `portrait` (A4 hoch, Vorgabe) oder
-  `landscape` (A4 quer). Die Satzbreite ist dann 17 cm bzw. 25,7 cm.
+  `landscape` (A4 quer). Die Satzbreite ist dann 16,5 cm bzw. 25,2 cm.
+  Im Dokument-Editor von LearningModules setzt die gewählte Druckvorlage das Feld.
 - **Verweise ins Archiv**: `image.src: "media/schaltung.png"` (ebenso
   `group.items[].src` einer Bildgruppe),
   `quiz.module: "<id>"` → `modules/<id>.json`.

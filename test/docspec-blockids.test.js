@@ -49,3 +49,17 @@ test('Schreibfeld: Breite und Muster', async () => {
   ]);
   assert.deepEqual(validateDocSpec({ content: [{ type: 'karo', lines: 4, width: '8cm', pattern: 'leer' }] }), []);
 });
+
+test('„ganze Breite“: Schreibfeld mit 16,5 cm hat keine feste Breite, 8 cm schon', () => {
+  const html = renderDocSpecHtml({ content: [{ type: 'karo', lines: 2, width: '16.5cm' }, { type: 'karo', lines: 2, width: '8cm' }] });
+  assert.doesNotMatch(html, /width:16\.5cm/);
+  assert.match(html, /width:8cm/);
+});
+
+test('„ganze Breite“: Bild und Zeichenrahmen mit 16,5 cm tragen die Klasse fürs Querformat', () => {
+  const src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+  const html = renderDocSpecHtml({ content: [{ type: 'image', src, width: '16.5cm' }, { type: 'image', src, width: '8cm' },
+    { type: 'group', width: '16.5cm', items: [{ src, x: 0, y: 0, w: 50, h: 50 }] }] });
+  assert.equal(html.match(/ds-image-full/g).length, 1);
+  assert.match(html, /ds-group-full/);
+});

@@ -82,11 +82,15 @@ export function tableLineStyle(block) {
 }
 const tableLengthOk = (v) => v === null || v === '' || TABLE_LENGTH_RE.test(String(v).trim());
 
+/** „Ganze Breite“ (16,5 cm, A4 hoch) füllt im Querformat die Zeile – wie im Renderer (FULL_WIDTH_CM). */
+const isFullWidth = (width) => /^16\.50?cm$/.test(String(width ?? '').trim());
+
 /** Breite eines Schreibfelds in cm (auf 0,5 cm gerundet, 1–25,5), null = Satzbreite. */
 export function karoWidthCm(block) {
   const m = KARO_WIDTH_RE.exec(String(block?.width ?? '').trim());
   if (!m) return null;
   const cm = Math.round(Number(m[1]) * 2) / 2;
+  if (cm === 16.5) return null; // „ganze Breite“ von A4 hoch: folgt der Vorlage, wie im Renderer
   return Math.min(KARO_MAX_WIDTH_CM, Math.max(1, cm));
 }
 
@@ -1098,7 +1102,7 @@ function renderBlockHtml(block, ctx) {
         : `<span class="ds-missing">Bild ${esc(block.file ?? '')}</span>`;
       const caption = isText(block.caption) ? `<figcaption>${richText(block.caption)}</figcaption>` : '';
       const align = block.float === undefined && BLOCK_ALIGNS.includes(block.align) && block.align !== 'left' ? ` ds-align-${block.align}` : '';
-      const cls = `ds-image${block.border ? ' ds-image-border' : ''}${FLOATS.includes(block.float) ? ` ds-image-${block.float}` : ''}${align}`;
+      const cls = `ds-image${isFullWidth(block.width) ? ' ds-image-full' : ''}${block.border ? ' ds-image-border' : ''}${FLOATS.includes(block.float) ? ` ds-image-${block.float}` : ''}${align}`;
       return `<figure class="${cls}">${img}${caption}</figure>`;
     }
     case 'group': {
@@ -1117,7 +1121,7 @@ function renderBlockHtml(block, ctx) {
         return `<div class="ds-group-text" style="${pos(it)};${look}">${String(it.text).split('\n').map((l) => richText(l) || '&nbsp;').join('<br>')}</div>`;
       }).join('');
       const caption = isText(block.caption) ? `<figcaption>${richText(block.caption)}</figcaption>` : '';
-      const cls = `ds-group${BLOCK_ALIGNS.includes(block.align) && block.align !== 'left' ? ` ds-align-${block.align}` : ''}${block.border ? ' ds-group-border' : ''}`;
+      const cls = `ds-group${isFullWidth(block.width) ? ' ds-group-full' : ''}${BLOCK_ALIGNS.includes(block.align) && block.align !== 'left' ? ` ds-align-${block.align}` : ''}${block.border ? ' ds-group-border' : ''}`;
       return `<figure class="${cls}"><div class="ds-group-box" style="${width}aspect-ratio:1 / ${r(ratio)}">${items}</div>${caption}</figure>`;
     }
     case 'table': {

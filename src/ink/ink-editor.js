@@ -4,7 +4,7 @@ import {
   isBox, resizedBox, corners, MM, textBox as textFrame,
 } from './ink-geometry.js';
 import { rulerSvg, rulerHandles } from './ink-ruler.js';
-import { svgEl, itemSvg, fieldSvg, shapeSvg, inkSvgFor, inkSvgBox } from './ink-view.js';
+import { svgEl, itemSvg, fieldSvg, shapeSvg, inkSvgFor, inkSvgBox, fieldMaxCm } from './ink-view.js';
 import {
   FILL_COLORS, DASHES, SHAPE_WIDTHS, usesPoints, shapeCorners, rotateHandle, resizedShape, rotatedShape,
   normalizedAngle, toPolygon, shapeFromDrag, shapeCenter, shapeBox, isClosed, SHAPE_TEXT_SIZE, rotatePoint,
@@ -945,7 +945,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
 
   const BLOCK_PATTERNS = { karo: '▦ Karo', linien: '☰ Linien', leer: '▢ Leer', frei: '◌ Unsichtbar' };
   const FIELD_MIN_CM = 2;
-  const FIELD_MAX_CM = 16.5;
+  const FIELD_MAX_CM = fieldMaxCm(!!paper?.landscape);
 
   /** Maße eines Schreibfelds im Dokument (beim ersten Mal am Element abgelegt). */
   function fieldBase(karo) {

@@ -24,6 +24,14 @@
   overflow-wrap: break-word;
 }
 .lm-paper.lm-landscape { width: 29.7cm; min-height: 21cm; }
+/* A4 quer wie im Druck (use_template_width im Renderer): Schreibfelder ohne Breite,
+   Tabellen und Bilder in „ganzer Breite“ (16,5 cm) nutzen die ganze Zeile. */
+.lm-landscape .docspec .ds-karo { max-width: 100%; }
+.lm-landscape .docspec .ds-table:not([style*="width"]) { width: 100%; }
+.lm-landscape .docspec .ds-image-full > img,
+.lm-landscape .docspec .ds-group-full > .ds-group-box { width: 100% !important; }
+/* Schreibfeld in einer Zelle: Die Tabelle hat sonst nichts, woran sie ihre Breite misst. */
+.lm-paper .docspec .ds-table:has(.ds-karo):not([style*="width"]) { width: 100%; }
 .lm-paper .docspec { line-height: 1.15; overflow-wrap: break-word; }
 .lm-paper code, .lm-paper pre, .lm-paper kbd { font-family: 'LM Mono', 'Liberation Mono', 'Courier New', monospace; }
 .lm-paper .ds-karo { position: relative; }

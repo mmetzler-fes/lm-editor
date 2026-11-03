@@ -58,7 +58,7 @@ nie, sie ist nur das Datenmodell darunter.
 - [x] Werkzeug „Bedienen“; der Finger bedient, solange er nicht zeichnet – eingebettete Quizze bleiben benutzbar
 - [x] in LearningModules: Notizbuch-Vorschau und Schüleransicht öffnen das Dokument; PDF bleibt als Hintergrund wählbar
 - [x] A4 quer in der Ansicht (`spec.orientation: landscape`)
-- [ ] A4 hoch/quer im Dokument-Editor umschalten – *Stand: Das Seitenformat kommt heute aus der Druckvorlage (.ott, z. B. A4 quer); Vorschau und Druck folgen ihr. `spec.orientation` gilt nur für die Ansicht und den Stift; ein eigener Umschalter fehlt, ebenso der Abgleich mit der Vorlage*
+- [x] A4 hoch/quer im Dokument-Editor über die Druckvorlage: Vorschau und Druck folgen ihr sofort, beim Speichern setzt der Editor `spec.orientation` – so folgen Ansicht, Stift und `.zlm`. Eine Vorlage, die erst am Ordner geändert wird, erreicht Ansicht und Stift beim nächsten Speichern des Dokuments
 - [ ] worksheet-renderer: Querformat (Seitenvorlage quer, Kopfzeile breiter) – *Stand: gelingt über eine Vorlage im Querformat; `spec.orientation` liest der Renderer nicht*
 - [x] Seitenumbrüche im Blatt anzeigen (wo der Druck umbricht): `src/doc/page-breaks.js`, im Dokument-Editor von LearningModules auf einem Blatt in Größe der Druckvorlage mit Seitenzahlen – *in der Standalone-App und im Stift-Editor noch nicht*
 - [x] Schreibfeld (Block `karo`): Breite (`width`) und Muster (`pattern`: Karo, Linien, leer) – im Renderer, in der Anzeige, im Dokument-Editor von LearningModules und im Stift-Editor (Anfasser rechts/Ecke, Umschalter beim Auswählen)
@@ -129,7 +129,7 @@ Phasen:
 - [x] 9.2 Schema und Konverter Spec ⇄ ProseMirror-JSON: `src/doc/pm-schema.js`, `pm-convert.js`, `pm-tiptap.js`, `docs/SCHEMA.md`, `docs/pm-doc.schema.json`, Tiptap gebündelt (`src/vendor/tiptap/`, noch ohne Tabellen-Extension). Geprüft mit `scripts/check-doc-pm.mjs` von LearningModules gegen 509 Dokumente aus dem Lehrer-Backup der FESCloud (19.630 Bausteine), dazu die `.odt` des Renderers aus Original und Umwandlung verglichen: Inhalt gleich, zwei Layout-Unterschiede: 0,35 cm Abstand in rund 50 Dokumenten, Spaltenbreiten in 9 Dateien (`docs/SCHEMA.md`; Spaltenbreiten für 9.6 vormerken).
 - [x] 9.3 Markdown ⇄ ProseMirror-JSON (`src/doc/pm-markdown.js`, `docs/MARKDOWN.md`): fenced divs, Spans, `x^2^`, `CO~2~`; jede Zeile wird beim Schreiben wieder gelesen. Gegen 509 Dokumente geprüft: dieselbe Spec zurück. KI-Prompt liefert Markdown, der Import-Dialog liest es (auch `.md`), Einfügen versteht die Schreibweise.
   - [x] Vorgezogen: Einfügen aus der Zwischenablage (`src/doc/paste.js`, markdown-it unter `src/vendor/`): Text, Markdown und Webseiten über HTML → Spec, ohne fremde Stile.
-- [ ] 9.4 Editor auf Tiptap (eigene Freischaltung, alter Editor parallel); Abnahme gegen `docs/dokumente.md` von LearningModules; Markdown-Reiter statt YAML
+- [ ] 9.4 Editor auf Tiptap (eigene Freischaltung, alter Editor parallel); Abnahme gegen `docs/dokumente.md` von LearningModules, ausdrücklich auch Vorlage hoch ⇄ quer (Blatt, Schreibfelder, `orientation` in `attrs.meta`); Markdown-Reiter statt YAML
 - [ ] 9.5 Speicherformat: `document.json` mit ProseMirror-JSON, `.zlm` Version 2 (Version 1 wird hochgestuft), Migration in LearningModules mit Sicherung
 - [ ] 9.6 worksheet-renderer liest ProseMirror-JSON direkt
 - [ ] 9.7 Aufgabengenerator (mmetzler1): Markdown als Eingabe

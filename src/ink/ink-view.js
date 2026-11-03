@@ -12,7 +12,9 @@ import { shapeCenter, arrowHead, dashArray, shapeTextLayout } from './ink-shapes
 
 const TEXT_SIZE = 13;   // wie im Editor
 const PX_PT = 0.75;     // 1 CSS-Pixel = 0,75 pt
-const FIELD_MAX_CM = 16.5;
+
+/** Volle Breite eines Schreibfelds im Stift-Editor: die Satzbreite im 0,5-cm-Raster, A4 hoch bzw. quer. */
+export const fieldMaxCm = (landscape) => (landscape ? 25 : 16.5);
 
 export const svgEl = (tag, attrs) => {
   const el = document.createElementNS('http://www.w3.org/2000/svg', tag);
@@ -278,7 +280,7 @@ export async function showInkView(view, stand, { landscape = false } = {}) {
     karo.dataset.viewClass = karo.className;
     const base = Math.round(parseFloat(karo.style.height) / 0.5) || 1;
     if (entry.karoLines) karo.style.height = `${Math.max(base, entry.karoLines) * 0.5}cm`;
-    if (entry.karoWidth && entry.karoWidth < FIELD_MAX_CM) karo.style.width = `${entry.karoWidth}cm`;
+    if (entry.karoWidth && entry.karoWidth < fieldMaxCm(landscape)) karo.style.width = `${entry.karoWidth}cm`;
     if (entry.karoPattern) {
       karo.classList.remove('ds-karo-linien', 'ds-karo-leer', 'ds-karo-frei');
       if (entry.karoPattern !== 'karo') karo.classList.add(`ds-karo-${entry.karoPattern}`);

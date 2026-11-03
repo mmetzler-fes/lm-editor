@@ -37,11 +37,11 @@ function blockAt(content, path) {
   return at.list[at.i] && typeof at.list[at.i] === 'object' ? at.list[at.i] : null;
 }
 
-/** Maße eines Schreibfelds aus der Ebene übernehmen (Breite 16,5 = volle Breite). */
-function applyField(block, { lines, width, pattern } = {}) {
+/** Maße eines Schreibfelds aus der Ebene übernehmen (Satzbreite = volle Breite: 16,5 cm, quer 25 cm). */
+function applyField(block, { lines, width, pattern } = {}, fullCm = 16.5) {
   if (Number.isInteger(lines) && lines >= 1) block.lines = Math.min(60, lines);
   if (width) {
-    if (width >= 16.5) delete block.width;
+    if (width >= fullCm) delete block.width;
     else block.width = `${Math.round(width * 10) / 10}cm`;
   }
   if (pattern) {
@@ -60,11 +60,12 @@ const inkOf = (o) => ({ svg: o.svg, x: o.x, y: o.y, w: o.w, h: o.h });
  * Das Original bleibt unverändert.
  */
 export function applyInkToSpec(spec, { karo = [], overlays = [], inserts = [] } = {}) {
+  const fullCm = spec?.orientation === 'landscape' ? 25 : 16.5;
   const out = structuredClone(spec && typeof spec === 'object' ? spec : { content: [] });
   if (!Array.isArray(out.content)) out.content = [];
   for (const k of karo) {
     const b = blockAt(out.content, k.path);
-    if (b?.type === 'karo') applyField(b, k);
+    if (b?.type === 'karo') applyField(b, k, fullCm);
   }
   for (const o of overlays) {
     if (o.insert) continue;
@@ -75,7 +76,7 @@ export function applyInkToSpec(spec, { karo = [], overlays = [], inserts = [] } 
   // so verschieben frühere Einfügungen die späteren nicht.
   const targets = inserts.map((ins, n) => {
     const block = { type: 'karo', lines: 1 };
-    applyField(block, ins);
+    applyField(block, ins, fullCm);
     const ink = overlays.find((o) => o.insert === ins.id);
     if (ink) block.ink = inkOf(ink);
     if (ins.after === null) return { list: out.content, i: -1, n, block };

@@ -59,6 +59,11 @@ describe('Spec ⇄ ProseMirror-JSON', () => {
     expect(back.content.find((b) => b.type === 'image').source).toBe('Quelle');
     expect(back.content.find((b) => b.id === 'text0001').text).toBe('Eins\n\nZwei');
   });
+  it('Aufgabe mit leerem Text bekommt keinen leeren Absatz (Ansicht und Druck bleiben, wie sie sind)', () => {
+    const task = { type: 'task', title: 'T', text: '' };
+    expect(specToPm({ content: [task] }).content.map((n) => n.type)).toEqual(['heading']);
+    expect(pmToSpec(specToPm({ content: [task] })).content).toEqual([task]);
+  });
   it('unbekannter Baustein bleibt erhalten', () => {
     const block = { type: 'zukunft', wert: [1, 2] };
     expect(pmToSpec(specToPm({ content: [block] })).content).toEqual([block]);

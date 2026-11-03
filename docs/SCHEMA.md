@@ -106,8 +106,19 @@ Das Blatt sieht gleich aus, die Schreibweise wird einheitlich:
 `.json`/`.yaml`: gleiches Aussehen, alle Felder erhalten, passt zum Schema,
 zweiter Durchlauf gleich.
 
-Nicht geprüft: der Druck über den Renderer (.odt/.pdf) – er liest bis Phase 9.6
-die Spec; die flache Form erzeugt der Editor schon heute.
+Gegen das Lehrer-Backup (509 Dokumente) wurde zusätzlich der Druck verglichen:
+der Renderer erzeugt je eine `.odt` aus Original und umgewandelter Fassung,
+Zeichen für Zeichen mit ihrer Auszeichnung, als Arbeits- und Lösungsblatt.
+Bilder waren dabei durch ein Testbild ersetzt; PDF und Seitenumbrüche wurden
+nicht verglichen. Einziger Unterschied: siehe unten.
+
+### Bekannter Unterschied im Druck
+
+Steht vor einer Aufgabe eine Aufzählung und hat die Aufgabe ein `text`-Feld, setzt
+der Renderer bei der verschachtelten Form 0,35 cm Luft über diesen Text
+(`AB_AbstandOben`) – gedacht für Absätze direkt hinter einer Liste, hier greift
+die Regel über die Überschrift hinweg. In der flachen Form steht die Überschrift
+dazwischen, die Luft entfällt. Der Editor speichert schon heute flach.
 
 ## Offen für Phase 9.5
 

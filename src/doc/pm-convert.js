@@ -228,7 +228,9 @@ function blockToPm(b) {
       const title = b.title !== undefined ? b.title : b.text;
       const attrs = { ...attrsOf('heading', b, ['title', 'text', 'blocks']), role: type };
       const out = [node('heading', attrs, textToInline(title ?? ''))];
-      if (b.title !== undefined && isText(b.text)) out.push(...paragraphNodes(b.text));
+      // Leerer Text: Die Ansicht zeigt einen leeren Absatz, der Druck keinen – bleibt am Baustein, wie er ist.
+      if (b.title !== undefined && b.text === '') attrs.extra = { ...attrs.extra, text: '' };
+      else if (b.title !== undefined && isText(b.text)) out.push(...paragraphNodes(b.text));
       return [...out, ...blocksToPm(b.blocks)];
     }
     case 'heading':

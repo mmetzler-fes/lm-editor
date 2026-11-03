@@ -3,10 +3,16 @@
 // beim Kopieren in data-pm-attrs; das Aussehen kommt aus den Stilen der Bearbeitungsfläche.
 
 import { Extension, Node, Mark, getSchema } from '../vendor/tiptap/tiptap.mjs';
-import { BASE_FONT_PT, HIGHLIGHTS, TEXT_COLORS, paraStyle } from './docspec.js';
+import { BASE_FONT_PT, CELL_BACKGROUNDS, HIGHLIGHTS, TEXT_COLORS, paraStyle } from './docspec.js';
 import { PM_NODES, PM_MARKS, NODES_WITH_EXTRA } from './pm-schema.js';
 
 const paragraphStyle = (a) => [a.align && a.align !== 'left' ? `text-align:${a.align}` : '', paraStyle(a)].filter(Boolean).join(';');
+
+const cellAttrs = (a) => ({
+  colspan: a.colspan > 1 ? a.colspan : null,
+  rowspan: a.rowspan > 1 ? a.rowspan : null,
+  style: [CELL_BACKGROUNDS[a.background] ? `background:${CELL_BACKGROUNDS[a.background]}` : '', a.align ? `text-align:${a.align}` : '', a.valign ? `vertical-align:${a.valign}` : ''].filter(Boolean).join(';') || null,
+});
 
 // Tag und Merkmale je Knoten; 0 = hier steht der Inhalt.
 const VIEW = {
@@ -20,15 +26,15 @@ const VIEW = {
   bulletList: (a) => ['ul', { 'data-marker': a.marker || null }, 0],
   orderedList: (a) => ['ol', { 'data-numbering': a.numbering || null }, 0],
   listItem: () => ['li', {}, 0],
-  codeBlock: () => ['pre', {}, ['code', {}, 0]],
+  codeBlock: () => ['pre', { spellcheck: 'false' }, ['code', {}, 0]],
   box: (a) => ['div', { class: 'ws-box', 'data-title': a.title || null }, 0],
   solution: () => ['div', { class: 'ds-pm-solution' }, 0],
   columns: () => ['div', { class: 'ds-pm-columns' }, 0],
   column: (a) => ['div', { class: 'ds-pm-column', style: a.width ? `flex:0 0 ${a.width}` : null }, 0],
   table: () => ['table', {}, ['tbody', {}, 0]],
   tableRow: () => ['tr', {}, 0],
-  tableCell: (a) => ['td', { colspan: a.colspan > 1 ? a.colspan : null, rowspan: a.rowspan > 1 ? a.rowspan : null, style: a.background ? `background:${a.background}` : null }, 0],
-  tableHeader: (a) => ['th', { colspan: a.colspan > 1 ? a.colspan : null, rowspan: a.rowspan > 1 ? a.rowspan : null, style: a.background ? `background:${a.background}` : null }, 0],
+  tableCell: (a) => ['td', cellAttrs(a), 0],
+  tableHeader: (a) => ['th', cellAttrs(a), 0],
 };
 
 const MARK_VIEW = {

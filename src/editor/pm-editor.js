@@ -7,9 +7,9 @@
 import {
   Editor, Extension, Fragment, NodeSelection, Plugin, PluginKey, PmNode, Slice, TextSelection, InputRule,
   history, undo, redo, gapCursor, dropCursor, tableEditing, goToNextCell, isInTable,
-  addRowBefore, addRowAfter, addColumnBefore, addColumnAfter, deleteRow, deleteColumn, deleteTable, mergeCells, splitCell,
+  addRowBefore, addRowAfter, addColumnBefore, addColumnAfter, deleteRow, deleteColumn, deleteTable, mergeCells, splitCell, TableMap, CellSelection,
 } from '../vendor/tiptap/tiptap.mjs';
-import { KARO_MAX_WIDTH_CM, INLINE_MATH_SOURCE, latexToMathml } from '../doc/docspec.js';
+import { KARO_MAX_WIDTH_CM, INLINE_MATH_SOURCE, latexToMathml, tableLineStyle } from '../doc/docspec.js';
 import { widgetHtml } from '../doc/docspec-html.js';
 import { isInlinePaste, pasteToSpec } from '../doc/paste.js';
 import { pmExtensions } from '../doc/pm-tiptap.js';
@@ -97,12 +97,14 @@ function moveBlock(editor, dir) {
 function atomView(host) {
   return ({ node, getPos, editor }) => {
     let current = node;
+    let bar = null;
     const dom = document.createElement('div');
     const paint = () => {
       const t = document.createElement('div');
       t.innerHTML = widgetHtml(blockOfNode(current));
       const w = t.firstElementChild;
       dom.className = w.className;
+      if (bar) dom.classList.add('ds-widget-selected');
       dom.title = w.title;
       dom.contentEditable = 'false';
       dom.dataset.pmAtom = current.type.name;
@@ -118,7 +120,6 @@ function atomView(host) {
       else moveBlock(editor, what === 'up' ? -1 : 1);
     };
     dom.addEventListener('dblclick', (e) => { e.preventDefault(); act('edit'); });
-    let bar = null;
     return {
       dom,
       update(next) {
@@ -232,6 +233,116 @@ function mathView({ node, getPos, editor }) {
   return { dom, update: (next) => (next.type === node.type ? (paint(next.attrs.latex), true) : false), ignoreMutation: () => true };
 }
 
+const lengthCss = (v) => (typeof v === 'number' ? `${v}cm` : v) || '';
+
+/** Tabelle: Linien, Breite, Lage und Spaltenbreiten aus den Feldern; Spalten und Zeilen am Rand ziehen. */
+function tableView({ node, getPos, editor }) {
+  let current = node;
+  const dom = document.createElement('table');
+  dom.dataset.pm = 'table';
+  const colgroup = document.createElement('colgroup');
+  const body = document.createElement('tbody');
+  dom.append(colgroup, body);
+  const paint = () => {
+    dom.setAttribute('style', /style="([^"]*)"/.exec(tableLineStyle(current.attrs))?.[1] || '');
+    const { widths } = current.attrs;
+    colgroup.replaceChildren(...(Array.isArray(widths) ? widths : []).map((w) => {
+      const col = document.createElement('col');
+      if (w) col.style.width = lengthCss(w);
+      return col;
+    }));
+    const { heights } = current.attrs;
+    [...body.children].forEach((tr, r) => { tr.style.height = lengthCss(Array.isArray(heights) ? heights[r] : ''); });
+  };
+  paint();
+  queueMicrotask(paint); // die Zeilen setzt ProseMirror erst nach dem Anlegen
+
+  const EDGE = 5;
+  /** Rand unter dem Zeiger: { dir: 'col' | 'row', index } oder null. */
+  const edgeAt = (e) => {
+    const cell = e.target.closest?.('td, th');
+    if (!cell || !dom.contains(cell)) return null;
+    const r = cell.getBoundingClientRect();
+    if (r.right - e.clientX <= EDGE && r.right - e.clientX >= -EDGE) {
+      const tablePos = getPos();
+      const map = TableMap.get(editor.state.doc.nodeAt(tablePos));
+      const rect = map.findCell(editor.view.posAtDOM(cell, 0) - tablePos - 2);
+      return { dir: 'col', index: rect.right - 1, cols: map.width };
+    }
+    if (r.bottom - e.clientY <= EDGE && r.bottom - e.clientY >= -EDGE) {
+      return { dir: 'row', index: [...body.children].indexOf(cell.parentElement) + (cell.rowSpan || 1) - 1 };
+    }
+    return null;
+  };
+  dom.addEventListener('pointermove', (e) => {
+    if (e.buttons) return;
+    const edge = edgeAt(e);
+    dom.style.cursor = !edge ? '' : edge.dir === 'col' ? 'col-resize' : 'row-resize';
+  });
+  dom.addEventListener('mousedown', (e) => {
+    const edge = edgeAt(e);
+    if (!edge) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const pxPerCm = 96 / 2.54;
+    const zoom = dom.getBoundingClientRect().width / (dom.offsetWidth || 1);
+    if (edge.dir === 'col') {
+      // Alle Spalten messen: Fest wird nur, was gezogen wurde; der Rest teilt sich den Platz.
+      const was = Array.isArray(current.attrs.widths) ? current.attrs.widths : [];
+      while (colgroup.children.length < edge.cols) colgroup.appendChild(document.createElement('col'));
+      const startPx = colgroup.children[edge.index].getBoundingClientRect().width;
+      let cm = 0;
+      const move = (ev) => {
+        cm = Math.max(0.5, Math.round(((startPx + ev.clientX - startX) / zoom / pxPerCm) * 10) / 10);
+        colgroup.children[edge.index].style.width = `${cm}cm`;
+      };
+      const up = () => {
+        document.removeEventListener('mousemove', move);
+        document.removeEventListener('mouseup', up);
+        if (!cm) return;
+        const widths = Array.from({ length: edge.cols }, (_, i) => was[i] ?? '');
+        widths[edge.index] = `${cm}cm`;
+        editor.view.dispatch(editor.state.tr.setNodeAttribute(getPos(), 'widths', widths));
+      };
+      document.addEventListener('mousemove', move);
+      document.addEventListener('mouseup', up);
+      return;
+    }
+    const row = body.children[edge.index];
+    const startPx = row.getBoundingClientRect().height;
+    const was = Array.isArray(current.attrs.heights) ? current.attrs.heights : [];
+    let cm = 0;
+    const move = (ev) => {
+      cm = Math.max(0.4, Math.round(((startPx + ev.clientY - startY) / zoom / pxPerCm) * 10) / 10);
+      row.style.height = `${cm}cm`;
+    };
+    const up = () => {
+      document.removeEventListener('mousemove', move);
+      document.removeEventListener('mouseup', up);
+      if (!cm) return;
+      const heights = Array.from({ length: body.children.length }, (_, i) => was[i] ?? '');
+      heights[edge.index] = `${cm}cm`;
+      editor.view.dispatch(editor.state.tr.setNodeAttribute(getPos(), 'heights', heights));
+    };
+    document.addEventListener('mousemove', move);
+    document.addEventListener('mouseup', up);
+  }, true);
+  return {
+    dom,
+    contentDOM: body,
+    update(next) {
+      if (next.type !== current.type) return false;
+      current = next;
+      queueMicrotask(paint);
+      return true;
+    },
+    // Unsere eigenen Stile an Tabelle, Spalten und Zeilen sind kein Tippen.
+    ignoreMutation: (m) => m.type === 'attributes' || m.target === colgroup || colgroup.contains(m.target),
+  };
+}
+
 /** Baustein an `getPos()` durch die neue Fassung (auch mehrere) ersetzen. */
 function applyAt(editor, getPos) {
   return (next) => {
@@ -262,6 +373,7 @@ const MATH_END = new RegExp(`(?<![\\\\$])${INLINE_MATH_SOURCE}$`);
 export function createPmEditor(element, spec, host = {}) {
   const nodeViews = Object.fromEntries(ATOMS.map((t) => [t, atomView(host)]));
   nodeViews.inlineMath = mathView;
+  nodeViews.table = tableView;
   const toDoc = (s) => {
     const json = specToPm(s);
     return json.content?.length ? json : { ...json, content: [{ type: 'paragraph' }] };
@@ -286,8 +398,22 @@ export function createPmEditor(element, spec, host = {}) {
     ],
     editorProps: {
       attributes: { spellcheck: 'true', 'aria-label': 'Inhalt bearbeiten' },
+      // Bilddatei hineinziehen: an die Stelle der Maus.
+      handleDrop: (view, event, _slice, moved) => {
+        const file = !moved && [...(event.dataTransfer?.files || [])].find((f) => f.type.startsWith('image/'));
+        if (!file || !host.imageFromFile) return false;
+        event.preventDefault();
+        void host.imageFromFile(file).then((block) => { if (block) insertAtSelection([block]); });
+        return true;
+      },
       handlePaste: (view, event) => {
         const { clipboardData: data } = event;
+        // Bildschirmfoto in der Zwischenablage
+        const shot = [...(data?.files || [])].find((f) => f.type.startsWith('image/'));
+        if (shot && host.imageFromFile && !data.getData('text/plain')) {
+          void host.imageFromFile(shot).then((block) => { if (block) insertAtSelection([block]); });
+          return true;
+        }
         const html = data?.getData('text/html') || '';
         const text = data?.getData('text/plain') || '';
         // Aus diesem Editor: Felder stehen im HTML, ProseMirror fügt selbst ein.
@@ -319,6 +445,45 @@ export function createPmEditor(element, spec, host = {}) {
     onSelectionUpdate: () => host.onSelection?.(),
   });
 
+  function insertAtSelection(blocks) {
+    const { state, view } = editor;
+    const cur = currentBlock(state);
+    const at = cur ? cur.pos + cur.node.nodeSize : 0;
+    const nodes = specToPm({ content: blocks }).content.map((j) => PmNode.fromJSON(state.schema, j));
+    const tr = state.tr.insert(at, nodes);
+    tr.setSelection(nodes[0].isAtom ? NodeSelection.create(tr.doc, at) : TextSelection.near(tr.doc.resolve(at + 1)));
+    view.dispatch(tr.scrollIntoView());
+    view.focus();
+  }
+  /** Absätze (bzw. Zellen) der Auswahl: `fn(attrs)` liefert die neuen Felder. */
+  const eachParagraph = (fn) => {
+    const { state, view } = editor;
+    const tr = state.tr;
+    state.doc.nodesBetween(state.selection.from, state.selection.to, (node, pos) => {
+      if (node.type.name !== 'paragraph') return true;
+      tr.setNodeMarkup(pos, null, { ...node.attrs, ...fn(node.attrs) });
+      return false;
+    });
+    if (tr.docChanged) view.dispatch(tr);
+    view.focus();
+  };
+  /** Zellen der Auswahl (markierte oder die der Schreibmarke); false außerhalb von Tabellen. */
+  const eachCell = (fn) => {
+    const { state, view } = editor;
+    const tr = state.tr;
+    if (state.selection instanceof CellSelection) {
+      state.selection.forEachCell((cell, pos) => tr.setNodeMarkup(pos, null, { ...cell.attrs, ...fn(cell.attrs) }));
+    } else {
+      const { $from } = state.selection;
+      let d = $from.depth;
+      while (d > 0 && !['tableCell', 'tableHeader'].includes($from.node(d).type.name)) d--;
+      if (!d) return false;
+      tr.setNodeMarkup($from.before(d), null, { ...$from.node(d).attrs, ...fn($from.node(d).attrs) });
+    }
+    view.dispatch(tr);
+    view.focus();
+    return true;
+  };
   const run = (command) => { const ok = command(editor.state, editor.view.dispatch); editor.view.focus(); return ok; };
   /** Für jeden Textblock der Auswahl: Art wechseln; die ID bleibt. */
   const setBlockKind = (kind) => {
@@ -414,17 +579,71 @@ export function createPmEditor(element, spec, host = {}) {
       return null;
     },
     /** Bausteine hinter dem Block an der Auswahl einfügen; der erste wird gewählt. */
-    insertBlocks(blocks) {
+    insertBlocks: insertAtSelection,
+    /** Ausrichtung: in einer Tabelle für die Zelle, sonst für die Absätze. */
+    setAlign(dir) {
+      if (eachCell(() => ({ align: dir === 'justify' ? 'left' : dir }))) return;
+      eachParagraph(() => ({ align: dir === 'left' ? null : dir }));
+    },
+    setLineHeight: (lh) => eachParagraph(() => ({ lineHeight: lh === 1 ? null : lh })),
+    /** Einzug: Liste = Unterpunkt, sonst ±1 cm wie im alten Editor. */
+    indent(delta) {
+      if (this.enclosing('listItem')) {
+        editor.chain().focus()[delta > 0 ? 'sinkListItem' : 'liftListItem']('listItem').run();
+        return;
+      }
+      eachParagraph((a) => ({ indent: Math.max(0, Math.min(6, (Number(a.indent) || 0) + delta)) || null }));
+    },
+    /** Tabelle um die Auswahl: { pos, node, row, col } oder null. */
+    tableAt() {
+      const { $from } = editor.state.selection;
+      const { selection } = editor.state;
+      if (selection instanceof NodeSelection && selection.node.type.name === 'table') return { pos: selection.from, node: selection.node, row: 0, col: 0 };
+      for (let d = $from.depth; d > 0; d--) {
+        if ($from.node(d).type.name !== 'table') continue;
+        return { pos: $from.before(d), node: $from.node(d), row: $from.index(d), col: $from.index(d + 1) };
+      }
+      return null;
+    },
+    /** Tabelle an `pos` als Baustein lesen bzw. durch Bausteine ersetzen. */
+    blockAt: (pos) => blockOfNode(editor.state.doc.nodeAt(pos)),
+    replaceAt: (pos, blocks) => applyAt(editor, () => pos)(blocks),
+    selectAt(pos) {
+      editor.view.dispatch(editor.state.tr.setSelection(NodeSelection.create(editor.state.doc, pos)));
+      editor.view.focus();
+    },
+    /** Schreibmarke an die Stelle der Maus (Rechtsklick), außer sie steht schon in der Markierung. */
+    placeAt(x, y) {
+      const { view, state } = editor;
+      const at = view.posAtCoords({ left: x, top: y });
+      if (!at || (at.pos >= state.selection.from && at.pos <= state.selection.to && !state.selection.empty)) return;
+      view.dispatch(state.tr.setSelection(TextSelection.near(state.doc.resolve(at.pos))));
+    },
+    /** Position des Bausteins, zu dem `el` (NodeView) gehört. */
+    posOfDom: (el) => editor.view.posAtDOM(el, 0),
+    /** Spalten teilen sich die Breite gleichmäßig bzw. Zeilen ohne feste Höhe. */
+    distribute(pos, what) {
+      editor.view.dispatch(editor.state.tr.setNodeAttribute(pos, what === 'cols' ? 'widths' : 'heights', null));
+      editor.view.focus();
+    },
+    /** Das gewählte Bild und die Bilder direkt dahinter: { from, to, images } oder null. */
+    imageRun() {
+      const { selection, doc } = editor.state;
+      if (!(selection instanceof NodeSelection) || selection.node.type.name !== 'image') return null;
+      const $p = doc.resolve(selection.from);
+      const images = [];
+      let to = selection.from;
+      for (let i = $p.index(); i < $p.parent.childCount && $p.parent.child(i).type.name === 'image'; i++) {
+        images.push(blockOfNode($p.parent.child(i)));
+        to += $p.parent.child(i).nodeSize;
+      }
+      return images.length > 1 ? { from: selection.from, to, images } : null;
+    },
+    replaceRange(from, to, blocks) {
       const { state, view } = editor;
-      const cur = currentBlock(state);
-      const at = cur ? cur.pos + cur.node.nodeSize : 0;
       const nodes = specToPm({ content: blocks }).content.map((j) => PmNode.fromJSON(state.schema, j));
-      const tr = state.tr.insert(at, nodes);
-      const first = nodes[0];
-      tr.setSelection(first.isAtom ? NodeSelection.create(tr.doc, at) : TextSelection.near(tr.doc.resolve(at + 1)));
-      view.dispatch(tr.scrollIntoView());
+      view.dispatch(state.tr.replaceWith(from, to, nodes));
       view.focus();
-      return at;
     },
     /** Gerade gewählter Baustein am Stück mit seiner Ersetzungsfunktion. */
     selectedBlock() {

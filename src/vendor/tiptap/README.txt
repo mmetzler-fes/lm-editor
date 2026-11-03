@@ -6,7 +6,7 @@
              export { history, undo, redo } from '@tiptap/pm/history';
              export { gapCursor } from '@tiptap/pm/gapcursor';
              export { dropCursor } from '@tiptap/pm/dropcursor';
-             export { tableEditing, columnResizing, addRowBefore, addRowAfter, addColumnBefore, addColumnAfter, deleteRow, deleteColumn, deleteTable, mergeCells, splitCell, goToNextCell, isInTable, CellSelection } from '@tiptap/pm/tables';
+             export { tableEditing, columnResizing, addRowBefore, addRowAfter, addColumnBefore, addColumnAfter, deleteRow, deleteColumn, deleteTable, mergeCells, splitCell, goToNextCell, isInTable, CellSelection, TableMap } from '@tiptap/pm/tables';
   npx esbuild entry.mjs --bundle --format=esm --minify --legal-comments=none --outfile=tiptap.mjs
 Enthält ProseMirror und seine Abhängigkeiten (MIT). Lizenzen: LICENSE.
 Tiptap Cloud und Pro werden nicht verwendet.

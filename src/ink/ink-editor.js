@@ -223,7 +223,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
       <span class="ink-group ink-tools">
         ${paper ? tool('interact', 'pointer', 'Bedienen: Quizze im Blatt ausfüllen – beim Auswählen springt es auf einem Quiz von selbst hierher; der Finger bedient Quizze immer') : ''}
         ${tool('select', 'select', 'Auswählen: Strich antippen oder Rechteck aufziehen – auch mit dem Finger, das Blatt steht still (scrollen mit zwei Fingern oder der Scrollleiste)')}
-        ${tool('pen', 'pen', 'Stift – zeichnet auch mit dem Finger, das Blatt steht still (scrollen mit zwei Fingern oder der Scrollleiste); am Ende kurz halten: gerade Linie')}
+        ${tool('pen', 'pen', 'Stift – zeichnet auch mit dem Finger: im Dokument in Karo- und Linienfeldern, daneben verschiebt er das Blatt; am Ende kurz halten: gerade Linie')}
         ${tool('marker', 'marker', 'Textmarker – zeichnet auch mit dem Finger, das Blatt steht still (scrollen mit zwei Fingern oder der Scrollleiste)')}
         ${tool('eraser', 'eraser', 'Radierer – löscht ganze Striche, auch mit dem Finger; das Blatt steht still (scrollen mit zwei Fingern oder der Scrollleiste)')}
         ${tool('text', 'text', 'Textfeld: auf die Seite tippen und schreiben')}
@@ -288,11 +288,14 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
         <button type="button" class="ink-btn ink-delete ink-labeled" title="Auswahl löschen (Entf)" hidden>${icon('trash')}<span>Löschen</span></button>
       </div>
       <div class="ink-scroll"><div class="ink-pages"></div></div>
+      <div class="ink-touchbar" aria-hidden="true" hidden><div class="ink-touchbar-thumb"></div></div>
     </div>`;
   document.body.appendChild(overlay);
   document.body.classList.add('ink-open');
   const $ = (sel) => overlay.querySelector(sel);
   const scroller = $('.ink-scroll');
+  const fingerHybrid = () => state.tool === 'pen' && doc.bg === 'paper';
+  const freeFingers = new Set(); // Finger außerhalb der Schreibfelder: Sie gehören dem Browser (scrollen, Quiz).
   const pagesEl = $('.ink-pages');
   // Nur das Zeichen (💾, ⚠️, …) – der Text steht im Tooltip. Längerer Text machte die Leiste breiter, die Knöpfe rutschten.
   const status = (text) => {
@@ -372,6 +375,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     overlay.classList.toggle('ink-tool-text', state.tool === 'text');
     overlay.classList.toggle('ink-tool-interact', state.tool === 'interact');
     overlay.classList.toggle('ink-tool-lock', LOCK_TOOLS.includes(state.tool));
+    overlay.classList.toggle('ink-tool-pen', state.tool === 'pen');
     overlay.classList.toggle('ink-tool-select', state.tool === 'select');
     overlay.classList.toggle('ink-tool-laser', state.tool === 'laser');
     overlay.classList.toggle('ink-paper-mode', doc.bg === 'paper');
@@ -495,9 +499,48 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     if (e.target.closest?.('.ink-text')) return; // ins Textfeld tippen bleibt möglich
     if (state.tool === 'interact') return; // Stift bedient Quizze
     if ([...e.touches].some((t) => t.touchType === 'stylus')) e.preventDefault();
+    // Stift im Dokument: Lag der erste Finger im Schreibfeld, scrollt der Browser nicht (siehe bindInput).
+    else if (fingerHybrid() && !freeFingers.size && e.cancelable && e.target.closest?.('.ink-page')
+      && !e.target.closest('.ink-insert-mark, .ink-karo-handle, .ink-shape-text-edit')) e.preventDefault();
   };
   scroller.addEventListener('touchstart', holdStylus, { passive: false });
   scroller.addEventListener('touchmove', holdStylus, { passive: false });
+  const fingersUp = (e) => { if (!e.touches.length) freeFingers.clear(); };
+  scroller.addEventListener('touchend', fingersUp);
+  scroller.addEventListener('touchcancel', fingersUp);
+  // Scrollleiste für den Finger: Die des Browsers lässt sich auf dem iPad nicht greifen.
+  const bar = $('.ink-touchbar');
+  const thumb = $('.ink-touchbar-thumb');
+  const paintBar = () => {
+    const { scrollTop, scrollHeight, clientHeight } = scroller;
+    bar.hidden = scrollHeight <= clientHeight + 1;
+    if (bar.hidden) return;
+    bar.style.top = `${scroller.offsetTop}px`;
+    const size = Math.max(48, bar.clientHeight * clientHeight / scrollHeight);
+    thumb.style.height = `${size}px`;
+    thumb.style.transform = `translateY(${(bar.clientHeight - size) * scrollTop / (scrollHeight - clientHeight)}px)`;
+  };
+  scroller.addEventListener('scroll', paintBar, { passive: true });
+  const barObserver = new ResizeObserver(paintBar);
+  barObserver.observe(scroller);
+  barObserver.observe(pagesEl);
+  let barGrab = null; // Abstand des Fingers von der Oberkante des Griffs
+  const barDrag = (e) => {
+    const size = thumb.offsetHeight;
+    const at = (e.clientY - bar.getBoundingClientRect().top - barGrab) / (bar.clientHeight - size);
+    scroller.scrollTop = at * (scroller.scrollHeight - scroller.clientHeight);
+  };
+  bar.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    bar.setPointerCapture?.(e.pointerId);
+    const t = thumb.getBoundingClientRect();
+    barGrab = e.clientY >= t.top && e.clientY <= t.bottom ? e.clientY - t.top : t.height / 2;
+    barDrag(e);
+  });
+  bar.addEventListener('pointermove', (e) => { if (barGrab !== null) barDrag(e); });
+  const barEnd = () => { barGrab = null; };
+  bar.addEventListener('pointerup', barEnd);
+  bar.addEventListener('pointercancel', barEnd);
   $('.ink-zoom-in').addEventListener('click', () => setZoom(state.zoom * 1.25));
   $('.ink-zoom-out').addEventListener('click', () => setZoom(state.zoom / 1.25));
   $('.ink-zoom-fit').addEventListener('click', () => setZoom(fitZoom()));
@@ -975,7 +1018,11 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
 
   /** Schreibfeld des Dokuments unter dem Bildschirmpunkt (das Blatt liegt unter der Zeichenebene) – oder null. */
   function karoAt(clientX, clientY) {
-    if (!paperView || paper?.karoResize === false) return null;
+    return paper?.karoResize === false ? null : karoBlockAt(clientX, clientY);
+  }
+
+  function karoBlockAt(clientX, clientY) {
+    if (!paperView) return null;
     for (const n of document.elementsFromPoint(clientX, clientY)) {
       const el = n.closest?.('[data-btype="karo"]');
       if (el && paperView.el.contains(el) && el.querySelector('.ds-karo')) return el;
@@ -1981,6 +2028,12 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
   let penDown = false;
   let penLiftAt = 0;
 
+  /** Schreibfeld an dieser Stelle: Karo-/Linien-Baustein des Dokuments oder ein selbst aufgezogenes Feld. */
+  function writingFieldAt(p, x, y, clientX, clientY) {
+    return !!karoBlockAt(clientX, clientY) || doc.pages[p.i].items.some((it) => it.type === 'field'
+      && x >= it.x && x <= it.x + it.w && y >= it.y && y <= it.y + it.h);
+  }
+
   function placeText(p, x, y) {
     snapshot();
     const size = state.textSize;
@@ -2027,6 +2080,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
       if (onQuiz && e.pointerType === 'touch' && !touches.size) {
         // Kommt ein zweiter Finger dazu, wird daraus Scrollen.
         touches.set(e.pointerId, [e.clientX, e.clientY]);
+        if (fingerHybrid()) freeFingers.add(e.pointerId);
         return;
       }
       // Auswählen und Bedienen wechseln von selbst: Auf einem Quiz wird ausgefüllt,
@@ -2046,6 +2100,18 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
       // Werkzeug) gehen an das Blatt; alles andere fängt der Editor vorher ab.
       if (p.paper && (e.target.closest?.('.ink-karo-handle, .ink-insert-mark') || state.tool === 'interact'
         || (state.tool === 'text' && e.target.closest?.('.ink-text')))) return;
+      // Stift im Dokument: Der Finger zeichnet nur im Schreibfeld, daneben verschiebt er das Blatt.
+      // Es zählt der erste Finger; ein zweiter wird unten zu Scrollen mit zwei Fingern.
+      if (e.pointerType === 'touch' && fingerHybrid() && !touches.size) {
+        if (freeFingers.size) return; // Der Browser scrollt schon (der erste Finger ist abgemeldet).
+        const [fx, fy] = toPage(e);
+        const onRuler = doc.ruler?.visible && doc.ruler.page === p.i && inRuler(doc.ruler, fx, fy);
+        if (!onRuler && !writingFieldAt(p, fx, fy, e.clientX, e.clientY)) {
+          freeFingers.add(e.pointerId);
+          touches.set(e.pointerId, [e.clientX, e.clientY]);
+          return;
+        }
+      }
       if (e.pointerType === 'pen') {
         penDown = true;
         // Der Handballen lag vor dem Stift auf: Sein Strich entfällt.
@@ -2062,6 +2128,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
         if (pan) return;
         if (touches.size === 2) {
           cancelGesture();
+          freeFingers.clear(); // ab jetzt scrollt nicht mehr der Browser (holdStylus hält ihn an)
           pan = { mid: midOf() };
           e.preventDefault();
           // Lag der erste Finger auf einem Quiz: Es bekommt weder Tippen noch Ziehen.
@@ -2707,6 +2774,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     document.removeEventListener('visibilitychange', onHide);
     document.removeEventListener('gesturestart', noZoom);
     document.removeEventListener('gesturechange', noZoom);
+    barObserver.disconnect();
     for (const v of Object.values(pdfs)) Promise.resolve(v).then((d) => d?.destroy?.()).catch(() => {});
     overlay.remove();
     document.body.classList.remove('ink-open');

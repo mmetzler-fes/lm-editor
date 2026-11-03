@@ -1585,6 +1585,14 @@ export class H5pRenderer {
         break;
       }
 
+      // Fremdes HTML läuft nur beim Gastgeber: mit eigener Adresse und Sandkasten.
+      case 'htmlApp':
+      case 'htmlAppUnit': {
+        if (this.host.htmlApp) this.host.htmlApp({ el: div, moduleId: options.moduleId, title: options.title, content, options });
+        else div.textContent = 'HTML-Apps laufen nur in LearningModules.';
+        break;
+      }
+
       case 'document': {
         const spec = content.spec && typeof content.spec === 'object' ? content.spec : { content: [] };
         // blockIds: Hüllen mit der ID jedes Bausteins (für die Stift-Ebene) – auch in der

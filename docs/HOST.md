@@ -44,6 +44,15 @@ Eingaben in eingebetteten Quizzen zu übernehmen). Wirft `onClick` einen Fehler,
 „⚠️ Meldung“. `onClick` läuft bis zum ersten `await` noch im Klick und darf
 dort ein Fenster öffnen (Popup-Sperre, iPad).
 
+## htmlApp(ctx)
+
+```js
+htmlApp: ({ el, moduleId, title, content, options }) => void
+```
+
+Module `htmlApp` und `htmlAppUnit`: Der Gastgeber baut die App in `el` ein, mit eigener Adresse und
+Sandkasten. Ohne diesen Haken erscheint nur ein Hinweis, das Modul läuft nur in LearningModules.
+
 ## recording(ctx)
 
 ```js

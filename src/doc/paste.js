@@ -163,12 +163,8 @@ export function cleanPastedHtml(html) {
   return body.innerHTML;
 }
 
-/**
- * Zwischenablage → Einzufügendes. Ergebnis: { html, inline, warnings } oder null,
- * wenn nichts Brauchbares drin ist. `inline`: nur ein Stück Text – es fließt in
- * den Absatz an der Schreibmarke, statt ihn zu trennen.
- */
-export function pasteToEditorHtml({ text, html }) {
+/** Zwischenablage → { spec, warnings } in Bausteinen; null, wenn nichts Brauchbares drin ist. */
+export function pasteToSpec({ text, html }) {
   const plain = String(text || '').replace(/\r\n?/g, '\n');
   let spec;
   let warnings = [];
@@ -182,10 +178,22 @@ export function pasteToEditorHtml({ text, html }) {
   if (!spec.content.length) return null;
   // Was das Format nicht kennt, kommt als reiner Text – lieber schlicht als gar nicht.
   const usable = validateDocSpec(spec).length ? htmlToDocSpec(plainToHtml(text || '')).spec : spec;
-  if (!usable.content.length) return null;
+  return usable.content.length ? { spec: usable, warnings } : null;
+}
+
+/** Nur ein Stück Text ohne Absatz? Es fließt in den Absatz an der Schreibmarke, statt ihn zu trennen. */
+export const isInlinePaste = (spec) => spec.content.length === 1 && spec.content[0].type === 'text' && !String(spec.content[0].text).includes('\n\n');
+
+/**
+ * Zwischenablage → Einzufügendes für die alte Fläche. Ergebnis: { html, inline, warnings }
+ * oder null. `inline`: siehe isInlinePaste.
+ */
+export function pasteToEditorHtml({ text, html }) {
+  const pasted = pasteToSpec({ text, html });
+  if (!pasted) return null;
+  const { spec: usable, warnings } = pasted;
   const out = specToEditorHtml(usable);
-  const only = usable.content.length === 1 && usable.content[0];
-  const inline = !!only && only.type === 'text' && !String(only.text).includes('\n\n');
+  const inline = isInlinePaste(usable);
   if (!inline) return { html: out, inline, warnings };
   // Leerzeichen am Rand des Stücks trennen es vom Text an der Schreibmarke.
   const edge = String(text || '').replace(/\r\n?/g, '\n');

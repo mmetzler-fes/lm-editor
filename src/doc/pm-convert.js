@@ -289,6 +289,9 @@ function pmCell(n) {
   const [first, ...rest] = n.content || [];
   const text = inlineToText(first?.content);
   const fields = fieldsOf(n);
+  // Im Schema ist die 1 der Normalfall (prosemirror-tables rechnet damit), in der Spec fehlt sie.
+  if (fields.colspan === 1) delete fields.colspan;
+  if (fields.rowspan === 1) delete fields.rowspan;
   if (!rest.length && !Object.keys(fields).length) return text;
   return { ...(text ? { text } : {}), ...fields, ...(rest.length ? { blocks: pmToBlocks(rest) } : {}) };
 }

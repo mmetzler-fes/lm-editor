@@ -80,11 +80,11 @@ body.ink-open { overflow: hidden; }
 .ink-bg, .ink-svg, .ink-texts, .ink-top { position: absolute; inset: 0; width: 100%; height: 100%; }
 /* Anfasser über allem (auch über dem Geodreieck); getroffen wird rechnerisch. */
 .ink-top { z-index: 4; pointer-events: none; overflow: visible; }
-/* Der Finger scrollt – nur bei Auswählen, Stift, Textmarker, Radierer, Formen und Leuchtstift arbeitet er, und zwei Finger scrollen (siehe bindInput). */
+/* Der Finger scrollt – nur bei LOCK_TOOLS arbeitet er, und zwei Finger scrollen (siehe bindInput). */
 .ink-page { touch-action: pan-x pan-y; }
 .ink-tool-lock .ink-page { touch-action: none; }
-/* Stift im Dokument: Der Browser scrollt, außer der Finger setzt im Schreibfeld an (holdStylus, bindInput). */
-.ink-paper-mode.ink-tool-pen .ink-page { touch-action: pan-x pan-y; }
+/* Hybrid im Dokument: Der Browser scrollt, außer der Finger setzt im Schreibfeld an (holdStylus, bindInput). */
+.ink-paper-mode.ink-tool-hybrid .ink-page { touch-action: pan-x pan-y; }
 /* Scrollleiste für den Finger – die des Browsers lässt sich auf dem iPad nicht greifen. */
 .ink-touchbar { display: none; position: absolute; right: 0; bottom: 0; width: 32px; z-index: 15; touch-action: none; cursor: pointer; }
 .ink-touchbar-thumb { position: absolute; top: 0; right: 3px; width: 12px; border-radius: 6px; background: rgba(71, 85, 105, 0.65); }

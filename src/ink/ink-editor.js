@@ -84,7 +84,8 @@ const HANDLE = 9;           // Anfasser einer Linie (Bildschirmpunkte, Radius)
 const RULER_MAX = 32 * CM;
 // Kopierte Elemente – bleiben beim Wechsel in ein anderes Dokument erhalten.
 let clipboard = null;         // { items, pasted }
-const LOCK_TOOLS = ['select', 'pen', 'marker', 'eraser', 'shape', 'laser']; // mit ihnen arbeitet der Finger, das Blatt steht still
+const LOCK_TOOLS = ['select', 'pen', 'marker', 'eraser', 'shape', 'laser', 'field']; // mit ihnen arbeitet der Finger, das Blatt steht still
+const HYBRID_TOOLS = LOCK_TOOLS.filter((t) => t !== 'field'); // im Dokument nur in Schreibfeldern, daneben scrollt der Finger (Felder entstehen gerade daneben)
 const PALM_MS = 500;          // so lange nach dem Absetzen des Stifts zählt kein Finger (Handballen)
 const PRESS_MS = 550;         // so lange drücken (Finger/Stift), dann das Menü der Auswahl
 const PX_PT = 0.75;         // 1 CSS-Pixel = 0,75 pt (96 dpi gegen 72 dpi)
@@ -222,14 +223,14 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
       ${actions.map((a, i) => `<button type="button" class="ink-btn ink-labeled ink-action" data-action="${i}" title="${esc(a.title || a.label)}">${esc(a.label)}</button>`).join('')}
       <span class="ink-group ink-tools">
         ${paper ? tool('interact', 'pointer', 'Bedienen: Quizze im Blatt ausfüllen – beim Auswählen springt es auf einem Quiz von selbst hierher; der Finger bedient Quizze immer') : ''}
-        ${tool('select', 'select', 'Auswählen: Strich antippen oder Rechteck aufziehen – auch mit dem Finger, das Blatt steht still (scrollen mit zwei Fingern oder der Scrollleiste)')}
-        ${tool('pen', 'pen', 'Stift – zeichnet auch mit dem Finger: im Dokument in Karo- und Linienfeldern, daneben verschiebt er das Blatt; am Ende kurz halten: gerade Linie')}
-        ${tool('marker', 'marker', 'Textmarker – zeichnet auch mit dem Finger, das Blatt steht still (scrollen mit zwei Fingern oder der Scrollleiste)')}
-        ${tool('eraser', 'eraser', 'Radierer – löscht ganze Striche, auch mit dem Finger; das Blatt steht still (scrollen mit zwei Fingern oder der Scrollleiste)')}
+        ${tool('select', 'select', 'Auswählen: Strich antippen oder Rechteck aufziehen – mit dem Finger im Dokument nur in Karo- und Linienfeldern, daneben verschiebt er das Blatt (Beschriftung lässt sich überall greifen)')}
+        ${tool('pen', 'pen', 'Stift – mit dem Finger im Dokument nur in Karo- und Linienfeldern, daneben verschiebt er das Blatt; am Ende kurz halten: gerade Linie')}
+        ${tool('marker', 'marker', 'Textmarker – mit dem Finger im Dokument nur in Karo- und Linienfeldern, daneben verschiebt er das Blatt')}
+        ${tool('eraser', 'eraser', 'Radierer – löscht ganze Striche, auch mit dem Finger; daneben verschiebt er im Dokument das Blatt')}
         ${tool('text', 'text', 'Textfeld: auf die Seite tippen und schreiben')}
-        ${tool('field', 'field', 'Feld: ein Rechteck aufziehen – deckt ab, was darunter liegt, mit Karo, Linien oder weiß')}
-        ${tool('shape', 'shape', 'Formen: Rechteck, Ellipse, Vieleck, Linie, Pfeil – mit Füllung und Deckkraft, drehbar; auch mit dem Finger, das Blatt steht still (scrollen mit zwei Fingern oder der Scrollleiste)')}
-        ${laser ? tool('laser', 'laser', 'Leuchtstift: zum Zeigen am Beamer – die Spur leuchtet kurz und verblasst, nichts wird gespeichert; auch mit dem Finger, das Blatt steht still (scrollen mit zwei Fingern oder der Scrollleiste)') : ''}
+        ${tool('field', 'field', 'Feld: ein Rechteck aufziehen – deckt ab, was darunter liegt, mit Karo, Linien oder weiß; auch mit dem Finger, das Blatt steht still (scrollen mit zwei Fingern oder der Scrollleiste)')}
+        ${tool('shape', 'shape', 'Formen: Rechteck, Ellipse, Vieleck, Linie, Pfeil – mit Füllung und Deckkraft, drehbar – mit dem Finger im Dokument nur in Karo- und Linienfeldern, daneben verschiebt er das Blatt')}
+        ${laser ? tool('laser', 'laser', 'Leuchtstift: zum Zeigen am Beamer – die Spur leuchtet kurz und verblasst, nichts wird gespeichert – mit dem Finger im Dokument nur in Karo- und Linienfeldern, daneben verschiebt er das Blatt') : ''}
         <span class="ink-sep"></span>
         ${btn('ink-ruler-toggle', 'ruler', 'Geodreieck ein- und ausblenden – drehen am ⟳ (Umschalt: 5°), mit zwei Fingern oder dem Mausrad; vergrößern am ⤢')}
       </span>
@@ -294,7 +295,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
   document.body.classList.add('ink-open');
   const $ = (sel) => overlay.querySelector(sel);
   const scroller = $('.ink-scroll');
-  const fingerHybrid = () => state.tool === 'pen' && doc.bg === 'paper';
+  const fingerHybrid = () => HYBRID_TOOLS.includes(state.tool) && doc.bg === 'paper';
   const freeFingers = new Set(); // Finger außerhalb der Schreibfelder: Sie gehören dem Browser (scrollen, Quiz).
   const pagesEl = $('.ink-pages');
   // Nur das Zeichen (💾, ⚠️, …) – der Text steht im Tooltip. Längerer Text machte die Leiste breiter, die Knöpfe rutschten.
@@ -375,7 +376,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     overlay.classList.toggle('ink-tool-text', state.tool === 'text');
     overlay.classList.toggle('ink-tool-interact', state.tool === 'interact');
     overlay.classList.toggle('ink-tool-lock', LOCK_TOOLS.includes(state.tool));
-    overlay.classList.toggle('ink-tool-pen', state.tool === 'pen');
+    overlay.classList.toggle('ink-tool-hybrid', HYBRID_TOOLS.includes(state.tool));
     overlay.classList.toggle('ink-tool-select', state.tool === 'select');
     overlay.classList.toggle('ink-tool-laser', state.tool === 'laser');
     overlay.classList.toggle('ink-paper-mode', doc.bg === 'paper');
@@ -499,7 +500,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     if (e.target.closest?.('.ink-text')) return; // ins Textfeld tippen bleibt möglich
     if (state.tool === 'interact') return; // Stift bedient Quizze
     if ([...e.touches].some((t) => t.touchType === 'stylus')) e.preventDefault();
-    // Stift im Dokument: Lag der erste Finger im Schreibfeld, scrollt der Browser nicht (siehe bindInput).
+    // Hybrid im Dokument: Lag der erste Finger im Schreibfeld, scrollt der Browser nicht (siehe bindInput).
     else if (fingerHybrid() && !freeFingers.size && e.cancelable && e.target.closest?.('.ink-page')
       && !e.target.closest('.ink-insert-mark, .ink-karo-handle, .ink-shape-text-edit')) e.preventDefault();
   };
@@ -2028,6 +2029,14 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
   let penDown = false;
   let penLiftAt = 0;
 
+  /** Auswählen und Radierer wirken auf Vorhandenes – auch außerhalb der Schreibfelder. */
+  function onExistingInk(p, x, y) {
+    if (state.tool !== 'select' && state.tool !== 'eraser') return false;
+    if (handleAt(p.i, x, y) || itemAt(doc.pages[p.i].items, x, y, 6 / state.zoom)) return true;
+    const b = state.tool === 'select' && state.selection?.page === p.i ? selectionBounds() : null;
+    return !!b && x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h;
+  }
+
   /** Schreibfeld an dieser Stelle: Karo-/Linien-Baustein des Dokuments oder ein selbst aufgezogenes Feld. */
   function writingFieldAt(p, x, y, clientX, clientY) {
     return !!karoBlockAt(clientX, clientY) || doc.pages[p.i].items.some((it) => it.type === 'field'
@@ -2100,13 +2109,13 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
       // Werkzeug) gehen an das Blatt; alles andere fängt der Editor vorher ab.
       if (p.paper && (e.target.closest?.('.ink-karo-handle, .ink-insert-mark') || state.tool === 'interact'
         || (state.tool === 'text' && e.target.closest?.('.ink-text')))) return;
-      // Stift im Dokument: Der Finger zeichnet nur im Schreibfeld, daneben verschiebt er das Blatt.
+      // Hybrid im Dokument: Der Finger arbeitet nur im Schreibfeld, daneben verschiebt er das Blatt.
       // Es zählt der erste Finger; ein zweiter wird unten zu Scrollen mit zwei Fingern.
       if (e.pointerType === 'touch' && fingerHybrid() && !touches.size) {
         if (freeFingers.size) return; // Der Browser scrollt schon (der erste Finger ist abgemeldet).
         const [fx, fy] = toPage(e);
         const onRuler = doc.ruler?.visible && doc.ruler.page === p.i && inRuler(doc.ruler, fx, fy);
-        if (!onRuler && !writingFieldAt(p, fx, fy, e.clientX, e.clientY)) {
+        if (!onRuler && !writingFieldAt(p, fx, fy, e.clientX, e.clientY) && !onExistingInk(p, fx, fy)) {
           freeFingers.add(e.pointerId);
           touches.set(e.pointerId, [e.clientX, e.clientY]);
           return;

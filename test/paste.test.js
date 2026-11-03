@@ -1,6 +1,24 @@
 // Einfügen aus der Zwischenablage: Quelle wählen, Markdown und reiner Text (ohne DOM).
 import { describe, it, expect } from './expect.js';
-import { looksLikeMarkdown, markdownToHtml, plainToHtml, pasteSource } from '../src/doc/paste.js';
+import { looksLikeDocMarkdown, looksLikeMarkdown, markdownToHtml, plainToHtml, pasteSource, pasteToEditorHtml } from '../src/doc/paste.js';
+
+describe('Einfügen: eigene Schreibweise (docs/MARKDOWN.md)', () => {
+  it('Behälter, Spans, Attribute, x^2^, CO~2~ werden erkannt', () => {
+    for (const t of ['::: {.karo lines=3}\n:::', 'Der [Text]{.blau}', '## Titel {.plain}', 'x^2^', 'CO~2~']) expect(looksLikeDocMarkdown(t)).toBe(true);
+  });
+  it('gewöhnlicher Text und übliches Markdown nicht', () => {
+    for (const t of ['# Titel', 'Text [x] {y}', '10^9 und a~b', '**fett**', 'Mengen {.a}']) expect(looksLikeDocMarkdown(t)).toBe(false);
+  });
+  it('wird zu Bausteinen, ein Stück Text fließt in die Zeile', () => {
+    const block = pasteToEditorHtml({ text: '::: {.karo lines=3}\n:::\n\nx^2^' });
+    expect(block.inline).toBe(false);
+    expect(block.html).toContain('ds-widget');
+    expect(block.html).toContain('<sup>2</sup>');
+    const piece = pasteToEditorHtml({ text: 'Der [Text]{.blau}' });
+    expect(piece.inline).toBe(true);
+    expect(piece.html).toContain('ds-color');
+  });
+});
 
 describe('Einfügen: Markdown erkennen', () => {
   it('Überschrift, Liste, Code, Tabelle, Zitat, fett, Link', () => {

@@ -8,6 +8,8 @@
 import MarkdownIt from '../vendor/markdown-it/markdown-it.mjs';
 import { INLINE_MATH_SOURCE, validateDocSpec } from './docspec.js';
 import { htmlToDocSpec, specToEditorHtml } from './docspec-html.js';
+import { pmToSpec } from './pm-convert.js';
+import { markdownToPm } from './pm-markdown.js';
 
 const escHtml = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
@@ -17,6 +19,14 @@ const MD_INLINE = /\*\*[^*\n]+\*\*|\[[^\]\n]+\]\([^)\s]+\)|`[^`\n]+`/;
 /** Sieht der Text nach Markdown aus? Einzelne `*` zählen nicht – `8*7*3` bleibt eine Rechnung. */
 export function looksLikeMarkdown(text) {
   return MD_BLOCK.test(text) || MD_INLINE.test(text);
+}
+
+// Eigene Schreibweise (docs/MARKDOWN.md): Behälter, Spans, Attribute an Überschriften, x^2^, CO~2~.
+const DOC_MD = /^:::|\]\{[.#][^}\n]*\}|^#{1,6} .*\{[.#][^}\n]*\}\s*$|\w\^[^\s^]+\^|\w~[^\s~]+~/m;
+
+/** Text in der Schreibweise des Dokuments? Dann liest ihn derselbe Parser wie den KI-Import. */
+export function looksLikeDocMarkdown(text) {
+  return DOC_MD.test(text);
 }
 
 const MATH_START = new RegExp(`^${INLINE_MATH_SOURCE}`);
@@ -159,9 +169,16 @@ export function cleanPastedHtml(html) {
  * den Absatz an der Schreibmarke, statt ihn zu trennen.
  */
 export function pasteToEditorHtml({ text, html }) {
-  const source = pasteSource({ text, html });
-  if (!source.html) return null;
-  const { spec, warnings } = htmlToDocSpec(cleanPastedHtml(source.html));
+  const plain = String(text || '').replace(/\r\n?/g, '\n');
+  let spec;
+  let warnings = [];
+  if (looksLikeDocMarkdown(plain)) {
+    spec = pmToSpec(markdownToPm(plain, { breaks: true, warnings }));
+  } else {
+    const source = pasteSource({ text, html });
+    if (!source.html) return null;
+    ({ spec, warnings } = htmlToDocSpec(cleanPastedHtml(source.html)));
+  }
   if (!spec.content.length) return null;
   // Was das Format nicht kennt, kommt als reiner Text – lieber schlicht als gar nicht.
   const usable = validateDocSpec(spec).length ? htmlToDocSpec(plainToHtml(text || '')).spec : spec;

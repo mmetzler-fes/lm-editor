@@ -98,10 +98,12 @@ Einlesen ausgepackt.
 
 ## Markdown – Beispiel
 
-```markdown
-# Verzweigungen {.section}
+Vollständig in [MARKDOWN.md](MARKDOWN.md).
 
-## Bedingung prüfen {.task}
+```markdown
+# Verzweigungen
+
+## Bedingung prüfen
 
 Schreibe eine **if**-Anweisung, die prüft, ob $x^2 > 10$ ist.
 
@@ -152,9 +154,9 @@ schön abbilden, aber verlustfrei hin und zurück.
 - Tiptap v3 einmal mit esbuild gebündelt, eingecheckt
 
 ### 9.3 Markdown
-- markdown-it mit Plugins für Container und Attribute; Markdown ⇄ JSON
-- sofort nutzbar über Markdown → JSON → Spec → Renderer: „Aus Markdown
-  einfügen“; der KI-Prompt liefert Markdown statt YAML
+- markdown-it mit eigenen Regeln für Behälter und Attribute; Markdown ⇄ JSON
+- sofort nutzbar über Markdown → JSON → Spec → Renderer: Einfügen mit Strg+V und
+  Import-Dialog; der KI-Prompt liefert Markdown statt JSON
 - `docs/MARKDOWN.md` mit Beispielen, zugleich Vorlage für KI-Prompts
 
 ### 9.4 Editor auf Tiptap

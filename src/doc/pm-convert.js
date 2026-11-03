@@ -18,7 +18,7 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 // ProseMirror verlangt die Auszeichnungen eines Stücks in der Reihenfolge des Schemas.
 const sortMarks = (marks) => [...marks].sort((a, b) => MARK_ORDER.indexOf(a.type) - MARK_ORDER.indexOf(b.type));
 
-function pushText(out, text, rawMarks) {
+export function pushText(out, text, rawMarks) {
   if (!text) return;
   const marks = sortMarks(rawMarks);
   const last = out[out.length - 1];
@@ -143,7 +143,7 @@ function colored(nodes, outer, plain) {
 }
 
 /** Vergleichsform einer Zeile: unabhängig von der Reihenfolge der Schlüssel und Auszeichnungen. */
-function canonicalLine(nodes) {
+export function canonicalLine(nodes) {
   const mark = (m) => JSON.stringify([m.type, Object.entries(m.attrs || {}).filter(([, v]) => v !== null).sort()]);
   return JSON.stringify(nodes.map((n) => [n.type, n.text ?? n.attrs?.latex, (n.marks || []).map(mark).sort()]));
 }

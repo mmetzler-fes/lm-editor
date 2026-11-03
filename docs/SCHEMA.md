@@ -6,6 +6,7 @@ das Speicherformat; `src/doc/pm-convert.js` wandelt in beide Richtungen.
 - Definition: `src/doc/pm-schema.js` (reine Daten, ohne Tiptap)
 - Für den Editor: `src/doc/pm-tiptap.js` baut daraus die Tiptap-Extensions
 - Zum Prüfen von außen: `docs/pm-doc.schema.json` (`node tools/gen-pm-schema.mjs`)
+- Als Text: [MARKDOWN.md](MARKDOWN.md)
 
 ```js
 import { specToPm, pmToSpec } from './src/doc/pm-convert.js';

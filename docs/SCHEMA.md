@@ -110,15 +110,23 @@ Gegen das Lehrer-Backup (509 Dokumente) wurde zusätzlich der Druck verglichen:
 der Renderer erzeugt je eine `.odt` aus Original und umgewandelter Fassung,
 Zeichen für Zeichen mit ihrer Auszeichnung, als Arbeits- und Lösungsblatt.
 Bilder waren dabei durch ein Testbild ersetzt; PDF und Seitenumbrüche wurden
-nicht verglichen. Einziger Unterschied: siehe unten.
+nicht verglichen. Der Inhalt ist gleich; zwei Unterschiede im Layout stehen unten.
 
-### Bekannter Unterschied im Druck
+### Bekannte Unterschiede im Druck
 
-Steht vor einer Aufgabe eine Aufzählung und hat die Aufgabe ein `text`-Feld, setzt
-der Renderer bei der verschachtelten Form 0,35 cm Luft über diesen Text
-(`AB_AbstandOben`) – gedacht für Absätze direkt hinter einer Liste, hier greift
-die Regel über die Überschrift hinweg. In der flachen Form steht die Überschrift
-dazwischen, die Luft entfällt. Der Editor speichert schon heute flach.
+**Abstand (rund 50 Dokumente):** Steht vor einer Aufgabe eine Aufzählung und hat
+die Aufgabe ein `text`-Feld, setzt der Renderer bei der verschachtelten Form
+0,35 cm Luft über diesen Text (`AB_AbstandOben`) – gedacht für Absätze direkt
+hinter einer Liste, hier greift die Regel über die Überschrift hinweg. In der
+flachen Form steht die Überschrift dazwischen, die Luft entfällt. Vereinzelt
+(4 Dokumente) ist es umgekehrt: Endet eine Aufgabe mit einer Liste, bekommt der
+folgende Text die Luft erst in der flachen Form. Der Editor speichert schon heute
+flach.
+
+**Spaltenbreiten (9 Dateien):** Der Renderer schätzt Spaltenbreiten aus dem
+Rohtext mit Auszeichnung, `R_{L}` zählt also breiter als `R_L`. Die Spalten
+verschieben sich um bis zu etwa 0,5 cm. Das verschwindet in Phase 9.6, wenn der
+Renderer das JSON liest und die sichtbaren Zeichen misst.
 
 ## Offen für Phase 9.5
 

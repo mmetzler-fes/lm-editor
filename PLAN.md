@@ -99,8 +99,8 @@ nie, sie ist nur das Datenmodell darunter.
 - [ ] Zwischenspeicher: gleicher Auftrag wird nicht zweimal gerendert
 
 ### 6 Lernmodule im Editor
-- [ ] Modul-Editoren (`content-editors.js` u. a.) übernehmen
-- [ ] Module aus `.h5p` und LearningModules-Export importieren
+- ~~Modul-Editoren (`content-editors.js` u. a.) übernehmen~~ entfällt (2026-11-04): Quizze werden im lm-editor nur angezeigt, erstellt werden sie in LearningModules; wichtig ist hier das Schreiben von Text
+- ~~Module aus `.h5p` und LearningModules-Export importieren~~ entfällt aus demselben Grund
 - [x] Schülerfassung ohne Lösungen (für die Weitergabe als Datei): 🎓 im Stift-Editor, `studentVersionOf`; Quizze behalten ihre Antworten, weil sie selbst prüfen
 
 ### 7 Austausch mit LearningModules

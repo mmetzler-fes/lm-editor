@@ -183,6 +183,46 @@ export function specForView(doc) {
   return spec;
 }
 
+const EXT = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/gif': 'gif', 'image/webp': 'webp', 'image/svg+xml': 'svg' };
+
+/**
+ * Gegenstück zu specForView nach dem Bearbeiten: data:-Bilder wieder nach media/. Was es dort schon gibt,
+ * bekommt seinen Namen zurück; ein neues Bild wird abgelegt. Gleiche Bilder liegen so nur einmal in der Datei.
+ */
+export function specFromView(doc, spec) {
+  const out = structuredClone(spec);
+  const known = new Map(Object.entries(doc.media).map(([name, bytes]) => [dataUrl(bytes, name), name]));
+  const store = (src) => {
+    if (known.has(src)) return known.get(src);
+    const m = /^data:([\w/+.-]+);base64,(.+)$/.exec(src);
+    if (!m || !EXT[m[1]]) return null; // anderes bleibt, wie es ist
+    const bin = atob(m[2]);
+    const bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0));
+    let hash = 0x811c9dc5;
+    for (const b of bytes) hash = Math.imul(hash ^ b, 0x01000193);
+    const stem = `bild-${(hash >>> 0).toString(36)}`;
+    let name = `${stem}.${EXT[m[1]]}`;
+    for (let i = 2; doc.media[name]; i++) name = `${stem}-${i}.${EXT[m[1]]}`;
+    doc.media[name] = bytes;
+    known.set(src, name);
+    return name;
+  };
+  const back = (it) => {
+    if (typeof it?.src !== 'string' || !it.src.startsWith('data:')) return;
+    const name = store(it.src);
+    if (name) it.src = `media/${name}`;
+  };
+  const walk = (blocks) => (Array.isArray(blocks) ? blocks : []).forEach((b) => {
+    if (b && typeof b === 'object') {
+      if (b.type === 'image') back(b);
+      if (b.type === 'group' && Array.isArray(b.items)) b.items.forEach(back);
+      walk(b.blocks);
+    }
+  });
+  walk(out.content);
+  return out;
+}
+
 // ---------- Stift-Ebene ↔ Stand des Stift-Editors ----------
 //
 // In der Datei liegt die Ebene je Baustein (layers/<id>.json); der Editor

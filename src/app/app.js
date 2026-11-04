@@ -21,6 +21,31 @@ const GENERATOR = 'lm-editor 0.1.0';
 const $ = (sel) => document.querySelector(sel);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
+// ---------- Schalter: Text bearbeiten (Tiptap) ----------
+//
+// Zum Erproben: einmal `?tiptap=1` an die Adresse hängen, `?tiptap=0` schaltet wieder ab. Gilt in diesem
+// Browser. Ohne Schalter wird kein Tiptap geladen, die Seite bleibt, wie sie war.
+
+const TIPTAP_KEY = 'lm_editor_tiptap';
+const tiptapWish = new URLSearchParams(location.search).get('tiptap');
+try {
+  if (tiptapWish === '1') localStorage.setItem(TIPTAP_KEY, '1');
+  if (tiptapWish === '0') localStorage.removeItem(TIPTAP_KEY);
+} catch (_) { /* ohne Speicher: dann eben nur mit der Adresse */ }
+const tiptapOn = () => {
+  if (tiptapWish) return tiptapWish === '1';
+  try { return localStorage.getItem(TIPTAP_KEY) === '1'; } catch (_) { return false; }
+};
+
+/** Text bearbeiten, danach zurück ins Blatt; Datei und Speicherort bleiben. */
+async function editText(session) {
+  const { openTextEditor } = await import('./text-editor.js');
+  $('#start').hidden = true;
+  openTextEditor(session.doc, {
+    onDone: () => { void openSession(session.doc, { fileName: session.fileName, handle: session.handle }); },
+  });
+}
+
 // ---------- Entwürfe in diesem Browser ----------
 
 const DB = 'lm-editor';
@@ -243,10 +268,13 @@ async function openSession(doc, { fileName = null, handle = null } = {}) {
       },
     },
     actions: [
+      ...(tiptapOn() && !isStudent ? [{ label: '✏️ Text bearbeiten', title: 'Text, Aufgaben, Tabellen und Bausteine ändern', onClick: async ({ close }) => { session.editText = true; await close(); } }] : []),
       { label: '💾 Speichern', title: 'Als .zlm-Datei speichern', onClick: () => saveFile(session) },
       ...(isStudent ? [] : [{ label: '🎓 Schülerfassung', title: 'Eigene Datei zum Weitergeben: ohne Lösungen und ohne deine Beschriftung. Das Original bleibt.', onClick: () => saveStudentVersion(session) }]),
     ],
-    onClose: () => showStart(),
+    onClose: () => {
+      if (session.editText) { session.editText = false; void editText(session); } else showStart();
+    },
   });
   await saveDraft(session);
 }
@@ -290,6 +318,13 @@ async function openExample() {
   await openSession(doc);
 }
 
+/** Leeres Dokument, gleich im Text. */
+function newDocument() {
+  const doc = createZlm({ title: 'Neues Dokument' });
+  doc.spec.content = [{ type: 'text', text: '' }];
+  return editText({ doc, fileName: null, handle: null });
+}
+
 function newKaroSheet() {
   const doc = createZlm({ title: 'Karoblatt' });
   doc.spec.content = [{ type: 'heading', level: 1, text: 'Karoblatt' }, { type: 'karo', lines: 50 }];
@@ -324,6 +359,8 @@ $('#btnOpen').addEventListener('click', async () => {
 });
 $('#btnExample').addEventListener('click', () => openExample());
 $('#btnKaro').addEventListener('click', () => newKaroSheet());
+$('#btnNew').hidden = !tiptapOn();
+$('#btnNew').addEventListener('click', () => newDocument());
 
 // Datei auf die Seite ziehen.
 document.addEventListener('dragover', (e) => { e.preventDefault(); document.body.classList.add('app-drop'); });

@@ -33,3 +33,12 @@ body.app-drop .app-start { outline: 3px dashed var(--accent); outline-offset: -1
 }
 .app-notice ul { margin: 8px 0 12px; padding-left: 18px; }
 .app-notice li { margin: 4px 0; }
+
+/* ===== Text bearbeiten (src/app/text-editor.js) ===== */
+.app-text-editor { position: fixed; inset: 0; z-index: 50; display: flex; flex-direction: column; background: var(--bg-primary, #fff); }
+.app-text-head { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--border); }
+.app-text-title { flex: 1 1 auto; min-width: 8em; font-size: 1.05rem; padding: 4px 8px; }
+.app-text-status { color: var(--text-secondary); font-size: 0.85rem; }
+.app-text-box { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; padding: 8px 12px; }
+.app-text-box .ds-pm-surface { flex: 1 1 auto; min-height: 0; overflow: auto; }
+.app-text-box .hint { margin: 4px 0 0; }

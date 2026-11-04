@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { zipSync, strToU8 } from '../src/vendor/fflate/fflate.js';
-import { createZlm, writeZlm, readZlm, studentVersionOf, ZlmError, ZLM_MIME, FORMAT_VERSION } from '../src/zlm/zlm.js';
+import { createZlm, writeZlm, readZlm, studentVersionOf, specForView, specFromView, ZlmError, ZLM_MIME, FORMAT_VERSION } from '../src/zlm/zlm.js';
 
 const now = new Date('2026-10-23T10:00:00Z');
 
@@ -131,4 +131,24 @@ test('Schülerfassung: ohne Lösungen, Beschriftung und was nur dort vorkam', ()
   assert.ok(JSON.stringify(doc.spec).includes('GEHEIM'));
   assert.ok(doc.layers.teacher);
   assert.ok(doc.media['loesung.png']);
+});
+
+test('specFromView: vorhandene Bilder behalten ihren Namen, neue kommen nach media/', () => {
+  const doc = sample();
+  doc.spec.content.push({ type: 'image', src: 'media/schaltung.png' }, { type: 'box', blocks: [{ type: 'image', src: 'media/schaltung.png' }] });
+  const view = specForView(doc);
+  assert.match(view.content.at(-2).src, /^data:image\/png/);
+  const png = 'data:image/png;base64,AQIDBA==';
+  view.content.push({ type: 'image', src: png }, { type: 'group', items: [{ src: png }, { text: 'x' }] }, { type: 'image', src: 'https://example.invalid/a.png' });
+  const back = specFromView(doc, view);
+  assert.equal(back.content[back.content.length - 5].src, 'media/schaltung.png');
+  assert.equal(back.content[back.content.length - 4].blocks[0].src, 'media/schaltung.png');
+  const added = back.content[back.content.length - 3].src;
+  assert.match(added, /^media\/bild-[a-z0-9]+\.png$/);
+  assert.equal(back.content[back.content.length - 2].items[0].src, added, 'gleiches Bild liegt nur einmal da');
+  assert.equal(back.content[back.content.length - 1].src, 'https://example.invalid/a.png');
+  assert.deepEqual([...doc.media[added.slice(6)]], [1, 2, 3, 4]);
+  assert.equal(Object.keys(doc.media).length, 2);
+  // Danach lässt sich die Datei schreiben und wieder lesen.
+  assert.deepEqual([...readZlm(writeZlm(doc, { now })).media[added.slice(6)]], [1, 2, 3, 4]);
 });

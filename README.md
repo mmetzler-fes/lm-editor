@@ -94,3 +94,9 @@ Quizzen) – Änderungen in LearningModules machen und neu erzeugen.
 
 AGPL-3.0-or-later. Mitgeliefert: [fflate](https://github.com/101arrowz/fflate) (MIT),
 `src/vendor/fflate/`.
+
+## Text bearbeiten (in Erprobung)
+
+Mit `?tiptap=1` an der Adresse gibt es **📝 Neues Dokument** und im Blatt **✏️ Text bearbeiten**: dieselbe Fläche wie in
+LearningModules, gespeichert wird weiter das bisherige Format. Der Schalter gilt in diesem Browser, `?tiptap=0` nimmt ihn zurück.
+Ohne ihn lädt die Seite keinen Tiptap-Code.

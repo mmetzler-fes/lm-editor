@@ -75,6 +75,7 @@ nie, sie ist nur das Datenmodell darunter.
 - [x] Speichern: File System Access (Chrome/Edge, gleiche Datei), sonst Download; jede Änderung als Entwurf im Browser
 - [x] Stift-Editor: Optionen `store`, `actions`, `onClose`; Ebene in der Datei mit dem Stand des Editors (`editor`)
 - [x] Bearbeiten: Tiptap-Fläche mit Leiste aus LearningModules (`editor/pm-toolbar.js`, `app/text-editor.js`), hinter dem Schalter `?tiptap=1`; statt YAML kleine Dialoge (`editor/block-dialog.js`). Noch ohne ⚙ Tabelleneigenschaften und Zeichenrahmen, die bearbeitet LearningModules. Schalter entfernen, wenn erprobt; dann auch die Dateien in `sw.js` aufnehmen
+- [x] „In LearningModules öffnen“: die .zlm von Fenster zu Fenster an den Server der Lehrkraft (`app/send-to-lm.js`, dort `views/zlm-receive.js`), ablegen wie bei „Öffnen mit“; auch hinter `?tiptap=1`
 - [x] Bilder aus `media/` einfügen: beim Bearbeiten als data:-Adresse, mit „Fertig“ zurück nach `media/` (`specFromView`), gleiche Bilder liegen einmal da
 - [x] Übernehmen ohne Server: `.odt` (Leser aus LearningModules nach `src/import/odt.js` übertragen, gleiche Ergebnisse geprüft; `docspec-html.js` liegt jetzt hier) und `.pdf` als Bilder der Seiten (pdf.js, weißer Rand abgeschnitten); Bilder nach `media/`; Hinweise, was nicht mitkam; gespeichert wird als neue `.zlm`
 - [ ] LearningModules liest `.odt` ebenfalls mit `src/import/odt.js` im Browser (der Server wandelt nur noch .docx um) – dann entfällt `odt.ts`

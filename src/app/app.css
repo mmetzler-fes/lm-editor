@@ -42,3 +42,5 @@ body.app-drop .app-start { outline: 3px dashed var(--accent); outline-offset: -1
 .app-text-box { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; padding: 8px 12px; }
 .app-text-box .ds-pm-surface { flex: 1 1 auto; min-height: 0; overflow: auto; }
 .app-text-box .hint { margin: 4px 0 0; }
+.app-send-dialog { z-index: 2147483000; }
+.app-send-dialog input[name="server"] { width: 100%; box-sizing: border-box; margin: 6px 0 12px; padding: 6px 8px; }

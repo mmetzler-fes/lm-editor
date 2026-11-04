@@ -9,6 +9,7 @@ import { stampBlockIds } from '../doc/ids.js';
 import { escapeAttr } from '../util/dom.js';
 import { mountTiptapSurface, openImageDialog } from '../editor/pm-toolbar.js';
 import { askTable, openBlockDialog } from '../editor/block-dialog.js';
+import { loadEditorStyles } from './editor-styles.js';
 
 const fileToDataUrl = (file) => new Promise((ok, no) => {
   const reader = new FileReader();
@@ -26,17 +27,9 @@ const pickImage = () => new Promise((resolve) => {
   input.click();
 });
 
-/** Stile erst hier laden: Ohne den Schalter bleibt die Seite, wie sie war. */
-function loadStyles() {
-  if (document.querySelector('link[data-text-editor]')) return;
-  const link = Object.assign(document.createElement('link'), { rel: 'stylesheet', href: new URL('../css/text-editor.css', import.meta.url).href });
-  link.dataset.textEditor = '1';
-  document.head.appendChild(link);
-}
-
 /** `doc` bearbeiten. `onDone(changed)`: danach; bei `true` stehen Titel, Spec und Medien schon im Dokument. */
 export function openTextEditor(doc, { onDone }) {
-  loadStyles();
+  loadEditorStyles();
   const page = document.createElement('div');
   page.className = 'app-text-editor';
   page.innerHTML = `

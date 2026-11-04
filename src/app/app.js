@@ -269,6 +269,15 @@ async function openSession(doc, { fileName = null, handle = null } = {}) {
     },
     actions: [
       ...(tiptapOn() && !isStudent ? [{ label: '✏️ Text bearbeiten', title: 'Text, Aufgaben, Tabellen und Bausteine ändern', onClick: async ({ close }) => { session.editText = true; await close(); } }] : []),
+      ...(tiptapOn() && !isStudent ? [{
+        label: '📓 In LearningModules öffnen',
+        title: 'Das Blatt samt Quizzen und Beschriftung an deinen LearningModules-Server geben: dort ansehen und im Notizbuch ablegen. Die Datei hier bleibt.',
+        onClick: async () => {
+          const { sendToLearningModules } = await import('./send-to-lm.js');
+          const bytes = writeZlm(session.doc, { generator: GENERATOR });
+          await sendToLearningModules({ bytes, fileName: session.fileName || fileNameOf(session.doc.manifest.title), toast });
+        },
+      }] : []),
       { label: '💾 Speichern', title: 'Als .zlm-Datei speichern', onClick: () => saveFile(session) },
       ...(isStudent ? [] : [{ label: '🎓 Schülerfassung', title: 'Eigene Datei zum Weitergeben: ohne Lösungen und ohne deine Beschriftung. Das Original bleibt.', onClick: () => saveStudentVersion(session) }]),
     ],

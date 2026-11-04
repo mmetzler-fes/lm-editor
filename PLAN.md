@@ -108,6 +108,9 @@ nie, sie ist nur das Datenmodell darunter.
 - [x] Dokument aus LearningModules als `.zlm` exportieren: **⬇ .zlm** im Druckmenü des Dokument-Editors (`GET /api/github-backup/zlm`, gespeicherter Stand, nur eigene Dokumente); dazu das GitHub-Backup
 
 ### 8 Tauri
+
+Zurückgestellt (2026-11-04): Offline mit Druck und Vorlage läuft über Docker (`docker-compose.yaml`). Tauri erst, wenn Kollegen ohne Docker es brauchen; vorher mit der IT klären, ob unsignierte Programme im Benutzerordner laufen dürfen.
+
 - [ ] Hülle mit Dateiverknüpfung `.zlm` (Windows, macOS, Linux)
 - [ ] prüfen: Stiftdruck unter Linux (WebKitGTK), iPad nur über App Store/MDM
 

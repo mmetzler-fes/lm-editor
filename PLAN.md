@@ -74,8 +74,8 @@ nie, sie ist nur das Datenmodell darunter.
 - [x] Server ohne Abhängigkeiten: `npm start` → Port 5180, `--lan` fürs iPad
 - [x] Speichern: File System Access (Chrome/Edge, gleiche Datei), sonst Download; jede Änderung als Entwurf im Browser
 - [x] Stift-Editor: Optionen `store`, `actions`, `onClose`; Ebene in der Datei mit dem Stand des Editors (`editor`)
-- [x] Bearbeiten: Tiptap-Fläche mit Leiste aus LearningModules (`editor/pm-toolbar.js`, `app/text-editor.js`), hinter dem Schalter `?tiptap=1`; statt YAML kleine Dialoge (`editor/block-dialog.js`). Noch ohne ⚙ Tabelleneigenschaften und Zeichenrahmen, die bearbeitet LearningModules. Schalter entfernen, wenn erprobt; dann auch die Dateien in `sw.js` aufnehmen
-- [x] „In LearningModules öffnen“: die .zlm von Fenster zu Fenster an den Server der Lehrkraft (`app/send-to-lm.js`, dort `views/zlm-receive.js`), ablegen wie bei „Öffnen mit“; auch hinter `?tiptap=1`
+- [x] Bearbeiten: Tiptap-Fläche mit Leiste aus LearningModules (`editor/pm-toolbar.js`, `app/text-editor.js`); statt YAML kleine Dialoge (`editor/block-dialog.js`). Noch ohne ⚙ Tabelleneigenschaften und Zeichenrahmen, die bearbeitet LearningModules.
+- [x] „In LearningModules öffnen“: die .zlm von Fenster zu Fenster an den Server der Lehrkraft (`app/send-to-lm.js`, dort `views/zlm-receive.js`), ablegen wie bei „Öffnen mit“
 - [x] Bilder aus `media/` einfügen: beim Bearbeiten als data:-Adresse, mit „Fertig“ zurück nach `media/` (`specFromView`), gleiche Bilder liegen einmal da
 - [x] Übernehmen ohne Server: `.odt` (Leser aus LearningModules nach `src/import/odt.js` übertragen, gleiche Ergebnisse geprüft; `docspec-html.js` liegt jetzt hier) und `.pdf` als Bilder der Seiten (pdf.js, weißer Rand abgeschnitten); Bilder nach `media/`; Hinweise, was nicht mitkam; gespeichert wird als neue `.zlm`
 - [ ] LearningModules liest `.odt` ebenfalls mit `src/import/odt.js` im Browser (der Server wandelt nur noch .docx um) – dann entfällt `odt.ts`
@@ -137,7 +137,7 @@ Phasen:
   - [x] Erste Stufe, Freischaltung `docEditorTiptap` (`src/editor/pm-editor.js`, in LearningModules `docspec-tiptap.js`): Text, Absatzarten, Auszeichnung, Listen samt Arten, Links, Bausteine (wählen, ziehen, ↑↓, verdoppeln, Dialog, Karo-Griffe), Lösung, Kasten, Spalten und Code direkt bearbeitbar, Tabellen (Zeilen, Spalten, verbinden), `$…$`, Einfügen, Block-IDs, Rückgängig, ¶-Dialog, Markdown-Reiter, hoch/quer
   - [x] Zweite Stufe: ⚙ Tabelleneigenschaften (der Dialog des alten Editors auf einer Kopie der Tabelle), Spalten und Zeilen am Rand ziehen, Tabelle wählen, verschieben, verdoppeln, Ausrichtung in Zellen; Bild-Dialog (Breite, Lage, Rahmen, Unterschrift, Kopieren als PNG, Speichern, Ersetzen), Bildschirmfoto und Bilddatei einfügen, Bilder gruppieren und lösen, zusammenstellen; Einzug, Ausrichtung, Zeilenabstand; ↑↓⧉ per Rechtsklick
   - [x] Vom Nutzer angetestet und für gut befunden (2026-11-04), Probleme meldet er zurück; damit kann er in den lm-editor.
-  - [ ] Noch offen: Ausprobieren auf dem iPad, schwebende Griffe an der Tabelle wie im alten Editor (hier über das Menü), Bildleiste direkt am Bild (hier Dialog), die Standalone-App freischalten (läuft hinter `?tiptap=1`)
+  - [ ] Noch offen: Ausprobieren auf dem iPad, schwebende Griffe an der Tabelle wie im alten Editor (hier über das Menü), Bildleiste direkt am Bild (hier Dialog), vom Nutzer in der Standalone-App getestet (2026-11-05), Schalter entfernt
 - [ ] 9.5 Speicherformat: `document.json` mit ProseMirror-JSON, `.zlm` Version 2 (Version 1 wird hochgestuft), Migration in LearningModules mit Sicherung
 - [ ] 9.6 worksheet-renderer liest ProseMirror-JSON direkt
 - [ ] 9.7 Aufgabengenerator (mmetzler1): Markdown als Eingabe

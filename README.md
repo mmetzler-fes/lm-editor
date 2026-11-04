@@ -95,8 +95,8 @@ Quizzen) – Änderungen in LearningModules machen und neu erzeugen.
 AGPL-3.0-or-later. Mitgeliefert: [fflate](https://github.com/101arrowz/fflate) (MIT),
 `src/vendor/fflate/`.
 
-## Text bearbeiten (in Erprobung)
+## Text bearbeiten
 
-Mit `?tiptap=1` an der Adresse gibt es **📝 Neues Dokument** und im Blatt **✏️ Text bearbeiten**: dieselbe Fläche wie in
-LearningModules, gespeichert wird weiter das bisherige Format. Der Schalter gilt in diesem Browser, `?tiptap=0` nimmt ihn zurück.
-Ohne ihn lädt die Seite keinen Tiptap-Code.
+**📝 Neues Dokument** auf der Startseite und **✏️ Text bearbeiten** im Blatt öffnen dieselbe Fläche wie in LearningModules: Text, Aufgaben, Tabellen, Formeln,
+Lösungen, Schreibfelder und Bilder. Mit **📓 In LearningModules öffnen** kommt das Blatt samt Quizzen auf den eigenen Server. Quizze werden hier nur
+angezeigt, erstellt werden sie in LearningModules.

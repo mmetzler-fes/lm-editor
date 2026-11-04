@@ -21,21 +21,7 @@ const GENERATOR = 'lm-editor 0.1.0';
 const $ = (sel) => document.querySelector(sel);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
-// ---------- Schalter: Text bearbeiten (Tiptap) ----------
-//
-// Zum Erproben: einmal `?tiptap=1` an die Adresse hängen, `?tiptap=0` schaltet wieder ab. Gilt in diesem
-// Browser. Ohne Schalter wird kein Tiptap geladen, die Seite bleibt, wie sie war.
-
-const TIPTAP_KEY = 'lm_editor_tiptap';
-const tiptapWish = new URLSearchParams(location.search).get('tiptap');
-try {
-  if (tiptapWish === '1') localStorage.setItem(TIPTAP_KEY, '1');
-  if (tiptapWish === '0') localStorage.removeItem(TIPTAP_KEY);
-} catch (_) { /* ohne Speicher: dann eben nur mit der Adresse */ }
-const tiptapOn = () => {
-  if (tiptapWish) return tiptapWish === '1';
-  try { return localStorage.getItem(TIPTAP_KEY) === '1'; } catch (_) { return false; }
-};
+// ---------- Text bearbeiten (Tiptap, erst bei Bedarf geladen) ----------
 
 /** Text bearbeiten, danach zurück ins Blatt; Datei und Speicherort bleiben. */
 async function editText(session) {
@@ -268,8 +254,8 @@ async function openSession(doc, { fileName = null, handle = null } = {}) {
       },
     },
     actions: [
-      ...(tiptapOn() && !isStudent ? [{ label: '✏️ Text bearbeiten', title: 'Text, Aufgaben, Tabellen und Bausteine ändern', onClick: async ({ close }) => { session.editText = true; await close(); } }] : []),
-      ...(tiptapOn() && !isStudent ? [{
+      ...(!isStudent ? [{ label: '✏️ Text bearbeiten', title: 'Text, Aufgaben, Tabellen und Bausteine ändern', onClick: async ({ close }) => { session.editText = true; await close(); } }] : []),
+      ...(!isStudent ? [{
         label: '📓 In LearningModules öffnen',
         title: 'Das Blatt samt Quizzen und Beschriftung an deinen LearningModules-Server geben: dort ansehen und im Notizbuch ablegen. Die Datei hier bleibt.',
         onClick: async () => {
@@ -368,7 +354,6 @@ $('#btnOpen').addEventListener('click', async () => {
 });
 $('#btnExample').addEventListener('click', () => openExample());
 $('#btnKaro').addEventListener('click', () => newKaroSheet());
-$('#btnNew').hidden = !tiptapOn();
 $('#btnNew').addEventListener('click', () => newDocument());
 
 // Datei auf die Seite ziehen.

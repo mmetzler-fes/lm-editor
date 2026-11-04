@@ -32,6 +32,8 @@ schon an den ersten Bytes.
 ```
 
 `kind`: `worksheet` (Arbeitsblatt), `exam` (Klassenarbeit) oder `text`.
+`variant` (optional): `student` bei einer Schülerfassung. Sie enthält keine Lösungen und keine Stift-Ebenen,
+und das Programm zeigt dafür keine Lampe. Quizze prüfen selbst und haben ihre Antworten weiter in der Datei.
 `id`: erkennt das Dokument wieder (z. B. seinen Entwurf im Browser); fehlt
 sie, vergibt das Programm beim Öffnen eine.
 

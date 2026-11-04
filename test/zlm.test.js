@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { zipSync, strToU8 } from '../src/vendor/fflate/fflate.js';
-import { createZlm, writeZlm, readZlm, ZlmError, ZLM_MIME, FORMAT_VERSION } from '../src/zlm/zlm.js';
+import { createZlm, writeZlm, readZlm, studentVersionOf, ZlmError, ZLM_MIME, FORMAT_VERSION } from '../src/zlm/zlm.js';
 
 const now = new Date('2026-10-23T10:00:00Z');
 
@@ -99,4 +99,36 @@ test('Dokument-ID: neu vergeben, fehlende beim Lesen ergänzt', () => {
   assert.match(doc.manifest.id, /^[a-z0-9]{16}$/);
   delete doc.manifest.id;
   assert.match(readZlm(writeZlm(doc, { now })).manifest.id, /^[a-z0-9]{16}$/);
+});
+
+test('Schülerfassung: ohne Lösungen, Beschriftung und was nur dort vorkam', () => {
+  const doc = createZlm({ title: 'Ohm', now });
+  doc.spec.content.push(
+    { id: 'a', type: 'text', text: 'Aufgabe' },
+    { id: 'b', type: 'image', src: 'media/bleibt.png' },
+    { id: 'c', type: 'quiz', module: 'q1' },
+    { id: 'd', type: 'solution', blocks: [{ type: 'text', text: 'GEHEIM' }, { type: 'image', src: 'media/loesung.png' }, { type: 'quiz', module: 'q2' }] },
+    { id: 'e', type: 'task', blocks: [{ type: 'box', blocks: [{ type: 'solution', blocks: [{ type: 'text', text: 'GEHEIM' }] }, { type: 'text', text: 'Hinweis' }] }] },
+  );
+  doc.modules.q1 = { id: 'q1', type: 'trueFalse', title: 'Bleibt', content: {} };
+  doc.modules.q2 = { id: 'q2', type: 'trueFalse', title: 'Nur in der Lösung', content: {} };
+  doc.media['bleibt.png'] = new Uint8Array([1]);
+  doc.media['loesung.png'] = new Uint8Array([2]);
+  doc.media['nicht-bleibt.png'] = new Uint8Array([3]);
+  doc.layers.teacher = { id: 'teacher', role: 'teacher', blocks: { a: { items: [{ id: 's', type: 'text', text: 'GEHEIM' }] } } };
+  doc.preview = new Uint8Array([9]);
+
+  const out = readZlm(writeZlm(studentVersionOf(doc), { now }));
+  assert.ok(!JSON.stringify([out.spec, out.modules, out.layers]).includes('GEHEIM'));
+  assert.ok(JSON.stringify(out.spec).includes('Hinweis'));
+  assert.deepEqual(Object.keys(out.modules), ['q1']);
+  assert.deepEqual(Object.keys(out.media), ['bleibt.png']);
+  assert.deepEqual(out.layers, {});
+  assert.equal(out.preview, null);
+  assert.equal(out.manifest.variant, 'student');
+  assert.notEqual(out.manifest.id, doc.manifest.id);
+  // Das Original bleibt unberührt.
+  assert.ok(JSON.stringify(doc.spec).includes('GEHEIM'));
+  assert.ok(doc.layers.teacher);
+  assert.ok(doc.media['loesung.png']);
 });

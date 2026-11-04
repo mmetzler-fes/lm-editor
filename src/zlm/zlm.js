@@ -41,6 +41,45 @@ export function createZlm({ title = 'Neues Dokument', kind = 'worksheet', lang =
   };
 }
 
+/** Lösungsblöcke entfernen, wo immer sie stehen (Aufgaben, Kästen, Tabellenzellen). */
+function withoutSolutions(v) {
+  if (Array.isArray(v)) return v.filter((x) => !(x && typeof x === 'object' && x.type === 'solution')).map(withoutSolutions);
+  if (v && typeof v === 'object') return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, withoutSolutions(x)]));
+  return v;
+}
+
+/**
+ * Schülerfassung zum Weitergeben: ohne Lösungen und ohne Beschriftung. Bilder und Quizze, die nur noch
+ * dort vorkamen, fallen mit heraus, ebenso das Vorschaubild, auf dem Lösungen zu sehen sein könnten.
+ * Quizze bleiben: Sie prüfen beim Ausfüllen selbst und haben ihre Antworten deshalb in der Datei.
+ * Eine neue Kennung sorgt dafür, dass der Entwurf des Originals nicht überschrieben wird.
+ */
+export function studentVersionOf(doc) {
+  const spec = withoutSolutions(doc.spec);
+  const quizIds = new Set();
+  const visit = (v) => {
+    if (Array.isArray(v)) v.forEach(visit);
+    else if (v && typeof v === 'object') {
+      if (v.type === 'quiz' && typeof v.module === 'string') quizIds.add(v.module);
+      Object.values(v).forEach(visit);
+    }
+  };
+  visit(spec);
+  const modules = Object.fromEntries(Object.entries(doc.modules || {}).filter(([id]) => quizIds.has(id)));
+  const used = JSON.stringify([spec, modules]);
+  const mentioned = (name) => new RegExp(`media/${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\w.-])`).test(used);
+  const media = Object.fromEntries(Object.entries(doc.media || {}).filter(([name]) => mentioned(name)));
+  const { preview: _preview, ...rest } = doc;
+  return {
+    ...rest,
+    manifest: { ...doc.manifest, id: newBlockId() + newBlockId(), variant: 'student' },
+    spec,
+    modules,
+    media,
+    layers: {},
+  };
+}
+
 /** Dokument → Bytes der .zlm. `generator`: Name und Version des Programms. */
 export function writeZlm(doc, { generator = 'lm-editor', now = new Date() } = {}) {
   const manifest = { ...doc.manifest, format: 'zlm', version: FORMAT_VERSION, modified: now.toISOString(), generator };

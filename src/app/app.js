@@ -8,7 +8,7 @@
 // Mit Renderer (docker-compose.yaml, tools/serve.mjs leitet /renderer/ weiter):
 // PDF mit Vorlage drucken und Word/PowerPoint übernehmen (LibreOffice).
 
-import { createZlm, readZlm, writeZlm, editorStateOf, layerOf, specForView, ZlmError } from '../zlm/zlm.js';
+import { studentVersionOf, createZlm, readZlm, writeZlm, editorStateOf, layerOf, specForView, ZlmError } from '../zlm/zlm.js';
 import { stampBlockIds } from '../doc/ids.js';
 import '../doc/latex.js'; // LaTeX-Formeln
 import { openInkEditor } from '../ink/ink-editor.js';
@@ -143,6 +143,18 @@ async function pickFile() {
   });
 }
 
+/**
+ * 🎓 Schülerfassung: eine eigene Datei zum Weitergeben, ohne Lösungen und Beschriftung. Das Original und
+ * sein Speicherort bleiben, wie sie sind.
+ */
+async function saveStudentVersion(session) {
+  const copy = studentVersionOf(session.doc);
+  const base = (session.fileName || fileNameOf(session.doc.manifest.title)).replace(/\.zlm$/i, '');
+  await saveFile({ doc: copy, fileName: `${base} (Schülerfassung).zlm`, handle: null });
+  const left = Object.keys(copy.modules).length;
+  if (left) notice('Schülerfassung gespeichert', [`${left === 1 ? 'Das Quiz prüft' : `Die ${left} Quizze prüfen`} beim Ausfüllen selbst, die Antworten stehen deshalb weiter in der Datei.`]);
+}
+
 /** In die Datei schreiben (gewählter Ort) oder herunterladen. */
 async function saveFile(session) {
   const bytes = writeZlm(session.doc, { generator: GENERATOR });
@@ -202,6 +214,7 @@ async function openSession(doc, { fileName = null, handle = null } = {}) {
   // (fehlende nach der Position, wie die Striche sie bisher kennen).
   stampBlockIds(doc.spec);
   const session = { doc, fileName, handle };
+  const isStudent = doc.manifest.variant === 'student';
   const renderer = new H5pRenderer();
   const embedModule = (id) => doc.modules[id] || null;
   // Mit Renderer zusätzlich „PDF mit Vorlage“ im Druckmenü.
@@ -210,7 +223,9 @@ async function openSession(doc, { fileName = null, handle = null } = {}) {
   await openInkEditor({
     title: doc.manifest.title,
     key: doc.manifest.id,
-    solutions: true,
+    // Eine Schülerfassung hat keine Lösungen, also auch keine Lampe.
+    solutions: !isStudent,
+    laser: !isStudent,
     paper: {
       landscape: doc.spec.orientation === 'landscape',
       mount(el, { solutions }) {
@@ -227,7 +242,10 @@ async function openSession(doc, { fileName = null, handle = null } = {}) {
         return saveDraft(session);
       },
     },
-    actions: [{ label: '💾 Speichern', title: 'Als .zlm-Datei speichern', onClick: () => saveFile(session) }],
+    actions: [
+      { label: '💾 Speichern', title: 'Als .zlm-Datei speichern', onClick: () => saveFile(session) },
+      ...(isStudent ? [] : [{ label: '🎓 Schülerfassung', title: 'Eigene Datei zum Weitergeben: ohne Lösungen und ohne deine Beschriftung. Das Original bleibt.', onClick: () => saveStudentVersion(session) }]),
+    ],
     onClose: () => showStart(),
   });
   await saveDraft(session);

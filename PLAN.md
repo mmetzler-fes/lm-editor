@@ -100,7 +100,7 @@ nie, sie ist nur das Datenmodell darunter.
 ### 6 Lernmodule im Editor
 - [ ] Modul-Editoren (`content-editors.js` u. a.) übernehmen
 - [ ] Module aus `.h5p` und LearningModules-Export importieren
-- [ ] Schülerfassung ohne Lösungen (für die Weitergabe als Datei)
+- [x] Schülerfassung ohne Lösungen (für die Weitergabe als Datei): 🎓 im Stift-Editor, `studentVersionOf`; Quizze behalten ihre Antworten, weil sie selbst prüfen
 
 ### 7 Austausch mit LearningModules
 - [x] `.zlm` in LearningModules importieren (Dokument + Module ins Lernthema): im Betrachter (Doppelklick, „Öffnen mit“) **📓 Im Notizbuch ablegen…** – Quizze mit neuen IDs, Beschriftung wird die der Lehrkraft

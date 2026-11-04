@@ -132,7 +132,8 @@ Phasen:
 - [ ] 9.4 Editor auf Tiptap (eigene Freischaltung, alter Editor parallel); Abnahme gegen `docs/dokumente.md` von LearningModules, ausdrücklich auch Vorlage hoch ⇄ quer (Blatt, Schreibfelder, `orientation` in `attrs.meta`); Markdown-Reiter statt YAML
   - [x] Erste Stufe, Freischaltung `docEditorTiptap` (`src/editor/pm-editor.js`, in LearningModules `docspec-tiptap.js`): Text, Absatzarten, Auszeichnung, Listen samt Arten, Links, Bausteine (wählen, ziehen, ↑↓, verdoppeln, Dialog, Karo-Griffe), Lösung, Kasten, Spalten und Code direkt bearbeitbar, Tabellen (Zeilen, Spalten, verbinden), `$…$`, Einfügen, Block-IDs, Rückgängig, ¶-Dialog, Markdown-Reiter, hoch/quer
   - [x] Zweite Stufe: ⚙ Tabelleneigenschaften (der Dialog des alten Editors auf einer Kopie der Tabelle), Spalten und Zeilen am Rand ziehen, Tabelle wählen, verschieben, verdoppeln, Ausrichtung in Zellen; Bild-Dialog (Breite, Lage, Rahmen, Unterschrift, Kopieren als PNG, Speichern, Ersetzen), Bildschirmfoto und Bilddatei einfügen, Bilder gruppieren und lösen, zusammenstellen; Einzug, Ausrichtung, Zeilenabstand; ↑↓⧉ per Rechtsklick
-  - [ ] Offen zur Abnahme: Ausprobieren von Hand und auf dem iPad, schwebende Griffe an der Tabelle wie im alten Editor (hier über das Menü), Bildleiste direkt am Bild (hier Dialog), die Standalone-App
+  - [x] Vom Nutzer angetestet und für gut befunden (2026-11-04), Probleme meldet er zurück; damit kann er in den lm-editor.
+  - [ ] Noch offen: Ausprobieren auf dem iPad, schwebende Griffe an der Tabelle wie im alten Editor (hier über das Menü), Bildleiste direkt am Bild (hier Dialog), die Standalone-App
 - [ ] 9.5 Speicherformat: `document.json` mit ProseMirror-JSON, `.zlm` Version 2 (Version 1 wird hochgestuft), Migration in LearningModules mit Sicherung
 - [ ] 9.6 worksheet-renderer liest ProseMirror-JSON direkt
 - [ ] 9.7 Aufgabengenerator (mmetzler1): Markdown als Eingabe

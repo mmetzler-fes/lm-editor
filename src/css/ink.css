@@ -19,6 +19,9 @@ body.ink-open { overflow: hidden; }
   background: var(--bg-secondary); border-bottom: 1px solid var(--border);
 }
 .ink-toolbar::-webkit-scrollbar { display: none; }
+/* 💡 Lösung: immer rechts sichtbar, auch wenn die Leiste scrollt. */
+.ink-solution-group { margin-left: auto; position: sticky; right: 0; z-index: 2; background: inherit; padding-left: 6px; }
+.ink-btn.ink-solution.active { background: #fde68a; color: #92400e; }
 .ink-title { font-weight: 600; max-width: 18ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ink-group { display: inline-flex; align-items: center; gap: 2px; flex: 0 0 auto; }
 .ink-btn {

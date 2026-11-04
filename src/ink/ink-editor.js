@@ -247,7 +247,6 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
           <option value="leer">▢ Leer</option>
           <option value="file">🖼 Bild oder PDF …</option>
         </select>
-        ${solutions && (loadPdf || paper) ? btn('ink-solution', 'bulb', 'Lösungen ein- und ausblenden') : ''}
         ${btn('ink-add-page', 'page', 'Seite anfügen')}
         ${paper?.headerPdf ? btn('ink-head', 'head', 'Kopfzeile der Vorlage zeigen (Logo, Titel – wie im Druck)') : ''}
         ${paper ? btn('ink-print', 'print', 'Drucken oder als PDF speichern – Arbeitsblatt oder Lösungsblatt, mit oder ohne Beschriftung') : ''}
@@ -258,6 +257,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
         ${btn('ink-zoom-in', 'zoomIn', 'Vergrößern')}
       </span>
       <span class="ink-status" aria-live="polite"></span>
+      ${solutions && (loadPdf || paper) ? `<span class="ink-group ink-solution-group">${btn('ink-solution', 'bulb', 'Lösungen ein- und ausblenden')}</span>` : ''}
     </div>
     <div class="ink-stage">
       <div class="ink-subbar" role="toolbar" aria-label="Einstellungen des Werkzeugs">

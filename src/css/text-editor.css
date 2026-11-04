@@ -169,3 +169,29 @@
 .ds-formula-form .ds-fx-preview .ds-formula { margin: 0.3em 0; }
 .ds-surface .ds-math { cursor: pointer; border-radius: 3px; }
 .ds-surface .ds-math:hover { background: #e0f2fe; }
+.admin-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 16px;
+  border-bottom: 2px solid var(--border);
+  padding-bottom: 0;
+}
+.admin-tab {
+  background: none;
+  border: none;
+  padding: 8px 16px;
+  font-size: 0.9em;
+  font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer;
+  border-bottom: 3px solid transparent;
+  margin-bottom: -2px;
+  border-radius: 0;
+  transition: color 0.15s, border-color 0.15s;
+}
+.admin-tab:hover { color: var(--text-primary); }
+.admin-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+.ds-tprops { max-width: 520px; }
+.ds-tprops-tabs { margin: 4px 0 8px; }
+.ds-tprops .ds-para-grid[hidden] { display: none; }
+.ds-tprops-check { flex-direction: row !important; align-items: center; grid-column: 1 / -1; }

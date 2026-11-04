@@ -28,6 +28,7 @@ const CORE = [
   'src/editor/pm-editor.js',
   'src/editor/pm-ids.js',
   'src/editor/pm-toolbar.js',
+  'src/editor/table-props.js',
   'src/util/dom.js',
   'src/vendor/fflate/fflate.js',
   'src/vendor/tiptap/tiptap.mjs',

@@ -9,6 +9,7 @@ import { stampBlockIds } from '../doc/ids.js';
 import { escapeAttr } from '../util/dom.js';
 import { mountTiptapSurface, openImageDialog } from '../editor/pm-toolbar.js';
 import { askTable, openBlockDialog } from '../editor/block-dialog.js';
+import { openTableProps } from '../editor/table-props.js';
 import { loadEditorStyles } from './editor-styles.js';
 
 const fileToDataUrl = (file) => new Promise((ok, no) => {
@@ -82,6 +83,7 @@ export function openTextEditor(doc, { onDone }) {
     fullWidthCm: () => (doc.spec.orientation === 'landscape' ? 25.5 : 16.5),
     status: (text) => { status.textContent = text; },
     imageFromFile: imageBlock,
+    tableProps: (td) => openTableProps(td),
   });
   pm.focus?.();
   title.addEventListener('input', () => { changed = true; });

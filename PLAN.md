@@ -74,7 +74,7 @@ nie, sie ist nur das Datenmodell darunter.
 - [x] Server ohne Abhängigkeiten: `npm start` → Port 5180, `--lan` fürs iPad
 - [x] Speichern: File System Access (Chrome/Edge, gleiche Datei), sonst Download; jede Änderung als Entwurf im Browser
 - [x] Stift-Editor: Optionen `store`, `actions`, `onClose`; Ebene in der Datei mit dem Stand des Editors (`editor`)
-- [x] Bearbeiten: Tiptap-Fläche mit Leiste aus LearningModules (`editor/pm-toolbar.js`, `app/text-editor.js`); statt YAML kleine Dialoge (`editor/block-dialog.js`). Noch ohne ⚙ Tabelleneigenschaften und Zeichenrahmen, die bearbeitet LearningModules.
+- [x] Bearbeiten: Tiptap-Fläche mit Leiste aus LearningModules (`editor/pm-toolbar.js`, `app/text-editor.js`); statt YAML kleine Dialoge (`editor/block-dialog.js`). Mit ⚙ Tabelleneigenschaften (`editor/table-props.js`, gemeinsam mit LearningModules). Noch ohne Zeichenrahmen, die bearbeitet LearningModules.
 - [x] „In LearningModules öffnen“: die .zlm von Fenster zu Fenster an den Server der Lehrkraft (`app/send-to-lm.js`, dort `views/zlm-receive.js`), ablegen wie bei „Öffnen mit“
 - [x] Bilder aus `media/` einfügen: beim Bearbeiten als data:-Adresse, mit „Fertig“ zurück nach `media/` (`specFromView`), gleiche Bilder liegen einmal da
 - [x] Übernehmen ohne Server: `.odt` (Leser aus LearningModules nach `src/import/odt.js` übertragen, gleiche Ergebnisse geprüft; `docspec-html.js` liegt jetzt hier) und `.pdf` als Bilder der Seiten (pdf.js, weißer Rand abgeschnitten); Bilder nach `media/`; Hinweise, was nicht mitkam; gespeichert wird als neue `.zlm`

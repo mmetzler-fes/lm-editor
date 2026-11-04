@@ -1648,8 +1648,9 @@ export class H5pRenderer {
           });
           if (a.primary) actionsBar().prepend(btn); else actionsBar().appendChild(btn);
         });
-        // Lösungen: in der Vorschau zum Aufdecken, im Quiz bleiben sie verborgen.
-        if (!options.quizMode && div.querySelector('.ds-solution')) {
+        // Lösungen zum Aufdecken: Schüler bekommen sie vom Server nur, wenn sie sie sehen dürfen.
+        // Der Stift-Editor hat dafür einen eigenen Knopf.
+        if (!options.noSolutionToggle && div.querySelector('.ds-solution')) {
           const btn = document.createElement('button');
           btn.type = 'button';
           btn.className = 'btn btn-secondary btn-sm ds-solutions-toggle';

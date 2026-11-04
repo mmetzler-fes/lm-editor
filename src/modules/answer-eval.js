@@ -43,7 +43,7 @@ export function dndIsPairs(content) {
 export const GRADABLE_TYPES = new Set([
   'multipleChoice', 'trueFalse', 'fillInTheBlanks', 'markTheWords', 'dragTheWords',
   'dictation', 'dragAndDrop', 'flashcards', 'arithmeticQuiz', 'branchingScenario', 'formula',
-  'sorting', 'crossword',
+  'sorting', 'crossword', 'htmlAppTask',
 ]);
 
 /**
@@ -402,6 +402,15 @@ export function collectAnswer(mod, root) {
       result.infoAnswer = total && found === total
         ? `Gelöst in ${board.dataset.moves} Zügen`
         : `${found} von ${total} Paaren gefunden`;
+      break;
+    }
+    // Schritt einer HTML-App: Die App meldet ihren Stand laufend, der Gastgeber merkt ihn sich.
+    case 'htmlAppTask': {
+      const a = content.answer || {};
+      result.isCorrect = a.isCorrect === true;
+      result.userAnswer = a.userAnswer || '';
+      result.correctAnswer = a.correctAnswer || '';
+      if (a.points !== undefined) result.points = a.points;
       break;
     }
     default: {

@@ -50,7 +50,7 @@ dort ein Fenster öffnen (Popup-Sperre, iPad).
 htmlApp: ({ el, moduleId, title, content, options }) => void
 ```
 
-Module `htmlApp` und `htmlAppUnit`: Der Gastgeber baut die App in `el` ein, mit eigener Adresse und
+Module `htmlApp`, `htmlAppUnit` und die Schritte `htmlAppTask`, `htmlAppInfo`: Der Gastgeber baut die App in `el` ein, mit eigener Adresse und
 Sandkasten. Ohne diesen Haken erscheint nur ein Hinweis, das Modul läuft nur in LearningModules.
 
 ## recording(ctx)

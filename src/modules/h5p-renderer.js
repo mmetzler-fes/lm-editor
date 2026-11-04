@@ -1587,7 +1587,9 @@ export class H5pRenderer {
 
       // Fremdes HTML läuft nur beim Gastgeber: mit eigener Adresse und Sandkasten.
       case 'htmlApp':
-      case 'htmlAppUnit': {
+      case 'htmlAppUnit':
+      case 'htmlAppTask':
+      case 'htmlAppInfo': {
         if (this.host.htmlApp) this.host.htmlApp({ el: div, moduleId: options.moduleId, title: options.title, content, options });
         else div.textContent = 'HTML-Apps laufen nur in LearningModules.';
         break;

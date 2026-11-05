@@ -3,6 +3,7 @@ import { askTable, openBlockDialog } from '../editor/block-dialog.js';
 import { openTableProps } from '../editor/table-props.js';
 import { pmToMarkdown, markdownToPm } from '../doc/pm-markdown.js';
 import { pmToSpec, specToPm } from '../doc/pm-convert.js';
+import { pasteAsMarkdown } from '../doc/paste.js';
 import { stampBlockIds } from '../doc/ids.js';
 import { loadEditorStyles } from '../app/editor-styles.js';
 
@@ -157,6 +158,12 @@ export function openRichEditor({ title = 'Text', spec, widthCm = 16.5, formula =
       const area = panel.querySelector('textarea');
       area.value = pmToMarkdown(specToPm(current));
       area.focus();
+      area.addEventListener('paste', (e) => {
+        const md = pasteAsMarkdown({ text: e.clipboardData?.getData('text/plain') || '', html: e.clipboardData?.getData('text/html') || '' });
+        if (md === null) return;
+        e.preventDefault();
+        area.setRangeText(md, area.selectionStart, area.selectionEnd, 'end');
+      });
       panel.querySelector('[data-md-cancel]').addEventListener('click', () => panel.remove());
       panel.querySelector('[data-md-ok]').addEventListener('click', () => {
         const warnings = [];

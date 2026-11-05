@@ -63,3 +63,11 @@ describe('Einfügen: Quelle', () => {
     expect(pasteSource({ text: '  ' }).html).toBe('');
   });
 });
+
+describe('Einfügen ins Markdown-Fenster', () => {
+  it('reiner Text ohne HTML bleibt, wie er ist', async () => {
+    const { pasteAsMarkdown } = await import('../src/doc/paste.js');
+    expect(pasteAsMarkdown({ text: '**fett**', html: '' })).toBe(null);
+    expect(pasteAsMarkdown({ text: 'nur Text', html: '<span>nur Text</span>' })).toBe(null);
+  });
+});

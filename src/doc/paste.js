@@ -8,8 +8,8 @@
 import MarkdownIt from '../vendor/markdown-it/markdown-it.mjs';
 import { INLINE_MATH_SOURCE, validateDocSpec } from './docspec.js';
 import { htmlToDocSpec, specToEditorHtml } from './docspec-html.js';
-import { pmToSpec } from './pm-convert.js';
-import { markdownToPm } from './pm-markdown.js';
+import { pmToSpec, specToPm } from './pm-convert.js';
+import { markdownToPm, pmToMarkdown } from './pm-markdown.js';
 
 const escHtml = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
@@ -179,6 +179,17 @@ export function pasteToSpec({ text, html }) {
   // Was das Format nicht kennt, kommt als reiner Text – lieber schlicht als gar nicht.
   const usable = validateDocSpec(spec).length ? htmlToDocSpec(plainToHtml(text || '')).spec : spec;
   return usable.content.length ? { spec: usable, warnings } : null;
+}
+
+/**
+ * Einfügen in ein Markdown-Textfeld: Aus Chats und Webseiten kommt der Text als HTML und zugleich als
+ * reiner Text ohne Auszeichnung. Das Textfeld nähme nur den reinen Text, die Formatierung ginge verloren.
+ * Ergebnis: das HTML als Markdown – oder null, wenn nur reiner Text da ist (dann bleibt der Text, wie er ist).
+ */
+export function pasteAsMarkdown({ text, html }) {
+  if (!String(html || '').trim() || !HTML_MEANING.test(html)) return null;
+  const parsed = pasteToSpec({ text, html });
+  return parsed ? pmToMarkdown(specToPm(parsed.spec)).trim() : null;
 }
 
 /** Nur ein Stück Text ohne Absatz? Es fließt in den Absatz an der Schreibmarke, statt ihn zu trennen. */

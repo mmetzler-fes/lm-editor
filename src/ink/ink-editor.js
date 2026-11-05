@@ -446,6 +446,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     overlay.classList.toggle('ink-finger-writes', state.fingerWrites);
     overlay.querySelector('[data-tool="pen"]').classList.toggle('ink-finger-on', state.fingerWrites);
     overlay.classList.toggle('ink-tool-select', selecting());
+    overlay.classList.toggle('ink-tool-area', state.tool === 'area');
     overlay.classList.toggle('ink-tool-laser', state.tool === 'laser');
     overlay.classList.toggle('ink-paper-mode', doc.bg === 'paper');
     $('.ink-bg-select').value = doc.bg;
@@ -1304,6 +1305,19 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     };
     make(null);
     for (const b of topBlocks()) make(b.bid);
+    // Griff ⠿ an jedem Baustein (Lehrkraft): daran gleich ziehen, ohne ihn vorher anzutippen.
+    paperView.el.querySelectorAll('.ink-block-grip').forEach((g) => g.remove());
+    if (paper.blockOps) {
+      for (const b of topBlocks()) {
+        if (b.el.dataset.inserted) continue;
+        const g = document.createElement('span');
+        g.className = 'ink-block-grip';
+        g.dataset.grip = b.bid; // nicht data-bid: Das zählte der Editor sonst selbst als Baustein
+        g.title = 'Baustein verschieben: hier anfassen und ziehen';
+        g.textContent = '⠿';
+        paperView.el.appendChild(g);
+      }
+    }
     positionInsertMarks();
   }
 
@@ -1324,6 +1338,13 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
       }
       m.hidden = false;
       m.style.top = `${y / PX_PT}px`;
+    });
+    paperView.el.querySelectorAll('.ink-block-grip').forEach((g) => {
+      const i = byBid.get(g.dataset.grip);
+      if (i === undefined) { g.hidden = true; return; }
+      const b = blocks[i];
+      g.hidden = false;
+      g.style.top = `${(b.top + Math.min((b.bottom - b.top) / 2, 12)) / PX_PT}px`;
     });
   }
 
@@ -2739,6 +2760,18 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
       if (state.editing) return;
       if (e.pointerType === 'touch' && (penDown || Date.now() - penLiftAt < PALM_MS)) return;
       if (e.target.closest?.('.ink-rich-edit')) return;
+      // Griff ⠿: Der Baustein ist gewählt und hängt sofort am Stift oder Finger.
+      // Nur beim Pfeil: Der Bereich zieht sein Rechteck auch am linken Rand auf.
+      const grip = p.paper && paper.blockOps && state.tool === 'select' ? e.target.closest?.('.ink-block-grip') : null;
+      if (grip) {
+        e.preventDefault();
+        e.stopPropagation();
+        p.el.setPointerCapture?.(e.pointerId);
+        selectBlocks([grip.dataset.grip]);
+        gesture = { kind: 'blockMove', id: e.pointerId, anchor: [e.clientX, e.clientY], bids: [grip.dataset.grip] };
+        p.busy = true;
+        return;
+      }
       { const [lx, ly] = toPage(e); state.lastAt = { page: p.i, x: lx, y: ly }; }
       const onQuiz = p.paper && !!e.target.closest?.('.ds-quiz-live');
       // Ein Finger auf einem Quiz bedient es immer – zeichnen geht dort mit Stift oder Maus.
@@ -2935,7 +2968,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
       p.busy = false;
     };
 
-    const move = (e) => {
+    const move = (e, fromEdge = false) => {
       if (gesture?.kind === 'stroke' && (e.buttons & 34)) {
         const id = gesture.id;
         cancelGesture();
@@ -2999,6 +3032,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
         clearTimeout(gesture.press);
         gesture.drop = dropAt(toPage(e)[1], gesture.bids);
         dropLine(gesture.drop.y);
+        if (!fromEdge) edgeScroll(gesture, e);
       } else if (gesture.kind === 'tap') {
         if (gesture.from && Math.hypot(e.clientX - gesture.from[0], e.clientY - gesture.from[1]) > HOLD_SLACK) {
           gesture.moved = true;
@@ -3068,7 +3102,24 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
         doc.pages[p.i].items = gesture.base.map((it) => (state.selection.ids.has(it.id) ? moved(it, dx, dy) : it));
         gesture.moved = true;
         drawItems(p.i);
+        if (!fromEdge) edgeScroll(gesture, e);
       }
+    };
+
+    // Beim Ziehen am oberen oder unteren Rand läuft das Blatt mit – auch für weite Wege.
+    const edgeScroll = (g, e) => {
+      g.last = { clientX: e.clientX, clientY: e.clientY, pointerId: e.pointerId, pointerType: e.pointerType, buttons: 1 };
+      const v = scroller.getBoundingClientRect();
+      const zone = 70;
+      g.edge = e.clientY < v.top + zone ? e.clientY - (v.top + zone) : e.clientY > v.bottom - zone ? e.clientY - (v.bottom - zone) : 0;
+      if (!g.edge || g.edgeRaf) return;
+      const step = () => {
+        if (gesture !== g || !g.edge) { g.edgeRaf = 0; return; }
+        scroller.scrollBy(0, Math.max(-24, Math.min(24, g.edge * 0.35)));
+        move(g.last, true);
+        g.edgeRaf = requestAnimationFrame(step);
+      };
+      g.edgeRaf = requestAnimationFrame(step);
     };
 
     const up = (e) => {
@@ -3379,7 +3430,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     const css = getComputedStyle(paperView.el);
     const padLeft = parseFloat(css.paddingLeft) * PX_PT;
     const copy = paperView.el.cloneNode(true);
-    copy.querySelectorAll('.ink-karo-handle, .ink-insert-mark').forEach((el) => el.remove());
+    copy.querySelectorAll('.ink-karo-handle, .ink-insert-mark, .ink-block-grip').forEach((el) => el.remove());
     copy.querySelector('.docspec')?.classList.toggle('ds-hide-solutions', !withSolutions);
     if (ink) {
       for (const [bid, entry] of Object.entries(layerNow.blocks || {})) {

@@ -276,7 +276,16 @@ body.ink-open { overflow: hidden; }
   box-shadow: 0 0 0 1px #bfd4f6;
 }
 .ink-insert-mark:hover span, .ink-insert-mark:focus-visible span { opacity: 1; background: #3b82f6; color: #fff; }
-@media print { .ink-insert-mark { display: none; } }
+/* Griff zum Verschieben eines Bausteins: nur mit Pfeil und Bereich, groß genug für Finger und Stift. */
+.ink-block-grip {
+  position: absolute; left: 1.45cm; width: 30px; height: 34px; margin-top: -17px; display: none;
+  align-items: center; justify-content: center; z-index: 3; border-radius: 6px;
+  color: #3b82f6; font: 700 18px/1 Arial, sans-serif; opacity: 0.6; cursor: grab; touch-action: none; user-select: none;
+}
+.ink-tool-select .ink-block-grip { display: flex; }
+.ink-block-grip[hidden], .ink-text-editing .ink-block-grip, .ink-tool-area .ink-block-grip { display: none !important; }
+.ink-block-grip:hover, .ink-block-sel ~ .ink-block-grip:hover { opacity: 1; background: #e0ecff; }
+@media print { .ink-insert-mark, .ink-block-grip { display: none; } }
 
 /* Beschriftung in der gewöhnlichen Ansicht (ink-view.js): das Blatt wie im Editor, verkleinert auf die Breite. */
 .ink-view { margin: 0 auto; max-width: max-content; }

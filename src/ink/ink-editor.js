@@ -214,7 +214,7 @@ const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<
  *   [{ label, run(afterBid) }] (z. B. Quiz, PDF).
  * - `store`: woanders speichern als auf diesem Gerät – { load() → Stand | null,
  *   save(stand) → true/false, label }; der Stand ist { v, bg, pages, layer, ruler }.
- * - `actions`: weitere Knöpfe in der Leiste – [{ label, title, onClick({ close }) }]; vorher wird gespeichert.
+ * - `actions`: weitere Knöpfe in der Leiste – [{ label, title, onClick({ close }) }]; beginnt `label` mit einem Symbol, steht nur dieses da. Vorher wird gespeichert.
  * - `onClose`: nach dem Schließen (der Stand ist dann gespeichert).
  * - `laser`: Leuchtstift zum Zeigen am Beamer (Spur verblasst, wird nicht gespeichert) – Vorgabe: wie `solutions` (Lehrkräfte).
  */
@@ -263,8 +263,11 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     <div class="ink-toolbar" role="toolbar">
       ${btn('ink-close', 'close', store ? 'Schließen' : 'Schließen – die Beschriftung bleibt auf diesem Gerät gespeichert')}
       ${btn('ink-save', 'save', 'Speichern – geschieht auch automatisch kurz nach jeder Änderung')}
-      <span class="ink-title">${esc(title)}</span>
-      ${actions.map((a, i) => `<button type="button" class="ink-btn ink-labeled ink-action" data-action="${i}" title="${esc(a.title || a.label)}">${esc(a.label)}</button>`).join('')}
+      ${actions.map((a, i) => {
+    // Nur das Symbol, damit die Werkzeuge ihren Platz behalten; der Name steht im Tooltip.
+    const m = /^(\p{Extended_Pictographic}\S*)\s/u.exec(a.label);
+    return `<button type="button" class="ink-btn ink-action${m ? '' : ' ink-labeled'}" data-action="${i}" title="${esc(a.title ? `${a.label.replace(m?.[0] ?? '', '')}: ${a.title}` : a.label)}" aria-label="${esc(a.label)}">${esc(m ? m[1] : a.label)}</button>`;
+  }).join('')}
       <span class="ink-group ink-tools">
         ${tool('select', 'pointer', 'Pfeil: Element antippen wählt es, auf einem Quiz wird es bedient. Lange drücken: Menü')}
         ${tool('area', 'select', 'Bereich: Rechteck aufziehen wählt alles darin. Mit Stift oder Finger verschieben, lange drücken: Menü')}
@@ -301,6 +304,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
         ${btn('ink-zoom-in', 'zoomIn', 'Vergrößern')}
       </span>
       <span class="ink-status" aria-live="polite"></span>
+      <span class="ink-title">${esc(title)}</span>
       ${solutions && (loadPdf || paper) ? `<span class="ink-group ink-solution-group">${btn('ink-solution', 'bulb', 'Lösungen ein- und ausblenden')}</span>` : ''}
     </div>
     <div class="ink-stage">

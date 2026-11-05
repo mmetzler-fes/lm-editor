@@ -220,7 +220,8 @@ body.ink-open { overflow: hidden; }
 .ink-karo-tools button.active { background: #dbeafe; color: #2563eb; }
 .ink-karo-w, .ink-karo-c, .ink-karo-tools { display: none; }
 .ink-tool-select .ink-karo-w, .ink-tool-select .ink-karo-c, .ink-tool-select .ink-karo-tools { display: flex; }
-.ink-action { color: var(--accent); white-space: nowrap; flex: 0 0 auto; margin-right: 4px; }
+.ink-action { color: var(--accent); white-space: nowrap; flex: 0 0 auto; font-size: 18px; }
+.ink-action.ink-labeled { font-size: inherit; margin-right: 4px; }
 .ink-title { flex: 0 1 auto; min-width: 6ch; }
 
 /* ===== Drucken (printPaper): nur die Kopie des Blatts, Ränder über @page ===== */

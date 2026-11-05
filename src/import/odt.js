@@ -755,9 +755,9 @@ class DrawingSvg {
 /** So lang wird eine Überschrift nicht – ein Absatz mit Überschriften-Vorlage (sieht im Dokument aus wie Text). */
 const MAX_HEADING_CHARS = 200;
 /**
- * Titel aus den Metadaten nur, wenn er nach einem Titel aussieht: Vorlagen
- * tragen oft „1“, „Unbenannt“ oder den Namen der Vorlage – dann zählen die
- * erste Überschrift bzw. der Dateiname.
+ * Titel aus den Metadaten (nur ohne Dateinamen) nur, wenn er nach einem Titel
+ * aussieht: Vorlagen tragen oft „1“, „Unbenannt“ oder den Namen der Vorlage –
+ * dann zählt die erste Überschrift.
  */
 export function usableTitle(t) {
     const s = String(t || '').trim();
@@ -1666,10 +1666,12 @@ export function odtToHtml(buffer, fileName = '', opts = {}) {
     const metaTitle = meta ? textOf(find(parseXml(meta), 'dc:title') || '').trim() : '';
     const firstHeading = /<h[2-4][^>]*>([\s\S]*?)<\/h[2-4]>/.exec(html)?.[1].replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').trim();
     const fromFile = basename(fileName || '', extname(fileName || '')).replace(/[_-]+/g, ' ').trim();
-    // Präsentationen tragen in den Metadaten oft den Titel ihrer Vorlage – dort zählt der Dateiname.
-    const title = slideBody
-        ? fromFile || (firstHeading ? decodeHtml(firstHeading) : '') || 'Präsentation'
-        : (usableTitle(metaTitle) ? metaTitle : '') || (firstHeading ? decodeHtml(firstHeading) : '') || fromFile || 'Arbeitsblatt';
+    // Der Dateiname zählt zuerst: Die Metadaten bleiben beim Kopieren und Umbenennen stehen und tragen
+    // oft den Titel eines älteren Dokuments oder der Vorlage.
+    const heading = firstHeading ? decodeHtml(firstHeading) : '';
+    const title = fromFile || (slideBody
+        ? heading || 'Präsentation'
+        : (usableTitle(metaTitle) ? metaTitle : '') || heading || 'Arbeitsblatt');
     const warnings = [];
     if (slideBody && slideStats.slides) {
         warnings.push(`${slideStats.slides} ${slideStats.slides === 1 ? 'Folie' : 'Folien'} übernommen: je Folie eine Seite mit Titel, Text, Listen und Bildern – ohne Folienvorlage (Logo, Fußzeile, Foliennummer), Schriftgrößen und Farben.`);

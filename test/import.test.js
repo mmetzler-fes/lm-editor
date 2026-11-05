@@ -15,9 +15,10 @@ test('Art der Datei am Inhalt', () => {
   assert.equal(sniff(new TextEncoder().encode('Hallo')), null);
 });
 
-test('.odt → HTML: Überschriften, Tabellen, Bild, Titel aus den Metadaten', () => {
+test('.odt → HTML: Überschriften, Tabellen, Bild; Titel aus dem Dateinamen, ohne ihn aus den Metadaten', () => {
   const { title, html, stats, warnings } = odtToHtml(odt, 'erweitert.odt');
-  assert.equal(title, 'Erweiterte Blöcke');
+  assert.equal(title, 'erweitert');
+  assert.equal(odtToHtml(odt, '').title, 'Erweiterte Blöcke');
   assert.deepEqual(stats, { headings: 2, paragraphs: 23, tables: 4, images: 1, drawings: 0, exported: 0 });
   assert.match(html, /<h2/);
   assert.match(html, /<img src="data:image\/png;base64,/);

@@ -65,8 +65,12 @@ export function openRichEditor({ title = 'Text', spec, widthCm = 16.5, formula =
     editable?.focus({ preventScroll: true }); // sonst schiebt Safari die ganze Seite samt Leiste nach oben
     if (editable) {
       const range = document.createRange();
-      range.selectNodeContents(editable);
-      range.collapse(false);
+      // Endet der Inhalt mit einer Tabelle (z. B. eine neue), geht es in ihrer ersten Zelle los.
+      const last = editable.lastElementChild;
+      const cell = last?.querySelector?.('td, th');
+      const into = cell && !last.matches('p, h1, h2, h3, h4, ul, ol') ? (cell.querySelector('p') || cell) : editable;
+      range.selectNodeContents(into);
+      range.collapse(into === editable ? false : true);
       const sel = window.getSelection();
       sel.removeAllRanges();
       sel.addRange(range);

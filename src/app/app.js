@@ -8,7 +8,8 @@
 // Mit Renderer (docker-compose.yaml, tools/serve.mjs leitet /renderer/ weiter):
 // PDF mit Vorlage drucken und Word/PowerPoint übernehmen (LibreOffice).
 
-import { studentVersionOf, createZlm, readZlm, writeZlm, editorStateOf, layerOf, specForView, ZlmError } from '../zlm/zlm.js';
+import { studentVersionOf, createZlm, readZlm, writeZlm, editorStateOf, layerOf, specForView, specFromView, ZlmError } from '../zlm/zlm.js';
+import { findBlock, insertBlocks, removeBlocks, moveBlocks, replaceBlock } from '../doc/block-ops.js';
 import { stampBlockIds } from '../doc/ids.js';
 import '../doc/latex.js'; // LaTeX-Formeln
 import { openInkEditor } from '../ink/ink-editor.js';
@@ -220,6 +221,35 @@ function notice(title, lines) {
 
 // ---------- Dokument öffnen ----------
 
+/**
+ * Bausteine im Stift-Editor ändern (wie in LearningModules): Das Dokument liegt in `doc.spec` mit Bildern
+ * unter media/; was der Editor bringt, kommt in Ansichtsform (data:-Bilder) und geht über specFromView zurück.
+ */
+function documentEditing(session) {
+  const { doc } = session;
+  const commit = async (change) => {
+    change(doc.spec);
+    if (!(await saveDraft(session))) throw new Error('Der Entwurf ließ sich nicht speichern.');
+  };
+  const stored = (blocks) => specFromView(doc, { content: blocks }).content;
+  const insert = (after, blocks) => commit((spec) => insertBlocks(spec, after, stored(blocks)));
+  return {
+    insertBlock: (after, block) => insert(after, [block]),
+    insertBlocks: insert,
+    blockOps: {
+      get: (bid) => {
+        const ref = findBlock(doc.spec, bid);
+        return ref ? (findBlock(specForView(doc), bid)?.block ?? null) : null;
+      },
+      snapshot: () => JSON.stringify(doc.spec),
+      restore: (json) => commit(() => { doc.spec = JSON.parse(json); }),
+      remove: (bids) => commit((spec) => removeBlocks(spec, bids)),
+      move: (bids, after) => commit((spec) => moveBlocks(spec, bids, after)),
+      replace: (bid, blocks) => commit((spec) => replaceBlock(spec, bid, stored(blocks))),
+    },
+  };
+}
+
 async function openSession(doc, { fileName = null, handle = null } = {}) {
   // Feste IDs, damit die Striche auch nach Änderungen beim richtigen Baustein bleiben
   // (fehlende nach der Position, wie die Striche sie bisher kennen).
@@ -244,6 +274,8 @@ async function openSession(doc, { fileName = null, handle = null } = {}) {
         if (solutions) el.querySelector('.docspec')?.classList.remove('ds-hide-solutions');
       },
       ...(withRenderer ? { printPdf: (data, opts) => printPdf(doc, data, opts) } : {}),
+      // Eine Schülerfassung ändert das Dokument nicht: Dort bleibt alles frei in der Ebene.
+      ...(isStudent ? {} : documentEditing(session)),
     },
     store: {
       label: 'im Entwurf',

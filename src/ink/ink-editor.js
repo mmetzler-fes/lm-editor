@@ -597,7 +597,12 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
   // des Stifts (touchType 'stylus') deshalb anhalten, bevor Safari scrollt –
   // gescrollt wird mit dem Finger.
   const holdStylus = (e) => {
-    if (state.editing) return; // Der Text wird bearbeitet: Stift und Finger gehören dem Editor bzw. dem Scrollen
+    if (state.editing) {
+      // Der Text wird bearbeitet: Der Finger scrollt und setzt die Marke. Der Stift schreibt nicht –
+      // angehalten, sonst nimmt das iPad seine Striche als Handschrift (Scribble) und sie verschwinden gleich.
+      if (e.cancelable && [...e.touches].some((t) => t.touchType === 'stylus')) e.preventDefault();
+      return;
+    }
     if (e.target.closest?.('.ink-text')) return; // ins Textfeld tippen bleibt möglich
     if (state.tool === 'select' && e.target.closest?.('.ds-quiz-live')) return; // Pfeil bedient Quizze
     if ([...e.touches].some((t) => t.touchType === 'stylus')) e.preventDefault();
@@ -2392,11 +2397,17 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
       state.editing = false;
       overlay.classList.remove('ink-text-editing');
       undo();
+      pinPage();
       return result;
     };
     const editing = openRichEditor({ ...opts, surfaceHost: host, barHost: overlay });
     if (!place.free) reflowPaper();
-    host.scrollIntoView?.({ block: 'center' });
+    // Nur das Blatt scrollen: scrollIntoView schöbe auf dem iPad auch die Seite mit der Leiste weg.
+    {
+      const r = host.getBoundingClientRect();
+      const v = scroller.getBoundingClientRect();
+      scroller.scrollBy(0, r.top - v.top - v.height / 3);
+    }
     return finish(await editing);
   }
 
@@ -3366,6 +3377,23 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
   }
 
   // ---------- Tastatur und Schließen ----------
+  // Die Leiste liegt fest oben. Hat Safari die Seite für die Tastatur verschoben, kommt sie zurück,
+  // sobald nicht mehr geschrieben wird – sonst bliebe die Leiste verschwunden.
+  function pinPage() {
+    if (state.editing) return;
+    const a = document.activeElement;
+    if (a && (a.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName))) return;
+    if (window.scrollY || document.documentElement.scrollTop || document.body.scrollTop) {
+      window.scrollTo(0, 0);
+      document.documentElement.scrollTop = 0;
+      document.body.scrollTop = 0;
+    }
+  }
+  const pinSoon = () => setTimeout(pinPage, 150);
+  window.addEventListener('scroll', pinPage, { passive: true });
+  document.addEventListener('focusout', pinSoon);
+  window.visualViewport?.addEventListener('resize', pinSoon);
+  pinPage();
   let pasteSeen = 0;
   const onPaste = (e) => {
     if (state.editing) return;
@@ -3424,6 +3452,9 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     leavePaper();
     document.removeEventListener('keydown', onKey);
     document.removeEventListener('paste', onPaste);
+    window.removeEventListener('scroll', pinPage);
+    document.removeEventListener('focusout', pinSoon);
+    window.visualViewport?.removeEventListener('resize', pinSoon);
     document.removeEventListener('visibilitychange', onHide);
     document.removeEventListener('gesturestart', noZoom);
     document.removeEventListener('gesturechange', noZoom);

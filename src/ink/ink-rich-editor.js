@@ -61,7 +61,7 @@ export function openRichEditor({ title = 'Text', spec, widthCm = 16.5, formula =
     box.querySelector('.hint')?.remove();
     // Schreibmarke ans Ende des vorhandenen Texts.
     const editable = box.querySelector('.ProseMirror');
-    editable?.focus();
+    editable?.focus({ preventScroll: true }); // sonst schiebt Safari die ganze Seite samt Leiste nach oben
     if (editable) {
       const range = document.createRange();
       range.selectNodeContents(editable);
@@ -71,6 +71,45 @@ export function openRichEditor({ title = 'Text', spec, widthCm = 16.5, formula =
       sel.addRange(range);
     }
 
+    // Der Stift schreibt hier nicht: Die Handschrifterkennung des iPads (Scribble) hält ink-editor an
+    // (holdStylus). Damit auch die Berührung nichts mehr auslöst, setzt er die Marke und markiert hier selbst.
+    const caretAt = (x, y) => {
+      const r = document.caretRangeFromPoint?.(x, y);
+      return r && editable?.contains(r.startContainer) ? r : null;
+    };
+    let penAnchor = null;
+    let penMoved = false;
+    surfaceHost.addEventListener('pointerdown', (e) => {
+      if (e.pointerType !== 'pen') return;
+      penMoved = false;
+      penAnchor = caretAt(e.clientX, e.clientY);
+      if (!penAnchor) return;
+      editable.focus({ preventScroll: true });
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(penAnchor);
+    });
+    surfaceHost.addEventListener('pointermove', (e) => {
+      if (e.pointerType !== 'pen' || !penAnchor || !e.buttons) return;
+      const r = caretAt(e.clientX, e.clientY);
+      if (!r) return;
+      penMoved = true;
+      window.getSelection().setBaseAndExtent(penAnchor.startContainer, penAnchor.startOffset, r.startContainer, r.startOffset);
+    });
+    surfaceHost.addEventListener('pointerup', (e) => {
+      if (e.pointerType !== 'pen') return;
+      penAnchor = null;
+      // Knöpfe in der Schreibfläche (Tabellen, Bausteine): Der angehaltene Tipp löst keinen Klick aus.
+      if (!penMoved) e.target.closest?.('button, a, [role="button"]')?.click();
+    });
+
+    // Die Formatleiste bleibt sichtbar, auch wenn Safari die Seite für die Bildschirmtastatur verschiebt.
+    const keepBar = () => {
+      bar.style.top = `${Math.max(52, window.visualViewport?.offsetTop ?? 0)}px`;
+    };
+    window.visualViewport?.addEventListener('scroll', keepBar);
+    window.visualViewport?.addEventListener('resize', keepBar);
+
     // Die Schreibmarke bleibt sichtbar, auch über der Bildschirmtastatur des iPads.
     const keepCaret = () => {
       const scroller = surfaceHost.closest('.ink-scroll');
@@ -79,7 +118,8 @@ export function openRichEditor({ title = 'Text', spec, widthCm = 16.5, formula =
       const rect = sel.getRangeAt(0).getClientRects()[0];
       if (!rect) return;
       const top = bar.getBoundingClientRect().bottom + 8;
-      const bottom = (window.visualViewport?.height ?? window.innerHeight) - 16;
+      const vv = window.visualViewport;
+      const bottom = (vv ? vv.offsetTop + vv.height : window.innerHeight) - 16;
       if (rect.bottom > bottom) scroller.scrollBy(0, rect.bottom - bottom);
       else if (rect.top < top) scroller.scrollBy(0, rect.top - top);
     };
@@ -116,6 +156,8 @@ export function openRichEditor({ title = 'Text', spec, widthCm = 16.5, formula =
     const leave = (result) => {
       document.removeEventListener('selectionchange', keepCaret);
       window.visualViewport?.removeEventListener('resize', keepCaret);
+      window.visualViewport?.removeEventListener('scroll', keepBar);
+      window.visualViewport?.removeEventListener('resize', keepBar);
       pm.destroy?.();
       bar.remove();
       box.remove();

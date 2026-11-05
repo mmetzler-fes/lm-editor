@@ -951,6 +951,8 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     try { await paper.mount(sheet, { solutions: state.variant === 'loesung' }); } catch (err) {
       sheet.innerHTML = `<p>⚠️ Das Dokument lässt sich nicht anzeigen: ${esc(err.message || err)}</p>`;
     }
+    // Lösungen schaltet hier die Lampe in der Leiste, ein Knopf über dem Blatt wäre doppelt.
+    sheet.querySelector('.ds-solutions-toggle')?.remove();
     // Eingaben im Blatt (Quizze) gehören zum Stand: wiederherstellen, Änderungen speichern.
     if (paper.capture) {
       try { paper.restore?.(sheet, doc.forms || null); } catch (_) { /* dann eben leer */ }

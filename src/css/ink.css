@@ -83,11 +83,17 @@ body.ink-open { overflow: hidden; }
 .ink-bg, .ink-svg, .ink-texts, .ink-top { position: absolute; inset: 0; width: 100%; height: 100%; }
 /* Anfasser über allem (auch über dem Geodreieck); getroffen wird rechnerisch. */
 .ink-top { z-index: 4; pointer-events: none; overflow: visible; }
-/* Der Finger scrollt – nur bei LOCK_TOOLS arbeitet er, und zwei Finger scrollen (siehe bindInput). */
+/* Der Finger scrollt, außer er greift eine Auswahl (holdStylus, bindInput). Mit „Finger schreibt“ arbeitet er, zwei Finger scrollen. */
 .ink-page { touch-action: pan-x pan-y; }
-.ink-tool-lock .ink-page { touch-action: none; }
-/* Hybrid im Dokument: Der Browser scrollt, außer der Finger setzt im Schreibfeld an (holdStylus, bindInput). */
-.ink-paper-mode.ink-tool-hybrid .ink-page { touch-action: pan-x pan-y; }
+.ink-finger-writes.ink-tool-lock .ink-page { touch-action: none; }
+.ink-btn.ink-finger-on { position: relative; }
+.ink-btn.ink-finger-on::after { content: '☝️'; position: absolute; right: -2px; bottom: -3px; font-size: 11px; line-height: 1; }
+.ink-finger-hint { position: absolute; top: 60px; left: 50%; transform: translateX(-50%); z-index: 20; max-width: calc(100% - 24px);
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 10px; background: #1e293b; color: #fff; font-size: 14px; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3); }
+.ink-finger-hint[hidden] { display: none; }
+.ink-finger-hint button { border: none; border-radius: 6px; padding: 5px 10px; font: inherit; cursor: pointer; touch-action: manipulation; }
+.ink-finger-hint-on { background: #3b82f6; color: #fff; font-weight: 600; }
+.ink-finger-hint-close { background: transparent; color: #fff; }
 /* Scrollleiste für den Finger – die des Browsers lässt sich auf dem iPad nicht greifen. */
 .ink-touchbar { display: none; position: absolute; right: 0; bottom: 0; width: 32px; z-index: 15; touch-action: none; cursor: pointer; }
 .ink-touchbar-thumb { position: absolute; top: 0; right: 3px; width: 12px; border-radius: 6px; background: rgba(71, 85, 105, 0.65); }
@@ -179,7 +185,6 @@ body.ink-open { overflow: hidden; }
 .ink-karo-tools button.active { background: #dbeafe; color: #2563eb; }
 .ink-karo-w, .ink-karo-c, .ink-karo-tools { display: none; }
 .ink-tool-select .ink-karo-w, .ink-tool-select .ink-karo-c, .ink-tool-select .ink-karo-tools { display: flex; }
-.ink-tool-interact .ink-karo-handle { display: none; }
 .ink-action { color: var(--accent); white-space: nowrap; flex: 0 0 auto; margin-right: 4px; }
 .ink-title { flex: 0 1 auto; min-width: 6ch; }
 

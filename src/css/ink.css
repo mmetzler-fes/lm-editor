@@ -134,6 +134,28 @@ body.ink-open { overflow: hidden; }
 .ink-tool-text .ink-text { pointer-events: auto; outline: 1px dashed #94a3b8; background: rgba(255, 255, 255, 0.6); cursor: text; }
 .ink-tool-text .ink-text:focus { outline: 1.5px solid var(--accent); }
 .ink-text.ink-selected { outline: 1.5px dashed #3b82f6; }
+/* Textfläche: 1 Punkt der Ebene = 1 pt, gesetzt wie im Dokument. */
+.ink-rich { position: absolute; pointer-events: none; transform-origin: 50% 50%; }
+.ink-rich.ink-selected { outline: 1.5px dashed #3b82f6; }
+.ink-rich-inner { font-family: 'LM Sans', 'Liberation Sans', Arial, sans-serif; font-size: 11pt; line-height: 1.35; color: #1e293b; text-align: left; }
+.ink-rich > .ink-rich-inner { position: absolute; left: 0; top: 0; transform-origin: 0 0; transform: scale(calc(var(--z) * 0.75)); }
+.ink-rich-inner .docspec { margin: 0; padding: 0; max-width: none; width: auto; }
+.ink-rich-inner .docspec > :first-child, .ink-rich-inner .docspec > .ds-b:first-child > :first-child { margin-top: 0; }
+.ink-rich-edit { position: absolute; z-index: 5; width: 34px; height: 34px; margin: -40px 0 0 -34px; border: 1px solid #3b82f6; border-radius: 8px; background: #fff; font-size: 16px; line-height: 1; cursor: pointer; touch-action: manipulation; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2); }
+.ink-notice { position: absolute; top: 60px; left: 50%; transform: translateX(-50%); z-index: 20; max-width: calc(100% - 24px); padding: 8px 12px; border-radius: 10px; background: #92400e; color: #fff; font-size: 14px; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3); }
+.ink-notice[hidden] { display: none; }
+/* Text bearbeiten: eigene Seite über dem Blatt, aber unter Menüs und Dialogen. */
+.ink-rich-editor { position: fixed; inset: 0; z-index: 2100; display: flex; flex-direction: column; background: var(--bg-primary, #f4f6fb); color: var(--text-primary, #1e293b); -webkit-user-select: text; user-select: text; }
+.ink-rich-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 8px 12px; background: var(--bg-secondary, #fff); border-bottom: 1px solid var(--border, #e2e8f0); }
+.ink-rich-tabs { display: flex; gap: 4px; margin: 0; }
+.ink-rich-status { flex: 1; min-width: 40px; font-size: 0.85rem; color: var(--text-secondary, #64748b); }
+.ink-rich-box { flex: 1; min-height: 0; overflow: auto; padding: 0 12px 12px; }
+.ink-rich-box[hidden] { display: none; }
+.ink-rich-box .ds-pm-toolbar { position: sticky; top: 0; z-index: 3; flex-wrap: wrap; }
+.ink-rich-box .ds-pm-surface { height: auto; min-height: 240px; }
+.ink-rich-box > .hint { display: none; }
+.ink-rich-markdown { flex: 1; min-height: 0; margin: 12px; padding: 12px; font-family: ui-monospace, monospace; font-size: 14px; border: 1px solid var(--border, #e2e8f0); border-radius: 8px; resize: none; }
+.ink-rich-markdown[hidden] { display: none; }
 .ink-tool-text .ink-page { cursor: text; }
 @media (max-width: 900px) {
   .ink-title { display: none; }

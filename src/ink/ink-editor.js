@@ -1,10 +1,13 @@
 import {
   A4, CM, strokeOutline, polyline, hitsStroke, bounds, inSelection, moved, ruling,
   pageToRuler, inRuler, nearEdge, projectOnSegment, snapAngle, itemAt, extremesAlong,
-  isBox, resizedBox, corners, MM, textBox as textFrame,
+  isBox, resizedBox, resizedKeepingRatio, corners, MM, textBox as textFrame,
 } from './ink-geometry.js';
 import { rulerSvg, rulerHandles } from './ink-ruler.js';
-import { svgEl, itemSvg, fieldSvg, shapeSvg, inkSvgFor, inkSvgBox, fieldMaxCm } from './ink-view.js';
+import { svgEl, itemSvg, fieldSvg, shapeSvg, imageSvg, inkSvgFor, inkSvgBox, fieldMaxCm } from './ink-view.js';
+import { isRich, richHtml, richHasFormula, PX_PT as RICH_PX_PT } from './ink-rich.js';
+import { pasteToSpec } from '../doc/paste.js';
+import { askTable } from '../editor/block-dialog.js';
 import {
   FILL_COLORS, DASHES, SHAPE_WIDTHS, usesPoints, shapeCorners, rotateHandle, resizedShape, rotatedShape,
   normalizedAngle, toPolygon, shapeFromDrag, shapeCenter, shapeBox, isClosed, SHAPE_TEXT_SIZE, rotatePoint,
@@ -87,8 +90,40 @@ let clipboard = null;         // { items, pasted }
 // Mit ihnen arbeitet der Finger wie ein Stift, wenn „Finger schreibt“ an ist. Sonst scrollt er das Blatt –
 // außer er greift eine Auswahl – und lange Drücken öffnet das Menü.
 const LOCK_TOOLS = ['select', 'area', 'pen', 'marker', 'eraser', 'shape', 'laser', 'field'];
+const RICH_WIDTH = 300;       // Breite einer neuen Textfläche in Punkten
+const IMAGE_MAX_PX = 1400;    // längere Kante eines freien Bilds: Es liegt in der Ebene, die höchstens 20 MB groß sein darf
 const FINGER_KEY = 'lm_ink_finger';           // „Finger schreibt“ gilt je Gerät
 const FINGER_HINT_KEY = 'lm_ink_finger_hint'; // Hinweis dazu nur einmal
+/** Bild aus einer Datei: verkleinert, als data:-Adresse. Ergebnis { src, wPx, hPx }. */
+async function imageFromFile(file) {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise((resolve, reject) => {
+      const i = new Image();
+      i.onload = () => resolve(i);
+      i.onerror = () => reject(new Error('Das Bild lässt sich nicht lesen.'));
+      i.src = url;
+    });
+    const k = Math.min(1, IMAGE_MAX_PX / Math.max(img.naturalWidth, img.naturalHeight));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(img.naturalWidth * k));
+    canvas.height = Math.max(1, Math.round(img.naturalHeight * k));
+    const ctx = canvas.getContext('2d');
+    // Durchsichtiges bleibt PNG; Fotos werden JPEG, das ist viel kleiner.
+    const png = file.type === 'image/png' && canvas.width * canvas.height < 600 * 600;
+    if (!png) { ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, canvas.width, canvas.height); }
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    return { src: canvas.toDataURL(png ? 'image/png' : 'image/jpeg', 0.82), wPx: canvas.width, hPx: canvas.height };
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+const pickImageFile = () => new Promise((resolve) => {
+  const input = Object.assign(document.createElement('input'), { type: 'file', accept: 'image/png,image/jpeg,image/gif,image/webp' });
+  input.addEventListener('change', () => resolve(input.files?.[0] || null));
+  input.addEventListener('cancel', () => resolve(null));
+  input.click();
+});
 const stored = (key) => { try { return localStorage.getItem(key); } catch (_) { return null; } };
 const store1 = (key, value) => { try { localStorage.setItem(key, value); } catch (_) { /* privater Modus */ } };
 const PALM_MS = 500;          // so lange nach dem Absetzen des Stifts zählt kein Finger (Handballen)
@@ -300,6 +335,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
         <button type="button" class="ink-finger-hint-on">Mit dem Finger schreiben</button>
         <button type="button" class="ink-finger-hint-close" aria-label="Hinweis schließen">✕</button>
       </div>
+      <div class="ink-notice" role="status" hidden></div>
       <div class="ink-touchbar" aria-hidden="true" hidden><div class="ink-touchbar-thumb"></div></div>
     </div>`;
   document.body.appendChild(overlay);
@@ -307,6 +343,14 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
   const $ = (sel) => overlay.querySelector(sel);
   const scroller = $('.ink-scroll');
   const fingerScrolls = () => !state.fingerWrites;
+  let noticeTimer = 0;
+  const notice = (text) => {
+    const el = $('.ink-notice');
+    el.textContent = text;
+    el.hidden = false;
+    clearTimeout(noticeTimer);
+    noticeTimer = setTimeout(() => { el.hidden = true; }, 9000);
+  };
   const selecting = () => state.tool === 'select' || state.tool === 'area';
   const freeFingers = new Set(); // Finger, die dem Browser gehören (scrollen, Quiz).
   const pagesEl = $('.ink-pages');
@@ -354,7 +398,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     if (document.activeElement !== $('.ink-op-num')) $('.ink-op-num').value = pct;
     if (document.activeElement !== $('.ink-op-range')) $('.ink-op-range').value = pct;
     $('.ink-opacity').classList.toggle('ink-muted', !look.fill);
-    const texts = selecting() ? selectedItems().filter((it) => it.type === 'text') : [];
+    const texts = selecting() ? selectedItems().filter((it) => it.type === 'text' && !isRich(it)) : [];
     const boxed = shapes.filter(isClosed);
     $('.ink-sizes').hidden = state.tool !== 'text' && !texts.length && !boxed.length;
     const shown = texts.length && texts.every((t) => (t.size || TEXT_SIZE) === (texts[0].size || TEXT_SIZE)) ? texts[0].size || TEXT_SIZE
@@ -523,7 +567,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
   // Schriftgröße: für neue Texte – und für gewählte Textfelder sofort.
   $('.ink-tsize').addEventListener('change', (e) => {
     const size = Number(e.target.value);
-    const texts = selecting() ? selectedItems().filter((it) => it.type === 'text') : [];
+    const texts = selecting() ? selectedItems().filter((it) => it.type === 'text' && !isRich(it)) : [];
     if (!texts.length && applyToShapes({ textSize: size === SHAPE_TEXT_SIZE ? undefined : size })) { paintToolbar(); return; }
     if (texts.length) {
       snapshot();
@@ -551,7 +595,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     if ([...e.touches].some((t) => t.touchType === 'stylus')) e.preventDefault();
     // Greift der erste Finger eine Auswahl, scrollt der Browser nicht (siehe bindInput).
     else if (fingerScrolls() && !freeFingers.size && e.cancelable && e.target.closest?.('.ink-page')
-      && !e.target.closest('.ink-insert-mark, .ink-karo-handle, .ink-shape-text-edit')) e.preventDefault();
+      && !e.target.closest('.ink-insert-mark, .ink-karo-handle, .ink-shape-text-edit, .ink-rich-edit')) e.preventDefault();
   };
   scroller.addEventListener('touchstart', holdStylus, { passive: false });
   scroller.addEventListener('touchmove', holdStylus, { passive: false });
@@ -1220,6 +1264,9 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
       field('frei', '◌ Schreibfeld (unsichtbar, eine Zeile – ziehbar)'),
       field('karo', '▦ Karo'),
       field('linien', '☰ Linien'),
+      { label: '¶ Textblock', onClick: () => { void insertText(after); } },
+      { label: '▤ Tabelle', onClick: () => { void insertTable(after); } },
+      { label: '🖼 Bild', onClick: () => { void pickImageFile().then((file) => { if (file) void insertImage(after, file); }); } },
     ];
     for (const item of paper.insertItems?.() || []) {
       entries.push({ label: item.label, onClick: () => runInsert(() => item.run(after)) });
@@ -1237,6 +1284,39 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     } catch (err) {
       status(`⚠️ ${err?.message || err}`);
     }
+  }
+
+  /** Oberkante eines neuen Elements direkt unter dem Baustein `after` (Schüler: freies Objekt dort). */
+  const belowBlock = (after) => {
+    const b = topBlocks().find((x) => x.bid === after);
+    return { page: 0, x: b?.left ?? 40, y: b ? b.bottom + 2 : 4 };
+  };
+  async function insertContent(after, content) {
+    if (!content.length) return;
+    if (paper.insertBlock) { await blocksIn(after, content); return; }
+    const at = belowBlock(after);
+    addRich(at.page, at.x, at.y, content);
+  }
+  async function insertText(after) {
+    const result = await openEditor({ title: 'Neuer Textblock', spec: { content: [] }, formula: !!paper.insertBlock });
+    if (result) await insertContent(after, result.content);
+  }
+  async function insertTable(after) {
+    const block = await askTable();
+    if (!block) return;
+    // Gleich zum Ausfüllen öffnen.
+    const result = await openEditor({ title: 'Neue Tabelle', spec: { content: [block] }, formula: !!paper.insertBlock });
+    if (result) await insertContent(after, result.content);
+  }
+  async function insertImage(after, file) {
+    if (paper.insertBlock) {
+      let image;
+      try { image = await imageFromFile(file); } catch (err) { notice(`⚠️ ${err.message}`); return; }
+      const stored = await window.appImageStore?.(file);
+      await blocksIn(after, [{ type: 'image', src: stored?.src || image.src, width: '12cm', alt: (file.name || '').replace(/\.[^.]+$/, '') }]);
+      return;
+    }
+    await pasteImageFile(file, belowBlock(after));
   }
 
   /** Schreibfeld einfügen: Lehrkraft ins Dokument (Gastgeber), sonst nur in die eigene Ebene. */
@@ -1414,11 +1494,40 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     p.texts.innerHTML = '';
     for (const item of items) {
       if (item.type === 'stroke') (item.tool === 'marker' ? marker : pen).appendChild(itemSvg(item));
+      else if (isRich(item)) p.texts.appendChild(richBox(p, item));
       else if (item.type === 'text') p.texts.appendChild(textBox(p, item));
       else if (item.type === 'field') fields.appendChild(fieldSvg(item));
+      else if (item.type === 'image') fields.appendChild(imageSvg(item));
       else if (item.type === 'shape') shapeLayer.appendChild(shapeSvg(item));
     }
+    // Die Höhe einer Textfläche ergibt der gesetzte Text.
+    for (const box of p.texts.querySelectorAll('.ink-rich')) {
+      const item = items.find((it) => it.id === box.dataset.id);
+      const h = box.firstElementChild.offsetHeight * RICH_PX_PT;
+      if (item && h && Math.abs(h - item.h) > 0.5) {
+        item.h = h;
+        box.style.height = `${(h / p.h) * 100}%`;
+      }
+    }
     paintSelection();
+  }
+
+  /** Textfläche auf dem Blatt: Zum Bearbeiten öffnet sich die eigene Seite (editRich). */
+  function richBox(p, item) {
+    const box = document.createElement('div');
+    box.className = 'ink-rich';
+    box.dataset.id = item.id;
+    box.style.left = `${(item.x / p.w) * 100}%`;
+    box.style.top = `${(item.y / p.h) * 100}%`;
+    box.style.width = `${(item.w / p.w) * 100}%`;
+    box.style.height = `${((item.h || 20) / p.h) * 100}%`;
+    if (item.rot) box.style.transform = `rotate(${item.rot}deg)`;
+    const inner = document.createElement('div');
+    inner.className = 'ink-rich-inner';
+    inner.style.width = `${item.w / RICH_PX_PT}px`;
+    inner.innerHTML = richHtml(item);
+    box.appendChild(inner);
+    return box;
   }
 
   function textBox(p, item) {
@@ -1499,6 +1608,21 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
       handles.innerHTML = '';
       for (const it of selectedLines(p.i)) {
         for (const [x, y] of it.points) handles.appendChild(svgEl('circle', { cx: x, cy: y, r: HANDLE / state.zoom, class: 'ink-handle' }));
+      }
+      p.el.querySelector('.ink-rich-edit')?.remove();
+      const rich = selectedText(p.i);
+      if (isRich(rich)) {
+        const edit = document.createElement('button');
+        edit.type = 'button';
+        edit.className = 'ink-rich-edit';
+        edit.title = 'Text bearbeiten';
+        edit.setAttribute('aria-label', 'Text bearbeiten');
+        edit.textContent = '✏️';
+        edit.style.left = `${((rich.x + rich.w) / p.w) * 100}%`;
+        edit.style.top = `${(rich.y / p.h) * 100}%`;
+        edit.addEventListener('pointerdown', (e) => e.stopPropagation());
+        edit.addEventListener('click', (e) => { e.stopPropagation(); void editRich(rich.id); });
+        p.el.appendChild(edit);
       }
       const f = selectedField(p.i);
       if (f) for (const [x, y] of corners(f)) handles.appendChild(svgEl('circle', { cx: x, cy: y, r: HANDLE / state.zoom, class: 'ink-handle' }));
@@ -1790,7 +1914,8 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     const sel = state.selection;
     if (!sel || sel.page !== page || sel.ids.size !== 1) return null;
     const it = (doc.pages[page]?.items || []).find((x) => sel.ids.has(x.id));
-    return it?.type === 'field' ? it : null;
+    // Felder, Bilder und ungedrehte Textflächen haben Eck-Anfasser.
+    return it?.type === 'field' || it?.type === 'image' || (isRich(it) && !it.rot) ? it : null;
   }
 
   /** Anfasser unter dem Punkt: { id, idx } (Linie) bzw. { id, corner } (Feld) oder null. */
@@ -1860,7 +1985,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     const b = selectionBounds();
     if (!items.length || !b) return;
     const after = blockAt(b.y + 4)?.bid ?? null;
-    const svg = inkSvgFor(items.map((it) => moved(it, -b.x, -b.y)), 0, b.w);
+    const svg = inkSvgFor(items.map((it) => moved(it, -b.x, -b.y)), 0, b.w, { flat: true }); // eingebettetes HTML ließe das Bild nicht zu
     svg.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
     svg.setAttribute('width', String(b.w));
     svg.setAttribute('height', String(b.h));
@@ -1937,7 +2062,9 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
   function copySelection() {
     const items = selectedItems();
     if (!items.length) return false;
-    clipboard = { items: structuredClone(items), pasted: 0 };
+    clipboard = { items: structuredClone(items), pasted: 0, mark: `lm-ink:${uid()}` };
+    // Zuletzt Kopiertes gewinnt: Steht diese Marke noch in der Systemablage, wird die eigene eingefügt.
+    navigator.clipboard?.writeText?.(clipboard.mark)?.catch?.(() => {});
     status(`📋 ${items.length} kopiert`);
     paintToolbar();
     return true;
@@ -2015,6 +2142,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
 
   /** Textfeld zum Schreiben öffnen: Text-Werkzeug, Schreibmarke ans Ende. */
   function editText(id) {
+    if (isRich(doc.pages.flatMap((pg) => pg.items || []).find((it) => it.id === id))) { void editRich(id); return; }
     state.tool = 'text';
     clearSelection();
     paintToolbar();
@@ -2040,7 +2168,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
       entries.push({ label: `Kopieren (${key}C)`, onClick: () => copySelection() });
       entries.push({ label: `Ausschneiden (${key}X)`, onClick: () => cutSelection() });
     }
-    if (clipboard) entries.push({ label: `Einfügen (${key}V)`, onClick: () => paste() });
+    if (canPaste()) entries.push({ label: `Einfügen (${key}V)`, onClick: () => { void pasteFromMenu(); } });
     // Lehrkraft am eigenen Dokument: Beschriftung als Baustein ins Dokument (z. B. aus .xopp übernommene Lösungen).
     if (items.length && paper?.insertBlock && doc.bg === 'paper') {
       entries.push({ label: '💡 Als Lösung ins Dokument', onClick: () => selectionToDocument(true) });
@@ -2079,6 +2207,140 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
   let penLiftAt = 0;
 
   /** Schreibfeld an dieser Stelle: Karo-/Linien-Baustein des Dokuments oder ein selbst aufgezogenes Feld. */
+  // ---------- Textflächen, freie Bilder und Einfügen ----------
+
+  async function editRich(id) {
+    const page = doc.pages.findIndex((pg) => (pg.items || []).some((it) => it.id === id));
+    const item = doc.pages[page]?.items.find((it) => it.id === id);
+    if (!item) return;
+    const result = await openEditor({ title: 'Textfläche', spec: { content: item.content }, widthCm: item.w / CM });
+    if (!result) return;
+    snapshot();
+    if (result.content.length) item.content = result.content;
+    else doc.pages[page].items = doc.pages[page].items.filter((it) => it !== item);
+    if (!result.content.length) state.selection = null;
+    changed();
+    drawItems(page);
+    paintToolbar();
+  }
+  const openEditor = async (opts) => (await import('./ink-rich-editor.js')).openRichEditor(opts);
+
+  function addFreeItem(page, item) {
+    snapshot();
+    doc.pages[page].items.push(item);
+    if (!selecting()) state.tool = 'select';
+    state.selection = { page, ids: new Set([item.id]) };
+    changed();
+    drawItems(page);
+    paintToolbar();
+  }
+  const addRich = (page, x, y, content, w = RICH_WIDTH) => addFreeItem(page, {
+    id: uid(), type: 'text', x, y, w: Math.min(w, Math.max(40, pages[page].w - x - 4)), h: 20, content, color: state.color,
+  });
+  async function newRich(page, x, y, w) {
+    const width = Math.min(w || RICH_WIDTH, Math.max(40, pages[page].w - x - 4));
+    const result = await openEditor({ title: 'Neue Textfläche', spec: { content: [] }, widthCm: width / CM });
+    if (result?.content.length) addRich(page, x, y, result.content, width);
+  }
+
+  /** Wo eingefügt wird: die Stelle aus dem Menü, sonst die zuletzt berührte, sonst die Mitte des Sichtfelds. */
+  function pastePlace(at) {
+    const page = at?.page ?? (state.lastAt && pages[state.lastAt.page] ? state.lastAt.page : targetPage());
+    const view = visibleRect(page);
+    const last = at || state.lastAt;
+    const inView = last && last.page === page && last.x >= view.x && last.x <= view.x + view.w && last.y >= view.y && last.y <= view.y + view.h;
+    const x = inView ? last.x : view.x + view.w * 0.15;
+    const y = inView ? last.y : view.y + view.h * 0.25;
+    const p = pages[page];
+    const r = p.el.getBoundingClientRect();
+    const k = r.width / p.w;
+    const cx = r.left + x * k;
+    const cy = r.top + y * k;
+    // Schreibfläche: freies Blatt, Karo-/Linienfeld, Feld. Ohne Dokument-Rechte bleibt alles in der eigenen Ebene.
+    const free = doc.bg !== 'paper' || !paper.insertBlock || !!karoBlockAt(cx, cy)
+      || doc.pages[page].items.some((it) => it.type === 'field' && x >= it.x && x <= it.x + it.w && y >= it.y && y <= it.y + it.h);
+    const after = free ? null : ([...topBlocks()].reverse().find((b) => b.top <= y)?.bid ?? null);
+    return { page, x, y, free, after };
+  }
+  /** Neue Bausteine ins Dokument (Lehrkraft); Reihenfolge bleibt auch ohne insertBlocks des Gastgebers. */
+  const blocksIn = (after, blocks) => runInsert(async () => {
+    if (paper.insertBlocks) return paper.insertBlocks(after, blocks);
+    for (const b of [...blocks].reverse()) await paper.insertBlock(after, b);
+    return true;
+  });
+
+  function pasteContent(content, at) {
+    if (!content.length) return;
+    // Eine gewählte Textfläche nimmt den Text auf, ein gewähltes einfaches Textfeld ebenso.
+    const sel = state.selection && selectedText(state.selection.page);
+    if (sel) {
+      snapshot();
+      if (isRich(sel)) sel.content = [...sel.content, ...content];
+      else sel.text = `${sel.text || ''}${sel.text ? '\n' : ''}${content.map((b) => b?.text ?? '').filter(Boolean).join('\n')}`;
+      changed();
+      drawItems(state.selection.page);
+      return;
+    }
+    const place = pastePlace(at);
+    if (place.free) addRich(place.page, place.x, place.y, content);
+    else void blocksIn(place.after, content);
+  }
+  async function pasteImageFile(file, at) {
+    let image;
+    try { image = await imageFromFile(file); } catch (err) { notice(`⚠️ ${err.message}`); return; }
+    const place = pastePlace(at);
+    if (place.free) {
+      const w = Math.min(image.wPx * RICH_PX_PT, 320, Math.max(40, pages[place.page].w - place.x - 4));
+      addFreeItem(place.page, { id: uid(), type: 'image', x: place.x, y: place.y, w, h: w * (image.hPx / image.wPx), src: image.src });
+      return;
+    }
+    const stored = await window.appImageStore?.(file);
+    void blocksIn(place.after, [{ type: 'image', src: stored?.src || image.src, width: '12cm', alt: (file.name || '').replace(/\.[^.]+$/, '') }]);
+  }
+  /** Aus der Systemablage: Bild, sonst Text. Die eigene Markierung heißt: Zuletzt kopiert wurde hier. */
+  function pasteData({ files = [], text = '', html = '' }, at) {
+    const image = files.find((f) => /^image\//.test(f.type));
+    if (image) { void pasteImageFile(image, at); return true; }
+    if (clipboard?.mark && text.trim() === clipboard.mark) { paste(); return true; }
+    if (!text.trim() && !html.trim()) return false;
+    const parsed = pasteToSpec({ text, html });
+    const content = parsed?.spec?.content?.length ? parsed.spec.content : text.split(/\n{2,}/).filter((t) => t.trim()).map((t) => ({ type: 'text', text: t }));
+    pasteContent(content, at);
+    return true;
+  }
+  /** „Einfügen“ im Menü: Safari fragt dabei selbst noch einmal nach. */
+  async function pasteFromMenu(at) {
+    try {
+      if (navigator.clipboard?.read) {
+        const files = [];
+        let text = '';
+        let html = '';
+        for (const entry of await navigator.clipboard.read()) {
+          const type = entry.types.find((t) => t.startsWith('image/'));
+          if (type) files.push(new File([await entry.getType(type)], 'bild', { type }));
+          if (entry.types.includes('text/plain')) text = await (await entry.getType('text/plain')).text();
+          if (entry.types.includes('text/html')) html = await (await entry.getType('text/html')).text();
+        }
+        if (pasteData({ files, text, html }, at)) return;
+      } else if (navigator.clipboard?.readText) {
+        if (pasteData({ text: await navigator.clipboard.readText() }, at)) return;
+      }
+    } catch (_) { /* nicht erlaubt: bleibt die eigene Ablage */ }
+    if (clipboard) paste();
+    else notice('Die Zwischenablage ist leer oder nicht lesbar. Mit Tastatur: Strg/⌘+V.');
+  }
+  const canPaste = () => !!clipboard || !!navigator.clipboard?.read || !!navigator.clipboard?.readText;
+
+  /** Einträge „Hier einfügen“ auf der Schreibfläche, an der Stelle (page, x, y). */
+  const surfaceEntries = (at) => {
+    const place = pastePlace(at);
+    if (!place.free) return [];
+    return [
+      { label: '¶ Textfläche hier', onClick: () => newRich(at.page, at.x, at.y) },
+      { label: '🖼 Bild hier', onClick: () => { void pickImageFile().then((file) => { if (file) void pasteImageFile(file, at); }); } },
+    ];
+  };
+
   function placeText(p, x, y) {
     snapshot();
     const size = state.textSize;
@@ -2149,6 +2411,8 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
       if (e.target.closest?.('.ink-shape-text-edit')) return; // Schreiben in einer Form
       // Handballen: Solange der Stift schreibt und kurz danach zählt kein Finger.
       if (e.pointerType === 'touch' && (penDown || Date.now() - penLiftAt < PALM_MS)) return;
+      if (e.target.closest?.('.ink-rich-edit')) return;
+      { const [lx, ly] = toPage(e); state.lastAt = { page: p.i, x: lx, y: ly }; }
       const onQuiz = p.paper && !!e.target.closest?.('.ds-quiz-live');
       // Ein Finger auf einem Quiz bedient es immer – zeichnen geht dort mit Stift oder Maus.
       if (onQuiz && e.pointerType === 'touch' && !touches.size) {
@@ -2311,7 +2575,8 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
         else if (e.pointerType === 'touch') gesture = { kind: 'tap', id: e.pointerId, run: () => polygonClick(p.i, x, y) };
         else polygonClick(p.i, x, y);
       } else if (tool === 'text') {
-        placeText(p, x, y);
+        // Antippen: kurze Beschriftung. Aufziehen: Textfläche mit dem vollen Editor.
+        gesture = { kind: 'rect', id: e.pointerId, from: [x, y], textArea: true };
       }
       p.busy = !!gesture;
     }, { capture: !!p.paper });
@@ -2448,6 +2713,8 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
         doc.pages[p.i].items = gesture.base.map((it) => {
           if (it.id !== gesture.item) return it;
           if (it.type === 'shape' && gesture.corner !== undefined) return resizedShape(it, gesture.corner, x, y, 4 / state.zoom);
+          if (it.type === 'image') return resizedKeepingRatio(it, gesture.corner, x, y);
+          if (isRich(it)) return { ...resizedBox(it, gesture.corner, x, y, 40), h: it.h, y: it.y };
           if (gesture.corner !== undefined) return resizedBox(it, gesture.corner, x, y);
           const points = it.points.map((q) => q.slice());
           points[gesture.idx] = [x, y, points[gesture.idx][2]];
@@ -2508,6 +2775,13 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
         if (big) addShape(p.i, geom);
       } else if (g.kind === 'erase') {
         if (g.removed) changed();
+      } else if (g.kind === 'rect' && g.textArea) {
+        showSvg(p.svg.querySelector('.ink-sel-rect'), false);
+        if (e.type !== 'pointerup') return;
+        const [fx, fy] = g.from;
+        const [tx, ty] = g.to || g.from;
+        if (Math.abs(tx - fx) >= 24 && Math.abs(ty - fy) >= 8) void newRich(p.i, Math.min(fx, tx), Math.min(fy, ty), Math.abs(tx - fx));
+        else placeText(p, fx, fy);
       } else if (g.kind === 'rect' && g.field) {
         showSvg(p.svg.querySelector('.ink-sel-rect'), false);
         const [fx, fy] = g.from;
@@ -2595,7 +2869,9 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
       ];
       if (state.undo.length) entries.push({ label: `↶ Rückgängig (${key}Z)`, onClick: () => history(state.undo, state.redo) });
       if (state.redo.length) entries.push({ label: '↷ Wiederholen', onClick: () => history(state.redo, state.undo) });
-      if (clipboard) entries.push({ label: `Einfügen (${key}V)`, onClick: () => paste() });
+      const at = { page: p.i, x, y };
+      if (canPaste()) entries.push({ label: `Einfügen (${key}V)`, onClick: () => { void pasteFromMenu(at); } });
+      entries.push(...surfaceEntries(at));
       // Im Dokument: hinter dem Baustein an dieser Stelle einfügen (wie das ⊕ am Rand).
       if (p.paper && paper.insert !== false) {
         const above = [...topBlocks()].reverse().find((b) => b.top <= y);
@@ -2711,6 +2987,11 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
       const { data, loose } = printData(ink);
       const warnings = (await paper.printPdf(data, { solutions: withSolutions, win })) || [];
       if (loose) warnings.push(`${loose} Strich${loose === 1 ? '' : 'e'} außerhalb der Bausteine fehlen im PDF.`);
+      if (ink && doc.pages.some((pg) => (pg.items || []).some((it) => isRich(it) && richHasFormula(it)))) {
+        const note = 'Formeln in Textflächen stehen im PDF als LaTeX-Quelle ($…$). Für gesetzte Formeln einen Textblock über (+) nehmen.';
+        warnings.push(note);
+        notice(`⚠️ ${note}`);
+      }
       status(warnings.length ? `PDF erzeugt – ${warnings.join(' · ')}` : 'PDF erzeugt');
     } catch (err) {
       win?.close();
@@ -2820,7 +3101,19 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
   }
 
   // ---------- Tastatur und Schließen ----------
+  let pasteSeen = 0;
+  const onPaste = (e) => {
+    if (document.querySelector('.ink-rich-editor')) return;
+    const t = e.target;
+    if (t.closest?.('.ink-text') || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) || t.isContentEditable) return;
+    pasteSeen = Date.now();
+    const data = e.clipboardData;
+    e.preventDefault();
+    if (!pasteData({ files: [...(data?.files || [])], text: data?.getData('text/plain') || '', html: data?.getData('text/html') || '' }) && clipboard) paste();
+  };
+  document.addEventListener('paste', onPaste);
   const onKey = (e) => {
+    if (document.querySelector('.ink-rich-editor')) return; // Die Textseite hat die Tastatur für sich.
     // Tippen in Textfeldern und Quizzen (Dokument) bleibt Tippen.
     const t = e.target;
     if (t.closest?.('.ink-text') || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) || t.isContentEditable) return;
@@ -2834,7 +3127,11 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     else if (mod && k === 'z') { e.preventDefault(); history(e.shiftKey ? state.redo : state.undo, e.shiftKey ? state.undo : state.redo); }
     else if (mod && k === 'c' && sel) { e.preventDefault(); copySelection(); }
     else if (mod && k === 'x' && sel) { e.preventDefault(); cutSelection(); }
-    else if (mod && k === 'v' && clipboard) { e.preventDefault(); paste(); }
+    else if (mod && k === 'v') {
+      // Es kommt ein paste-Ereignis (onPaste, mit der Systemablage). Bleibt es aus, gilt die eigene Ablage.
+      const asked = Date.now();
+      setTimeout(() => { if (pasteSeen < asked && clipboard) paste(); }, 120);
+    }
     else if (mod && k === 'd' && sel) { e.preventDefault(); duplicateSelection(); }
     else if (mod && k === 'g' && sel) { e.preventDefault(); if (e.shiftKey) ungroupSelection(); else groupSelection(); }
   };
@@ -2861,6 +3158,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     await persist();
     leavePaper();
     document.removeEventListener('keydown', onKey);
+    document.removeEventListener('paste', onPaste);
     document.removeEventListener('visibilitychange', onHide);
     document.removeEventListener('gesturestart', noZoom);
     document.removeEventListener('gesturechange', noZoom);

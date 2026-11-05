@@ -1,5 +1,6 @@
 import { strokeOutline, polyline, bounds, moved, MM } from './ink-geometry.js';
 import { shapeCenter, arrowHead, dashArray, shapeTextLayout } from './ink-shapes.js';
+import { isRich, richHtml, richToSvg, PX_PT as RICH_PX_PT } from './ink-rich.js';
 
 // ==================== BESCHRIFTUNG ANZEIGEN ====================
 //
@@ -27,6 +28,27 @@ export function itemSvg(item) {
     return svgEl('path', { d: polyline(item.points), stroke: item.color, 'stroke-width': item.width, fill: 'none', 'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'data-id': item.id });
   }
   return svgEl('path', { d: strokeOutline(item.points, item.width), fill: item.color, 'data-id': item.id });
+}
+
+/** Freies Bild; xlink:href, weil LibreOffice beim Druck über den Renderer nur das liest. */
+export function imageSvg(item) {
+  const el = svgEl('image', { x: item.x, y: item.y, width: item.w, height: item.h, preserveAspectRatio: 'none', 'data-id': item.id });
+  el.setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', item.src);
+  return el;
+}
+
+/** Textfläche für Ansicht und Browser-Druck: gesetzt wie im Dokument, auch mit Formeln. */
+function richForeign(item) {
+  const h = item.h || 20;
+  const fo = svgEl('foreignObject', { x: item.x, y: item.y, width: item.w, height: h, 'data-id': item.id });
+  if (item.rot) fo.setAttribute('transform', `rotate(${item.rot} ${item.x + item.w / 2} ${item.y + h / 2})`);
+  const div = document.createElementNS('http://www.w3.org/1999/xhtml', 'div');
+  div.className = 'ink-rich-inner';
+  // zoom statt transform: Safari setzt transformierte Inhalte in foreignObject an die falsche Stelle.
+  div.style.cssText = `width:${item.w / RICH_PX_PT}px;zoom:${RICH_PX_PT};`;
+  div.innerHTML = richHtml(item);
+  fo.appendChild(div);
+  return fo;
 }
 
 /** Form (ink-shapes.js): Rechteck, Ellipse, Vieleck, Linie, Pfeil – gedreht um ihre Mitte. */
@@ -101,13 +123,13 @@ export function fieldSvg(item) {
  * Oberkante). `left`: Abstand des Bausteins vom linken Blattrand, `width`:
  * Blattbreite – x zählt ab dem Blattrand.
  */
-export function inkSvgFor(items, left, width) {
+export function inkSvgFor(items, left, width, { flat = false } = {}) {
   const h = Math.max(1, ...items.map((it) => { const b = bounds(it); return b.y + b.h; })) + 4;
   const svg = svgEl('svg', { viewBox: `0 0 ${width} ${h}`, class: 'ink-print-layer' });
   svg.style.left = `${-left}pt`;
   svg.style.width = `${width}pt`;
   svg.style.height = `${h}pt`;
-  inkGroups(items).forEach((g) => svg.appendChild(g));
+  inkGroups(items, { flat }).forEach((g) => svg.appendChild(g));
   return svg;
 }
 
@@ -117,7 +139,7 @@ export function inkSvgFor(items, left, width) {
  * y ab der Oberkante des Bausteins – oder null ohne Inhalt.
  */
 export function inkSvgBox(items) {
-  const list = items.filter((it) => it.type !== 'text' || it.text);
+  const list = items.filter((it) => it.type !== 'text' || it.text || isRich(it));
   if (!list.length) return null;
   const bs = list.map(bounds);
   const pad = 2;
@@ -127,15 +149,17 @@ export function inkSvgBox(items) {
   const w = r(Math.max(...bs.map((b) => b.x + b.w)) + pad - x);
   const h = r(Math.max(...bs.map((b) => b.y + b.h)) + pad - y);
   const svg = svgEl('svg', { viewBox: `${x} ${y} ${w} ${h}`, width: `${w}pt`, height: `${h}pt` });
-  inkGroups(list).forEach((g) => svg.appendChild(g));
+  inkGroups(list, { flat: true }).forEach((g) => svg.appendChild(g));
   return { svg: new XMLSerializer().serializeToString(svg), x, y, w, h };
 }
 
 /** Felder, Formen, Textmarker, Stift und Textfelder – in dieser Stapelfolge. */
-function inkGroups(items) {
+function inkGroups(items, { flat = false } = {}) {
   const groups = ['fields', 'shapes', 'marker', 'pen', 'texts'].map((name) => svgEl('g', { class: `ink-print-${name}` }));
   for (const it of items) {
     if (it.type === 'field') groups[0].appendChild(fieldSvg(it));
+    else if (it.type === 'image') groups[0].appendChild(imageSvg(it));
+    else if (isRich(it)) groups[4].appendChild(flat ? richToSvg(it, svgEl) : richForeign(it));
     else if (it.type === 'shape') groups[1].appendChild(shapeSvg(it));
     else if (it.type === 'stroke') groups[it.tool === 'marker' ? 2 : 3].appendChild(itemSvg(it));
     else if (it.type === 'text' && it.text) {

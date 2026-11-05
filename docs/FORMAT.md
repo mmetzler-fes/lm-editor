@@ -98,6 +98,9 @@ Eine Ebene mit Handschrift und Textfeldern, nach Bausteinen geordnet:
 - `type: "field"` – ein Feld, das abdeckt, was darunter liegt:
   `{ "type": "field", "x": 300, "y": 120, "w": 160, "h": 90, "pattern": "karo" }`
   (`karo` 5 mm, `linien` 10 mm, `leer` = weiß). Es liegt unter den Strichen.
+- `type: "image"` – freies Bild: `{ "type": "image", "x": 40, "y": 20, "w": 200, "h": 100, "src": "data:image/jpeg;base64,…" }`.
+- `type: "text"` mit `content` – Textfläche: `{ "type": "text", "x": 40, "y": 20, "w": 300, "h": 120, "content": [Bausteine wie in der Spec] }`.
+  Ohne `content` ist es eine kurze Beschriftung mit `text`, `size`, `color`.
 - `group` (optional): Elemente mit derselben Kennung bilden eine Gruppe. Eine
   Gruppe gehört als Ganzes zum Baustein, in dem ihr erstes Element beginnt.
 - `karoLines`, `karoWidth`, `karoPattern`: In dieser Ebene ist das Schreibfeld

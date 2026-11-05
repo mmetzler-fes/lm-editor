@@ -91,7 +91,7 @@ export function hitsStroke(item, x, y, radius) {
 }
 
 /** Rechteckige Elemente: Textfeld und Feld (Abdeckung mit Karo, Linien oder leer). */
-export const isBox = (item) => item.type === 'text' || item.type === 'field';
+export const isBox = (item) => item.type === 'text' || item.type === 'field' || item.type === 'image';
 
 /** Ungedrehter Rahmen eines Textfelds. */
 export function textBox(item) {
@@ -101,7 +101,7 @@ export function textBox(item) {
 /** Umgebendes Rechteck eines Elements (Strich, Textfeld, Feld oder Form). */
 export function bounds(item) {
   if (item.type === 'shape') return shapeBounds(item);
-  if (item.type === 'field') return { x: item.x, y: item.y, w: item.w, h: item.h };
+  if (item.type === 'field' || item.type === 'image') return { x: item.x, y: item.y, w: item.w, h: item.h };
   if (item.type === 'text') {
     const b = textBox(item);
     if (!item.rot) return b;
@@ -202,6 +202,13 @@ export function extremesAlong(points, a, b) {
 }
 
 /** Element verschieben (neue Kopie). */
+/** Wie resizedBox, das Seitenverhältnis bleibt (Bilder). */
+export function resizedKeepingRatio(item, corner, x, y, min = 8) {
+  const box = resizedBox(item, corner, x, y, min);
+  const h = box.w * (item.h / item.w);
+  return { ...box, h, y: corner === 0 || corner === 1 ? item.y + item.h - h : item.y };
+}
+
 export function moved(item, dx, dy) {
   if (item.type === 'shape') return movedShape(item, dx, dy);
   if (isBox(item)) return { ...item, x: item.x + dx, y: item.y + dy };

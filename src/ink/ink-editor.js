@@ -600,22 +600,52 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
   // Apple Pencil: Safari scrollt mit dem Stift wie mit dem Finger. Berührungen
   // des Stifts (touchType 'stylus') deshalb anhalten, bevor Safari scrollt –
   // gescrollt wird mit dem Finger.
+  // Die Regel für den Stift im ganzen Editor: Er tippt an und zeichnet mit dem Werkzeug – nie Handschrift.
+  const held = typeof Touch !== 'undefined' && 'touchType' in Touch.prototype; // nur Safari kennt den Stift hier
+  const STYLUS_CONTROL = 'button, a, select, summary, label, [role="button"], [role="menuitem"], input[type="checkbox"], input[type="radio"], input[type="file"], input[type="range"], input[type="color"], .ink-touchbar';
+  const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-rich-edit';
+  const isEditable = (t) => !!t?.closest?.('input, textarea, [contenteditable="true"]') && !t.closest('input[type="checkbox"], input[type="radio"], input[type="file"], input[type="range"], input[type="color"]');
   const holdStylus = (e) => {
-    if (state.editing) {
-      // Der Text wird bearbeitet: Der Finger scrollt und setzt die Marke. Der Stift schreibt nicht –
-      // angehalten, sonst nimmt das iPad seine Striche als Handschrift (Scribble) und sie verschwinden gleich.
-      if (e.cancelable && [...e.touches].some((t) => t.touchType === 'stylus')) e.preventDefault();
+    const t = e.target;
+    const inPage = !!t.closest?.('.ink-scroll');
+    if ([...e.touches].some((x) => x.touchType === 'stylus')) {
+      if (!e.cancelable) return;
+      if (inPage) {
+        // Text wird bearbeitet: Die Schreibfläche bedient Marke und Knöpfe selbst (ink-rich-editor.js).
+        if (state.editing) { e.preventDefault(); return; }
+        // Eigene Knöpfe auf dem Blatt klickt er an; der Pfeil bedient Quizze samt ihrer Eingabefelder.
+        if (t.closest?.(INK_CONTROL)) return;
+        if (state.tool === 'select' && t.closest?.('.ds-quiz-live')) return;
+        e.preventDefault();
+        return;
+      }
+      // Leisten, Menüs und Dialoge: Knöpfe gehen wie mit dem Finger, in Textfeldern schreibt er nicht.
+      if (isEditable(t) || !t.closest?.(STYLUS_CONTROL)) e.preventDefault();
       return;
     }
-    if (e.target.closest?.('.ink-text')) return; // ins Textfeld tippen bleibt möglich
-    if (state.tool === 'select' && e.target.closest?.('.ds-quiz-live')) return; // Pfeil bedient Quizze
-    if ([...e.touches].some((t) => t.touchType === 'stylus')) e.preventDefault();
+    if (state.editing || !inPage) return;
+    if (t.closest?.('.ink-text')) return; // ins Textfeld tippen bleibt möglich
     // Greift der erste Finger eine Auswahl, scrollt der Browser nicht (siehe bindInput).
-    else if (fingerScrolls() && !freeFingers.size && e.cancelable && e.target.closest?.('.ink-page')
-      && !e.target.closest('.ink-insert-mark, .ink-karo-handle, .ink-shape-text-edit, .ink-rich-edit')) e.preventDefault();
+    if (fingerScrolls() && !freeFingers.size && e.cancelable && t.closest?.('.ink-page')
+      && !t.closest('.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-shape-text-edit, .ink-rich-edit')) e.preventDefault();
   };
-  scroller.addEventListener('touchstart', holdStylus, { passive: false });
-  scroller.addEventListener('touchmove', holdStylus, { passive: false });
+  document.addEventListener('touchstart', holdStylus, { passive: false, capture: true });
+  document.addEventListener('touchmove', holdStylus, { passive: false, capture: true });
+  // Angehaltener Stift in einem Textfeld: Antippen setzt die Schreibmarke, getippt wird mit der Tastatur.
+  const penFocus = (e) => {
+    if (!held || e.pointerType !== 'pen' || state.editing || !isEditable(e.target)) return;
+    if (e.target.closest('.ds-quiz-live') && state.tool === 'select') return;
+    const field = e.target.closest('input, textarea, [contenteditable="true"]');
+    field.focus({ preventScroll: true });
+    if (!field.isContentEditable) return;
+    const r = document.caretRangeFromPoint?.(e.clientX, e.clientY);
+    if (r && field.contains(r.startContainer)) {
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(r);
+    }
+  };
+  document.addEventListener('pointerup', penFocus, true);
   const fingersUp = (e) => { if (!e.touches.length) freeFingers.clear(); };
   scroller.addEventListener('touchend', fingersUp);
   scroller.addEventListener('touchcancel', fingersUp);
@@ -2680,7 +2710,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
       }
       // Im Dokument: Karo-Anfasser und Textfelder (mit dem Text-Werkzeug) gehen
       // an das Blatt; alles andere fängt der Editor vorher ab.
-      if (p.paper && (e.target.closest?.('.ink-karo-handle, .ink-insert-mark')
+      if (p.paper && (e.target.closest?.('.ink-karo-handle, .ink-karo-tools, .ink-insert-mark')
         || (state.tool === 'text' && e.target.closest?.('.ink-text')))) return;
       // Der erste Finger scrollt, außer er greift die Auswahl oder das Geodreieck.
       // Antippen wählt beim Auswählen trotzdem, lange Drücken öffnet das Menü.
@@ -3459,6 +3489,9 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     document.removeEventListener('keydown', onKey);
     document.removeEventListener('paste', onPaste);
     window.removeEventListener('scroll', pinPage);
+    document.removeEventListener('touchstart', holdStylus, true);
+    document.removeEventListener('touchmove', holdStylus, true);
+    document.removeEventListener('pointerup', penFocus, true);
     document.removeEventListener('focusout', pinSoon);
     window.visualViewport?.removeEventListener('resize', pinSoon);
     document.removeEventListener('visibilitychange', onHide);

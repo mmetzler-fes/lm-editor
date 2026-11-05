@@ -77,11 +77,19 @@ export function openRichEditor({ title = 'Text', spec, widthCm = 16.5, formula =
       const r = document.caretRangeFromPoint?.(x, y);
       return r && editable?.contains(r.startContainer) ? r : null;
     };
+    // Nur wo der Stift angehalten wird (Safari kennt touchType): Sonst erledigt der Browser all das selbst.
+    const held = typeof Touch !== 'undefined' && 'touchType' in Touch.prototype;
+    const CONTROL = 'button, a, [role="button"], .ds-karo-grip';
     let penAnchor = null;
     let penMoved = false;
+    let penTarget = null;
     surfaceHost.addEventListener('pointerdown', (e) => {
-      if (e.pointerType !== 'pen') return;
+      if (e.pointerType !== 'pen' || !held) return;
       penMoved = false;
+      penAnchor = null;
+      penTarget = e.target;
+      // Knöpfe und Bausteine in der Fläche behalten die Auswahl: Eine neue Marke nähme ihnen ihre Knöpfe weg.
+      if (e.target.closest?.(`${CONTROL}, .ds-widget`)) return;
       penAnchor = caretAt(e.clientX, e.clientY);
       if (!penAnchor) return;
       editable.focus({ preventScroll: true });
@@ -90,17 +98,25 @@ export function openRichEditor({ title = 'Text', spec, widthCm = 16.5, formula =
       sel.addRange(penAnchor);
     });
     surfaceHost.addEventListener('pointermove', (e) => {
-      if (e.pointerType !== 'pen' || !penAnchor || !e.buttons) return;
+      if (e.pointerType !== 'pen' || !held || !penAnchor || !e.buttons) return;
       const r = caretAt(e.clientX, e.clientY);
       if (!r) return;
       penMoved = true;
       window.getSelection().setBaseAndExtent(penAnchor.startContainer, penAnchor.startOffset, r.startContainer, r.startOffset);
     });
     surfaceHost.addEventListener('pointerup', (e) => {
-      if (e.pointerType !== 'pen') return;
+      if (e.pointerType !== 'pen' || !held) return;
+      const target = penTarget;
       penAnchor = null;
-      // Knöpfe in der Schreibfläche (Tabellen, Bausteine): Der angehaltene Tipp löst keinen Klick aus.
-      if (!penMoved) e.target.closest?.('button, a, [role="button"]')?.click();
+      penTarget = null;
+      if (penMoved || !target) return;
+      // Der angehaltene Tipp löst weder Klick noch Maus-Ereignisse aus: Knöpfe und Bausteine bekommen sie hier.
+      const control = target.closest?.(CONTROL);
+      if (control && !control.classList.contains('ds-karo-grip')) { control.click(); return; }
+      if (target.closest?.('.ds-widget')) {
+        const at = { bubbles: true, cancelable: true, view: window, clientX: e.clientX, clientY: e.clientY, button: 0 };
+        for (const type of ['mousedown', 'mouseup', 'click']) target.dispatchEvent(new MouseEvent(type, at));
+      }
     });
 
     // Die Formatleiste bleibt sichtbar, auch wenn Safari die Seite für die Bildschirmtastatur verschiebt.

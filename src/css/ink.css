@@ -157,6 +157,9 @@ body.ink-open { overflow: hidden; }
 .ink-text-editing .ink-pages { padding-top: 150px; }
 .ink-text-editing .ink-page { touch-action: pan-x pan-y !important; }
 .ink-rich-inline-free { position: absolute; z-index: 5; }
+/* Die Knöpfe an einem Baustein: groß genug für Stift und Finger. */
+.ink-rich-inline .ds-wbar { top: -42px; left: auto; right: 8px; }
+.ink-rich-inline .ds-wbar button { min-width: 38px; min-height: 38px; font-size: 18px; touch-action: manipulation; }
 .ink-rich-inline { -webkit-user-select: text; user-select: text; }
 .ink-rich-inline .ds-pm-box { margin: 0; }
 .ink-rich-inline .ds-pm-surface .ProseMirror { min-height: 1.5em; padding: 0; overflow-wrap: break-word; word-break: normal; }

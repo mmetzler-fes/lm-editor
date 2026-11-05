@@ -2727,6 +2727,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
             }, PRESS_MS);
           }
         } else {
+          clearSelection(); // schon beim Aufsetzen, auch wenn danach gezogen wird
           gesture = tapWithMenu(e, x, y, () => selectAt(x, y));
         }
       } else if (tool === 'field') {

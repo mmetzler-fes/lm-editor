@@ -141,7 +141,7 @@ body.ink-open { overflow: hidden; }
 .ink-rich-inner .docspec { margin: 0; padding: 0; max-width: none; width: auto; line-height: 1.15; overflow-wrap: break-word; }
 .ink-rich-inner .docspec > :first-child, .ink-rich-inner .docspec > .ds-b:first-child > :first-child { margin-top: 0; }
 .ink-rich-inner .docspec > :last-child, .ink-rich-inner .docspec > .ds-b:last-child > :last-child { margin-bottom: 0; }
-.ink-rich-edit { position: absolute; z-index: 5; width: 34px; height: 34px; margin: -40px 0 0 -34px; border: 1px solid #3b82f6; border-radius: 8px; background: #fff; font-size: 16px; line-height: 1; cursor: pointer; touch-action: manipulation; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2); }
+.ink-rich-edit { position: absolute; z-index: 5; width: 38px; height: 38px; margin: 14px 0 0 -52px; border: 1px solid #3b82f6; border-radius: 8px; background: #fff; font-size: 16px; line-height: 1; cursor: pointer; touch-action: manipulation; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2); }
 .ink-sel-grabs { position: absolute; inset: 0; z-index: 3; pointer-events: none; }
 .ink-sel-grabs > div { position: absolute; pointer-events: auto; touch-action: none; }
 .ink-text-editing .ink-sel-grabs, .ink-text-editing .ink-handles, .ink-text-editing .ink-sel-box, .ink-text-editing .ink-rich-edit { display: none; }

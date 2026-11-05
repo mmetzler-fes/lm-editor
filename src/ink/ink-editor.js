@@ -1776,8 +1776,9 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
       const f = selectedField(p.i);
       if (f) for (const [x, y] of corners(f)) handles.appendChild(svgEl('circle', { cx: x, cy: y, r: HANDLE / state.zoom, class: 'ink-handle' }));
       // Textfeld: Dreh-Anfasser über der Mitte der Oberkante.
+      // Nicht bei Textflächen: Der Griff fing dort das Verschieben ab, und niemand will eine schiefe Tabelle.
       const t = selectedText(p.i);
-      if (t) {
+      if (t && !isRich(t)) {
         const [hx, hy] = textRotateHandle(t, ROT_GAP / state.zoom);
         const top = textRotateHandle(t, 0);
         handles.appendChild(svgEl('line', { x1: top[0], y1: top[1], x2: hx, y2: hy, class: 'ink-rot-line' }));
@@ -2071,7 +2072,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
   function handleAt(page, x, y) {
     const reach = (HANDLE * 1.6) / state.zoom;
     const t = selectedText(page);
-    if (t) {
+    if (t && !isRich(t)) {
       const [hx, hy] = textRotateHandle(t, ROT_GAP / state.zoom);
       if (Math.hypot(x - hx, y - hy) <= reach) return { id: t.id, rotate: true };
     }
@@ -2458,6 +2459,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
       };
     }
     state.editing = true;
+    clearSelection(); // auch was während des Ladens noch dazukam: Beim Schreiben ist nichts anderes gewählt
     overlay.classList.add('ink-text-editing');
     const finish = (result) => {
       state.editing = false;

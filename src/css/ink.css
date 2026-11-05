@@ -136,7 +136,6 @@ body.ink-open { overflow: hidden; }
 .ink-text.ink-selected { outline: 1.5px dashed #3b82f6; }
 /* Textfläche: 1 Punkt der Ebene = 1 pt, gesetzt wie im Dokument. */
 .ink-rich { position: absolute; pointer-events: none; transform-origin: 50% 50%; }
-.ink-rich.ink-selected { outline: 1.5px dashed #3b82f6; }
 .ink-rich-inner { font-family: 'LM Sans', 'Liberation Sans', Arial, sans-serif; font-size: 11pt; line-height: 1.15; color: #1e293b; text-align: left; }
 .ink-rich > .ink-rich-inner { position: absolute; left: 0; top: 0; transform-origin: 0 0; transform: scale(calc(var(--z) * 0.75)); }
 .ink-rich-inner .docspec { margin: 0; padding: 0; max-width: none; width: auto; line-height: 1.15; overflow-wrap: break-word; }
@@ -145,7 +144,7 @@ body.ink-open { overflow: hidden; }
 .ink-rich-edit { position: absolute; z-index: 5; width: 34px; height: 34px; margin: -40px 0 0 -34px; border: 1px solid #3b82f6; border-radius: 8px; background: #fff; font-size: 16px; line-height: 1; cursor: pointer; touch-action: manipulation; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2); }
 .ink-sel-grabs { position: absolute; inset: 0; z-index: 3; pointer-events: none; }
 .ink-sel-grabs > div { position: absolute; pointer-events: auto; touch-action: none; }
-.ink-text-editing .ink-sel-grabs { display: none; }
+.ink-text-editing .ink-sel-grabs, .ink-text-editing .ink-handles, .ink-text-editing .ink-sel-box, .ink-text-editing .ink-rich-edit { display: none; }
 .ink-block-sel { outline: 2px solid #3b82f6; outline-offset: 2px; border-radius: 3px; }
 .ink-block-drop { position: absolute; left: 3%; right: 3%; height: 3px; margin-top: -1px; border-radius: 2px; background: #3b82f6; z-index: 6; pointer-events: none; }
 .ink-notice { position: absolute; top: 60px; left: 50%; transform: translateX(-50%); z-index: 20; max-width: calc(100% - 24px); padding: 8px 12px; border-radius: 10px; background: #92400e; color: #fff; font-size: 14px; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3); }
@@ -168,7 +167,9 @@ body.ink-open { overflow: hidden; }
 .ink-rich-inline .ds-pm-surface .ProseMirror { min-height: 1.5em; padding: 0; overflow-wrap: break-word; word-break: normal; }
 .ink-rich-inline .ds-pm-surface .ProseMirror > p { margin: 0 0 0.6em; }
 .ink-rich-inline .ds-pm-surface { height: auto; min-height: 1.5em; overflow: visible; padding: 0; border: none; border-radius: 0; background: transparent; outline: 2px solid #3b82f6; outline-offset: 3px; font: inherit; color: inherit; line-height: inherit; }
-.ink-rich-inline-free .ds-pm-surface { background: rgba(255, 255, 255, 0.85); }
+.ink-rich-inline-free .ds-pm-surface { background: #fff; }
+/* Tabellen füllen die Textfläche, außer sie haben eine eigene Breite – auch sonst wären die Zellen kaum zu treffen. */
+.ink-rich-inner table:not([style*="width"]) { width: 100%; }
 .ink-rich-md .import-modules-card { width: min(720px, 92vw); }
 .ink-rich-markdown { width: 100%; height: 45vh; padding: 10px; font-family: ui-monospace, monospace; font-size: 14px; border: 1px solid var(--border, #e2e8f0); border-radius: 8px; resize: vertical; }
 .ink-tool-text .ink-page { cursor: text; }

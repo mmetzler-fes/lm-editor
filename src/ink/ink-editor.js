@@ -597,6 +597,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
   // des Stifts (touchType 'stylus') deshalb anhalten, bevor Safari scrollt –
   // gescrollt wird mit dem Finger.
   const holdStylus = (e) => {
+    if (state.editing) return; // Der Text wird bearbeitet: Stift und Finger gehören dem Editor bzw. dem Scrollen
     if (e.target.closest?.('.ink-text')) return; // ins Textfeld tippen bleibt möglich
     if (state.tool === 'select' && e.target.closest?.('.ds-quiz-live')) return; // Pfeil bedient Quizze
     if ([...e.touches].some((t) => t.touchType === 'stylus')) e.preventDefault();
@@ -1319,6 +1320,12 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     const b = topBlocks().find((x) => x.bid === after);
     return { page: 0, x: b?.left ?? 40, y: b ? b.bottom + 2 : 4 };
   };
+  /** Wo ein neuer Text entsteht: als Baustein (Lehrkraft) oder frei unter dem Baustein (eigene Ebene). */
+  const newTextPlace = (after) => {
+    if (paper.insertBlock) return { after };
+    const at = belowBlock(after);
+    return { free: { page: at.page, x: at.x, y: at.y, w: Math.min(RICH_WIDTH, Math.max(40, pages[0].w - at.x - 4)) } };
+  };
   async function insertContent(after, content) {
     if (!content.length) return;
     if (paper.insertBlock) { await blocksIn(after, mergeParagraphs(content)); return; }
@@ -1326,14 +1333,14 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     addRich(at.page, at.x, at.y, content);
   }
   async function insertText(after) {
-    const result = await openEditor({ title: 'Neuer Textblock', spec: { content: [] }, formula: !!paper.insertBlock });
+    const result = await openEditor({ title: 'Neuer Textblock', spec: { content: [] }, formula: !!paper.insertBlock }, newTextPlace(after));
     if (result) await insertContent(after, result.content);
   }
   async function insertTable(after) {
     const block = await askTable();
     if (!block) return;
     // Gleich zum Ausfüllen öffnen.
-    const result = await openEditor({ title: 'Neue Tabelle', spec: { content: [block] }, formula: !!paper.insertBlock });
+    const result = await openEditor({ title: 'Neue Tabelle', spec: { content: [block] }, formula: !!paper.insertBlock }, newTextPlace(after));
     if (result) await insertContent(after, result.content);
   }
   async function insertImage(after, file) {
@@ -1545,6 +1552,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     const box = document.createElement('div');
     box.className = 'ink-rich';
     box.dataset.id = item.id;
+    if (state.editingId === item.id) box.style.visibility = 'hidden'; // wird gerade an dieser Stelle bearbeitet
     box.style.left = `${(item.x / p.w) * 100}%`;
     box.style.top = `${(item.y / p.h) * 100}%`;
     box.style.width = `${(item.w / p.w) * 100}%`;
@@ -2315,7 +2323,8 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     const page = doc.pages.findIndex((pg) => (pg.items || []).some((it) => it.id === id));
     const item = doc.pages[page]?.items.find((it) => it.id === id);
     if (!item) return;
-    const result = await openEditor({ title: 'Textfläche', spec: { content: item.content }, widthCm: item.w / CM });
+    const result = await openEditor({ title: 'Textfläche', spec: { content: item.content }, widthCm: item.w / CM },
+      { free: { page, x: item.x, y: item.y, w: item.w, id: item.id } });
     if (!result) return;
     snapshot();
     if (result.content.length) item.content = result.content;
@@ -2325,7 +2334,71 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     drawItems(page);
     paintToolbar();
   }
-  const openEditor = async (opts) => (await import('./ink-rich-editor.js')).openRichEditor(opts);
+  /**
+   * Text direkt auf dem Blatt bearbeiten. `place`: { free: { page, x, y, w, id? } } – Textfläche;
+   * { bid } – vorhandener Baustein (die Schreibfläche steht an seiner Stelle, darunter rückt alles mit);
+   * { after } – neuer Baustein hinter `after` (null = an den Anfang).
+   */
+  async function openEditor(opts, place) {
+    const { openRichEditor } = await import('./ink-rich-editor.js');
+    clearSelection();
+    const host = document.createElement('div');
+    host.className = 'ink-rich-inline';
+    let undo = () => {};
+    if (place.free) {
+      const p = pages[place.free.page];
+      const outer = document.createElement('div');
+      outer.className = 'ink-rich-inline-free';
+      outer.style.left = `${(place.free.x / p.w) * 100}%`;
+      outer.style.top = `${(place.free.y / p.h) * 100}%`;
+      host.classList.add('ink-rich-inner');
+      host.style.width = `${place.free.w / RICH_PX_PT}px`;
+      host.style.zoom = String(RICH_PX_PT * state.zoom); // wie das Blatt, damit der Text gleich groß bleibt
+      outer.appendChild(host);
+      p.el.appendChild(outer);
+      state.editingId = place.free.id || null;
+      drawItems(place.free.page);
+      undo = () => {
+        outer.remove();
+        state.editingId = null;
+        drawItems(place.free.page);
+      };
+    } else {
+      // Im Blatt: Die Schreibfläche übernimmt die Kennung, die Striche des Bausteins bleiben an ihr.
+      const old = place.bid ? blockEl(place.bid) : null;
+      host.dataset.bid = place.bid || 'ink-new';
+      host.classList.add('ds-b');
+      if (old) {
+        old.after(host);
+        old.removeAttribute('data-bid');
+        old.hidden = true;
+      } else {
+        const anchor = place.after ? blockEl(place.after) : null;
+        if (anchor) anchor.after(host);
+        else (paperView.el.querySelector('.docspec') || paperView.el).prepend(host);
+      }
+      undo = () => {
+        host.remove();
+        if (old) {
+          old.dataset.bid = place.bid;
+          old.hidden = false;
+        }
+        reflowPaper();
+      };
+    }
+    state.editing = true;
+    overlay.classList.add('ink-text-editing');
+    const finish = (result) => {
+      state.editing = false;
+      overlay.classList.remove('ink-text-editing');
+      undo();
+      return result;
+    };
+    const editing = openRichEditor({ ...opts, surfaceHost: host, barHost: overlay });
+    if (!place.free) reflowPaper();
+    host.scrollIntoView?.({ block: 'center' });
+    return finish(await editing);
+  }
 
   function addFreeItem(page, item) {
     snapshot();
@@ -2342,7 +2415,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
   });
   async function newRich(page, x, y, w) {
     const width = Math.min(w || RICH_WIDTH, Math.max(40, pages[page].w - x - 4));
-    const result = await openEditor({ title: 'Neue Textfläche', spec: { content: [] }, widthCm: width / CM });
+    const result = await openEditor({ title: 'Neue Textfläche', spec: { content: [] }, widthCm: width / CM }, { free: { page, x, y, w: width } });
     if (result?.content.length) addRich(page, x, y, result.content, width);
   }
 
@@ -2383,7 +2456,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
   async function editBlockText(bid) {
     const block = paper.blockOps.get(bid);
     if (!block) return;
-    const result = await openEditor({ title: 'Baustein bearbeiten', spec: { content: [structuredClone(block)] }, formula: true });
+    const result = await openEditor({ title: 'Baustein bearbeiten', spec: { content: [structuredClone(block)] }, formula: true }, { bid });
     if (!result) return;
     await docChange(() => (result.content.length ? paper.blockOps.replace(bid, mergeParagraphs(result.content)) : paper.blockOps.remove([bid])));
   }
@@ -2571,6 +2644,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     p.el.addEventListener('pointerdown', (e) => {
       if (e.target.closest?.('.ink-shape-text-edit')) return; // Schreiben in einer Form
       // Handballen: Solange der Stift schreibt und kurz danach zählt kein Finger.
+      if (state.editing) return;
       if (e.pointerType === 'touch' && (penDown || Date.now() - penLiftAt < PALM_MS)) return;
       if (e.target.closest?.('.ink-rich-edit')) return;
       { const [lx, ly] = toPage(e); state.lastAt = { page: p.i, x: lx, y: ly }; }
@@ -3012,7 +3086,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     p.el.addEventListener('pointerleave', () => { if (state.tool === 'laser') laserDot(-1, null); });
     // Doppelklick auf ein Textfeld beim Auswählen: gleich weiterschreiben.
     p.el.addEventListener('dblclick', (e) => {
-      if (!selecting()) return;
+      if (!selecting() || state.editing) return;
       const [x, y] = toPage(e);
       const hit = itemAt(doc.pages[p.i].items, x, y, 6 / state.zoom);
       if (hit?.type === 'text') { e.preventDefault(); editText(hit.id); }
@@ -3021,6 +3095,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     // Rechtsklick (auch Ctrl+Klick am Mac) – in jedem Werkzeug ein Menü, nie ein Strich:
     // auf einem Strich oder Textfeld das Menü der Auswahl, sonst Werkzeuge, Rückgängig, Einfügen.
     p.el.addEventListener('contextmenu', (e) => {
+      if (state.editing) return;
       // In einem Quiz oder Textfeld bleibt das Menü des Browsers (Kopieren, Rechtschreibung).
       if (e.target.closest?.('.ds-quiz-live input, .ds-quiz-live textarea, .ink-text[contenteditable="true"]:focus')) return;
       e.preventDefault();
@@ -3293,7 +3368,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
   // ---------- Tastatur und Schließen ----------
   let pasteSeen = 0;
   const onPaste = (e) => {
-    if (document.querySelector('.ink-rich-editor')) return;
+    if (state.editing) return;
     const t = e.target;
     if (t.closest?.('.ink-text') || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) || t.isContentEditable) return;
     pasteSeen = Date.now();
@@ -3303,7 +3378,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
   };
   document.addEventListener('paste', onPaste);
   const onKey = (e) => {
-    if (document.querySelector('.ink-rich-editor')) return; // Die Textseite hat die Tastatur für sich.
+    if (state.editing) return; // Der offene Texteditor hat die Tastatur für sich.
     // Tippen in Textfeldern und Quizzen (Dokument) bleibt Tippen.
     const t = e.target;
     if (t.closest?.('.ink-text') || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) || t.isContentEditable) return;

@@ -137,27 +137,34 @@ body.ink-open { overflow: hidden; }
 /* Textfläche: 1 Punkt der Ebene = 1 pt, gesetzt wie im Dokument. */
 .ink-rich { position: absolute; pointer-events: none; transform-origin: 50% 50%; }
 .ink-rich.ink-selected { outline: 1.5px dashed #3b82f6; }
-.ink-rich-inner { font-family: 'LM Sans', 'Liberation Sans', Arial, sans-serif; font-size: 11pt; line-height: 1.35; color: #1e293b; text-align: left; }
+.ink-rich-inner { font-family: 'LM Sans', 'Liberation Sans', Arial, sans-serif; font-size: 11pt; line-height: 1.15; color: #1e293b; text-align: left; }
 .ink-rich > .ink-rich-inner { position: absolute; left: 0; top: 0; transform-origin: 0 0; transform: scale(calc(var(--z) * 0.75)); }
-.ink-rich-inner .docspec { margin: 0; padding: 0; max-width: none; width: auto; }
+.ink-rich-inner .docspec { margin: 0; padding: 0; max-width: none; width: auto; line-height: 1.15; overflow-wrap: break-word; }
 .ink-rich-inner .docspec > :first-child, .ink-rich-inner .docspec > .ds-b:first-child > :first-child { margin-top: 0; }
+.ink-rich-inner .docspec > :last-child, .ink-rich-inner .docspec > .ds-b:last-child > :last-child { margin-bottom: 0; }
 .ink-rich-edit { position: absolute; z-index: 5; width: 34px; height: 34px; margin: -40px 0 0 -34px; border: 1px solid #3b82f6; border-radius: 8px; background: #fff; font-size: 16px; line-height: 1; cursor: pointer; touch-action: manipulation; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2); }
 .ink-block-sel { outline: 2px solid #3b82f6; outline-offset: 2px; border-radius: 3px; }
 .ink-block-drop { position: absolute; left: 3%; right: 3%; height: 3px; margin-top: -1px; border-radius: 2px; background: #3b82f6; z-index: 6; pointer-events: none; }
 .ink-notice { position: absolute; top: 60px; left: 50%; transform: translateX(-50%); z-index: 20; max-width: calc(100% - 24px); padding: 8px 12px; border-radius: 10px; background: #92400e; color: #fff; font-size: 14px; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3); }
 .ink-notice[hidden] { display: none; }
-/* Text bearbeiten: eigene Seite über dem Blatt, aber unter Menüs und Dialogen. */
-.ink-rich-editor { position: fixed; inset: 0; z-index: 2100; display: flex; flex-direction: column; background: var(--bg-primary, #f4f6fb); color: var(--text-primary, #1e293b); -webkit-user-select: text; user-select: text; }
-.ink-rich-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 8px 12px; background: var(--bg-secondary, #fff); border-bottom: 1px solid var(--border, #e2e8f0); }
-.ink-rich-tabs { display: flex; gap: 4px; margin: 0; }
+/* Text bearbeiten direkt auf dem Blatt: Formatleiste fest unter der Werkzeugleiste, die Werkzeuge ruhen. */
+.ink-rich-editor { position: absolute; top: 52px; left: 0; right: 0; z-index: 30; display: flex; flex-direction: column; gap: 4px; padding: 6px 12px; background: var(--bg-secondary, #fff); color: var(--text-primary, #1e293b); border-bottom: 1px solid var(--border, #e2e8f0); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12); -webkit-user-select: text; user-select: text; }
+.ink-rich-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
 .ink-rich-status { flex: 1; min-width: 40px; font-size: 0.85rem; color: var(--text-secondary, #64748b); }
-.ink-rich-box { flex: 1; min-height: 0; overflow: auto; padding: 0 12px 12px; }
-.ink-rich-box[hidden] { display: none; }
-.ink-rich-box .ds-pm-toolbar { position: sticky; top: 0; z-index: 3; flex-wrap: wrap; }
-.ink-rich-box .ds-pm-surface { height: auto; min-height: 240px; }
-.ink-rich-box > .hint { display: none; }
-.ink-rich-markdown { flex: 1; min-height: 0; margin: 12px; padding: 12px; font-family: ui-monospace, monospace; font-size: 14px; border: 1px solid var(--border, #e2e8f0); border-radius: 8px; resize: none; }
-.ink-rich-markdown[hidden] { display: none; }
+.ink-rich-editor .ds-pm-toolbar { margin: 0; flex-wrap: wrap; }
+.ink-text-editing .ink-toolbar { pointer-events: none; opacity: 0.35; }
+.ink-text-editing .ink-subbar, .ink-text-editing .ink-insert-mark, .ink-text-editing .ink-karo-handle, .ink-text-editing .ink-touchbar { display: none !important; }
+.ink-text-editing .ink-pages { padding-top: 150px; }
+.ink-text-editing .ink-page { touch-action: pan-x pan-y !important; }
+.ink-rich-inline-free { position: absolute; z-index: 5; }
+.ink-rich-inline { -webkit-user-select: text; user-select: text; }
+.ink-rich-inline .ds-pm-box { margin: 0; }
+.ink-rich-inline .ds-pm-surface .ProseMirror { min-height: 1.5em; padding: 0; overflow-wrap: break-word; word-break: normal; }
+.ink-rich-inline .ds-pm-surface .ProseMirror > p { margin: 0 0 0.6em; }
+.ink-rich-inline .ds-pm-surface { height: auto; min-height: 1.5em; overflow: visible; padding: 0; border: none; border-radius: 0; background: transparent; outline: 2px solid #3b82f6; outline-offset: 3px; font: inherit; color: inherit; line-height: inherit; }
+.ink-rich-inline-free .ds-pm-surface { background: rgba(255, 255, 255, 0.85); }
+.ink-rich-md .import-modules-card { width: min(720px, 92vw); }
+.ink-rich-markdown { width: 100%; height: 45vh; padding: 10px; font-family: ui-monospace, monospace; font-size: 14px; border: 1px solid var(--border, #e2e8f0); border-radius: 8px; resize: vertical; }
 .ink-tool-text .ink-page { cursor: text; }
 @media (max-width: 900px) {
   .ink-title { display: none; }

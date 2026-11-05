@@ -1692,6 +1692,35 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     const block = paper?.blockOps?.get(bid);
     return !!block && typeof block === 'object' && !NOT_TEXT.includes(block.type);
   };
+  /**
+   * Griff-Flächen über dem Gewählten: Darauf darf der Browser gar nicht erst scrollen (touch-action: none).
+   * Das Anhalten per Skript allein genügt auf dem iPad nicht – es scrollte statt zu verschieben.
+   * Die Flächen werden nur verschoben, nicht neu angelegt: Verschwindet das berührte Element mitten in der
+   * Geste, gehen die Ereignisse auf dem iPad verloren.
+   */
+  function paintGrabs(p) {
+    let layer = p.el.querySelector('.ink-sel-grabs');
+    if (!layer) {
+      layer = Object.assign(document.createElement('div'), { className: 'ink-sel-grabs' });
+      p.el.appendChild(layer);
+    }
+    const boxes = [];
+    if (selecting()) {
+      const b = state.selection?.page === p.i ? selectionBounds() : null;
+      if (b) boxes.push(b);
+      if (p.i === 0) for (const bid of state.blocks) { const q = blockBox(bid); if (q) boxes.push(q); }
+    }
+    const pad = (HANDLE * 1.6) / state.zoom; // auch die Anfasser an den Ecken
+    while (layer.children.length > boxes.length) layer.lastChild.remove();
+    while (layer.children.length < boxes.length) layer.appendChild(document.createElement('div'));
+    boxes.forEach((b, i) => {
+      const el = layer.children[i];
+      el.style.left = `${((b.x - pad) / p.w) * 100}%`;
+      el.style.top = `${((b.y - pad) / p.h) * 100}%`;
+      el.style.width = `${((b.w + 2 * pad) / p.w) * 100}%`;
+      el.style.height = `${((b.h + 2 * pad) / p.h) * 100}%`;
+    });
+  }
   function paintSelection() {
     if (paperView) {
       paperView.el.querySelectorAll('.ink-block-sel').forEach((el) => el.classList.remove('ink-block-sel'));
@@ -1714,6 +1743,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
       for (const it of selectedLines(p.i)) {
         for (const [x, y] of it.points) handles.appendChild(svgEl('circle', { cx: x, cy: y, r: HANDLE / state.zoom, class: 'ink-handle' }));
       }
+      paintGrabs(p);
       p.el.querySelector('.ink-rich-edit')?.remove();
       const rich = selectedText(p.i);
       if (isRich(rich)) {
@@ -2486,11 +2516,23 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     return { page, x, y, free, after };
   }
   /** Neue Bausteine ins Dokument (Lehrkraft); Reihenfolge bleibt auch ohne insertBlocks des Gastgebers. */
-  const blocksIn = (after, blocks) => docChange(async () => {
-    if (paper.insertBlocks) return paper.insertBlocks(after, blocks);
-    for (const b of [...blocks].reverse()) await paper.insertBlock(after, b);
-    return true;
-  });
+  const blocksIn = async (after, blocks) => {
+    const before = new Set(topBlocks().map((b) => b.bid));
+    await docChange(async () => {
+      if (paper.insertBlocks) return paper.insertBlocks(after, blocks);
+      for (const b of [...blocks].reverse()) await paper.insertBlock(after, b);
+      return true;
+    });
+    // Das Neue ist gleich gewählt: So lässt es sich sofort verschieben.
+    if (paper.blockOps) selectBlocks(topBlocks().map((b) => b.bid).filter((bid) => !before.has(bid)));
+  };
+  function selectBlocks(bids) {
+    state.selection = null;
+    state.blocks = new Set(bids);
+    if (bids.length && !selecting()) state.tool = 'select';
+    paintSelection();
+    paintToolbar();
+  }
   /** Änderung am Dokument, mit Rückgängig (auch für die Ebene: Striche hängen an ihren Bausteinen). */
   function docChange(fn) {
     if (paper.blockOps) {
@@ -2506,6 +2548,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     const result = await openEditor({ title: 'Baustein bearbeiten', spec: { content: [structuredClone(block)] }, formula: true }, { bid });
     if (!result) return;
     await docChange(() => (result.content.length ? paper.blockOps.replace(bid, mergeParagraphs(result.content)) : paper.blockOps.remove([bid])));
+    if (result.content.length) selectBlocks([bid]);
   }
   /** Bausteine verschieben; was an ihnen hängt, wandert mit. */
   const moveBlocks = (bids, after) => docChange(() => paper.blockOps.move(bids, after));

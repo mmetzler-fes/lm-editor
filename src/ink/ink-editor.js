@@ -5,7 +5,7 @@ import {
 } from './ink-geometry.js';
 import { rulerSvg, rulerHandles } from './ink-ruler.js';
 import { svgEl, itemSvg, fieldSvg, shapeSvg, imageSvg, inkSvgFor, inkSvgBox, fieldMaxCm } from './ink-view.js';
-import { isRich, richHtml, richHasFormula, PX_PT as RICH_PX_PT } from './ink-rich.js';
+import { isRich, richHtml, richHasFormula, mergeParagraphs, PX_PT as RICH_PX_PT } from './ink-rich.js';
 import { pasteToSpec } from '../doc/paste.js';
 import { askTable } from '../editor/block-dialog.js';
 import {
@@ -1321,7 +1321,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
   };
   async function insertContent(after, content) {
     if (!content.length) return;
-    if (paper.insertBlock) { await blocksIn(after, content); return; }
+    if (paper.insertBlock) { await blocksIn(after, mergeParagraphs(content)); return; }
     const at = belowBlock(after);
     addRich(at.page, at.x, at.y, content);
   }
@@ -2385,7 +2385,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     if (!block) return;
     const result = await openEditor({ title: 'Baustein bearbeiten', spec: { content: [structuredClone(block)] }, formula: true });
     if (!result) return;
-    await docChange(() => (result.content.length ? paper.blockOps.replace(bid, result.content) : paper.blockOps.remove([bid])));
+    await docChange(() => (result.content.length ? paper.blockOps.replace(bid, mergeParagraphs(result.content)) : paper.blockOps.remove([bid])));
   }
   /** Bausteine verschieben; was an ihnen hängt, wandert mit. */
   const moveBlocks = (bids, after) => docChange(() => paper.blockOps.move(bids, after));
@@ -2404,7 +2404,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     }
     const place = pastePlace(at);
     if (place.free) addRich(place.page, place.x, place.y, content);
-    else void blocksIn(place.after, content);
+    else void blocksIn(place.after, mergeParagraphs(content));
   }
   async function pasteImageFile(file, at) {
     let image;

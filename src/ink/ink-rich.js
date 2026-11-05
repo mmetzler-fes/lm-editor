@@ -16,6 +16,23 @@ export const richHtml = (item) => renderDocSpecHtml({ content: item.content }, {
 /** Steckt in der Fläche eine Formel? Im „PDF mit Vorlage“ steht sie dann als Quelle. */
 export const richHasFormula = (item) => /<math[\s>]/.test(richHtml(item));
 
+/**
+ * Aufeinanderfolgende schlichte Absätze werden ein Baustein (`text` mit Leerzeile dazwischen, wie in der
+ * Spec). Der Editor macht aus jeder Enter-Zeile einen Absatz; für die Lehrkraft ist es ein Textblock.
+ * Absätze mit eigener Formatierung (Ausrichtung, Abstand …), Überschriften und Listen bleiben für sich.
+ */
+export function mergeParagraphs(content) {
+  const plain = (b) => b && typeof b === 'object' && b.type === 'text' && typeof b.text === 'string'
+    && Object.keys(b).every((k) => k === 'type' || k === 'text' || k === 'id');
+  const out = [];
+  for (const b of content || []) {
+    const last = out[out.length - 1];
+    if (plain(b) && plain(last)) out[out.length - 1] = { ...last, text: `${last.text}\n\n${b.text}` };
+    else out.push(b);
+  }
+  return out;
+}
+
 const r2 = (v) => Math.round(v * 100) / 100;
 const seen = (color) => color && color !== 'transparent' && !/^rgba\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*,\s*0\s*\)$/.test(color);
 

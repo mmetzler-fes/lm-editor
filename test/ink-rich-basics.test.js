@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { bounds, inSelection, itemAt, moved, resizedKeepingRatio } from '../src/ink/ink-geometry.js';
 import { safeInkSvg } from '../src/print/render-job.js';
+import { mergeParagraphs } from '../src/ink/ink-rich.js';
+import { specToPm } from '../src/doc/pm-convert.js';
 
 const image = { id: 'b', type: 'image', x: 10, y: 20, w: 100, h: 50, src: 'data:image/png;base64,AAAA' };
 
@@ -32,4 +34,20 @@ test('Druck-SVG: nur eingebettete PNG/JPEG, sonst nichts Nachladbares', () => {
   assert.equal(safeInkSvg(wrap('<image xlink:href="data:image/svg+xml;base64,QUJD"/>')), false);
   assert.equal(safeInkSvg(wrap('<a href="data:image/png;base64,QUJD"><text>x</text></a>')), false);
   assert.equal(safeInkSvg(wrap('<foreignObject><div/></foreignObject>')), false);
+});
+
+test('Textblock: Enter-Zeilen bleiben ein Baustein, Formatiertes für sich', () => {
+  const t = (text, more = {}) => ({ type: 'text', text, ...more });
+  assert.deepEqual(mergeParagraphs([t('a'), t('b'), t('c')]), [t('a\n\nb\n\nc')]);
+  assert.deepEqual(mergeParagraphs([t('a', { id: 'x' }), t('b', { id: 'y' })]), [t('a\n\nb', { id: 'x' })]);
+  const list = { type: 'list', items: ['1'] };
+  assert.deepEqual(mergeParagraphs([t('a'), list, t('b')]), [t('a'), list, t('b')]);
+  const centered = t('b', { align: 'center' });
+  assert.deepEqual(mergeParagraphs([t('a'), centered]), [t('a'), centered]);
+  assert.deepEqual(mergeParagraphs([]), []);
+});
+
+test('Textblock: Beim erneuten Bearbeiten sind es wieder zwei Absätze', () => {
+  const doc = specToPm({ content: [{ type: 'text', text: 'erste\n\nzweite' }] });
+  assert.equal(doc.content.filter((n) => n.type === 'paragraph').length, 2);
 });

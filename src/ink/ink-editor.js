@@ -96,27 +96,29 @@ const FINGER_KEY = 'lm_ink_finger';           // „Finger schreibt“ gilt je G
 const FINGER_HINT_KEY = 'lm_ink_finger_hint'; // Hinweis dazu nur einmal
 /** Bild aus einer Datei: verkleinert, als data:-Adresse. Ergebnis { src, wPx, hPx }. */
 async function imageFromFile(file) {
-  const url = URL.createObjectURL(file);
-  try {
-    const img = await new Promise((resolve, reject) => {
-      const i = new Image();
-      i.onload = () => resolve(i);
-      i.onerror = () => reject(new Error('Das Bild lässt sich nicht lesen.'));
-      i.src = url;
-    });
-    const k = Math.min(1, IMAGE_MAX_PX / Math.max(img.naturalWidth, img.naturalHeight));
-    const canvas = document.createElement('canvas');
-    canvas.width = Math.max(1, Math.round(img.naturalWidth * k));
-    canvas.height = Math.max(1, Math.round(img.naturalHeight * k));
-    const ctx = canvas.getContext('2d');
-    // Durchsichtiges bleibt PNG; Fotos werden JPEG, das ist viel kleiner.
-    const png = file.type === 'image/png' && canvas.width * canvas.height < 600 * 600;
-    if (!png) { ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, canvas.width, canvas.height); }
-    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-    return { src: canvas.toDataURL(png ? 'image/png' : 'image/jpeg', 0.82), wPx: canvas.width, hPx: canvas.height };
-  } finally {
-    URL.revokeObjectURL(url);
-  }
+  // Über eine data:-Adresse: Die Sicherheitsrichtlinie des Servers erlaubt keine blob:-Bilder.
+  const url = await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(new Error('Das Bild lässt sich nicht lesen.'));
+    reader.readAsDataURL(file);
+  });
+  const img = await new Promise((resolve, reject) => {
+    const i = new Image();
+    i.onload = () => resolve(i);
+    i.onerror = () => reject(new Error('Das Bild lässt sich nicht lesen.'));
+    i.src = url;
+  });
+  const k = Math.min(1, IMAGE_MAX_PX / Math.max(img.naturalWidth, img.naturalHeight));
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.round(img.naturalWidth * k));
+  canvas.height = Math.max(1, Math.round(img.naturalHeight * k));
+  const ctx = canvas.getContext('2d');
+  // Durchsichtiges bleibt PNG; Fotos werden JPEG, das ist viel kleiner.
+  const png = file.type === 'image/png' && canvas.width * canvas.height < 600 * 600;
+  if (!png) { ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, canvas.width, canvas.height); }
+  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+  return { src: canvas.toDataURL(png ? 'image/png' : 'image/jpeg', 0.82), wPx: canvas.width, hPx: canvas.height };
 }
 const pickImageFile = () => new Promise((resolve) => {
   const input = Object.assign(document.createElement('input'), { type: 'file', accept: 'image/png,image/jpeg,image/gif,image/webp' });
@@ -236,6 +238,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
   const state = {
     // Im Dokument zuerst der Pfeil (Quizze ausfüllen, auswählen) – geschrieben wird erst, wenn der Stift gewählt ist.
     fingerWrites: stored(FINGER_KEY) === '1',
+    blocks: new Set(), // gewählte Bausteine des Dokuments (nur mit paper.blockOps, also bei der Lehrkraft)
     tool: doc.bg === 'paper' ? 'select' : 'pen', color: COLORS[0], marker: MARKERS[0], widthIdx: 1, textSize: NEW_TEXT_SIZE, fieldPattern: 'karo',
     shapeKind: 'rect', shapeDash: 'solid', shapeFill: null, shapeOpacity: 1,
     zoom: 1, variant: 'blatt',
@@ -364,9 +367,13 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
   };
 
   // ---------- Werkzeugleiste ----------
-  const selectedHint = () => (state.selection?.ids.size
-    ? `${state.selection.ids.size} gewählt${groupOfSelection() ? ' (Gruppe)' : ''} – ziehen zum Verschieben, lange drücken: Menü`
-    : '');
+  const hasSelection = () => !!state.selection?.ids.size || state.blocks.size > 0;
+  const selectedHint = () => {
+    const n = (state.selection?.ids.size || 0) + state.blocks.size;
+    if (!n) return '';
+    const what = state.blocks.size === n ? (n === 1 ? 'Baustein' : 'Bausteine') : '';
+    return `${n} ${what ? `${what} ` : ''}gewählt${groupOfSelection() ? ' (Gruppe)' : ''} – ziehen zum Verschieben, lange drücken: Menü`;
+  };
   const paintToolbar = () => {
     overlay.querySelectorAll('[data-tool]').forEach((b) => b.classList.toggle('active', b.dataset.tool === state.tool));
     if (state.tool !== 'laser') laserDot(-1, null);
@@ -428,8 +435,8 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     }[state.tool] || '';
     $('.ink-undo').disabled = !state.undo.length;
     $('.ink-redo').disabled = !state.redo.length;
-    $('.ink-delete').hidden = !state.selection?.ids.size;
-    $('.ink-more').hidden = !state.selection?.ids.size && !(selecting() && clipboard);
+    $('.ink-delete').hidden = !hasSelection();
+    $('.ink-more').hidden = !hasSelection() && !(selecting() && clipboard);
     overlay.classList.toggle('ink-tool-text', state.tool === 'text');
     overlay.classList.toggle('ink-tool-lock', LOCK_TOOLS.includes(state.tool));
     overlay.classList.toggle('ink-finger-writes', state.fingerWrites);
@@ -745,21 +752,42 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     if (state.undo.length > 100) state.undo.shift();
     state.redo = [];
   }
+  function restoreLayer(saved) {
+    layer = saved;
+    karoMap = karoOf(layer);
+    applyKaro();
+    measurePaper();
+    doc.pages = [{ items: fromLayer() }];
+    sizePage(pages[0]);
+    drawItems(0);
+    changed();
+  }
+  /** Schritt, der auch das Dokument geändert hat: `{ doc, ink }` statt nur der Ebene. */
+  async function docHistory(from, to) {
+    const entry = from.pop();
+    to.push({ doc: paper.blockOps.snapshot(), ink: stateJson() });
+    clearSelection();
+    paintToolbar();
+    status('Wird wiederhergestellt …');
+    try {
+      await paper.blockOps.restore(entry.doc);
+      await layoutPaper();
+      restoreLayer(JSON.parse(entry.ink));
+      status('💾 Im Dokument gespeichert');
+    } catch (err) {
+      status(`⚠️ ${err?.message || err}`);
+    }
+    paintToolbar();
+  }
   function history(from, to) {
     if (!from.length) return;
+    if (typeof from[from.length - 1] === 'object') { void docHistory(from, to); return; }
     to.push(stateJson());
     const saved = JSON.parse(from.pop());
     clearSelection();
     if (doc.bg === 'paper') {
       if (!paperView) return;
-      layer = saved;
-      karoMap = karoOf(layer);
-      applyKaro();
-      measurePaper();
-      doc.pages = [{ items: fromLayer() }];
-      sizePage(pages[0]);
-      drawItems(0);
-      changed();
+      restoreLayer(saved);
       return;
     }
     const count = doc.pages.length;
@@ -1580,8 +1608,9 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
 
   // ---------- Auswahl ----------
   function clearSelection() {
-    if (!state.selection) return;
+    if (!state.selection && !state.blocks.size) return;
     state.selection = null;
+    state.blocks.clear();
     paintSelection();
     paintToolbar();
   }
@@ -1595,7 +1624,34 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     return { x: x0 - 4, y: y0 - 4, w: x1 - x0 + 8, h: y1 - y0 + 8 };
   }
 
+  const blockEl = (bid) => paperView?.el.querySelector(`[data-bid="${CSS.escape(bid)}"]`) || null;
+  /** Lage eines Bausteins in Punkten des Blatts. */
+  const blockBox = (bid) => {
+    const el = blockEl(bid);
+    const page = pages[0];
+    if (!el || !page) return null;
+    const r = el.getBoundingClientRect();
+    const o = page.el.getBoundingClientRect();
+    const k = page.w / o.width;
+    return { x: (r.left - o.left) * k, y: (r.top - o.top) * k, w: r.width * k, h: r.height * k };
+  };
+  const selectedBlocks = () => topBlocks().filter((b) => state.blocks.has(b.bid)).map((b) => b.bid);
+  const inBlock = (b, x, y) => !!b && x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h;
+  const NOT_TEXT = ['karo', 'quiz', 'image', 'group', 'spacer', 'pagebreak', 'rawBlock'];
+  /** Baustein zum Bearbeiten im Texteditor? */
+  const editableBlock = (bid) => {
+    const block = paper?.blockOps?.get(bid);
+    return !!block && typeof block === 'object' && !NOT_TEXT.includes(block.type);
+  };
   function paintSelection() {
+    if (paperView) {
+      paperView.el.querySelectorAll('.ink-block-sel').forEach((el) => el.classList.remove('ink-block-sel'));
+      for (const bid of [...state.blocks]) {
+        const el = blockEl(bid);
+        if (el) el.classList.add('ink-block-sel');
+        else state.blocks.delete(bid);
+      }
+    }
     for (const p of pages) {
       const box = p.svg.querySelector('.ink-sel-box');
       const b = state.selection?.page === p.i ? selectionBounds() : null;
@@ -1622,6 +1678,20 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
         edit.style.top = `${(rich.y / p.h) * 100}%`;
         edit.addEventListener('pointerdown', (e) => e.stopPropagation());
         edit.addEventListener('click', (e) => { e.stopPropagation(); void editRich(rich.id); });
+        p.el.appendChild(edit);
+      } else if (p.i === 0 && state.blocks.size === 1 && !state.selection && editableBlock([...state.blocks][0])) {
+        const bid = [...state.blocks][0];
+        const box = blockBox(bid);
+        const edit = document.createElement('button');
+        edit.type = 'button';
+        edit.className = 'ink-rich-edit';
+        edit.title = 'Text bearbeiten';
+        edit.setAttribute('aria-label', 'Text bearbeiten');
+        edit.textContent = '✏️';
+        edit.style.left = `${((box.x + box.w) / p.w) * 100}%`;
+        edit.style.top = `${(box.y / p.h) * 100}%`;
+        edit.addEventListener('pointerdown', (e) => e.stopPropagation());
+        edit.addEventListener('click', (e) => { e.stopPropagation(); void editBlockText(bid); });
         p.el.appendChild(edit);
       }
       const f = selectedField(p.i);
@@ -1967,6 +2037,19 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
 
   function deleteSelection() {
     const sel = state.selection;
+    if (state.blocks.size) {
+      const bids = selectedBlocks();
+      const boxes = bids.map(blockBox).filter(Boolean);
+      void docChange(async () => {
+        const items = doc.pages[0].items;
+        // Mit dem Baustein gehen die freien Objekte, die an ihm hängen.
+        doc.pages[0].items = items.filter((it) => !sel?.ids.has(it.id) && !boxes.some((b) => { const q = bounds(it); return inBlock(b, q.x + 1, q.y + 1); }));
+        state.blocks.clear();
+        state.selection = null;
+        await paper.blockOps.remove(bids);
+      });
+      return;
+    }
     if (!sel?.ids.size) return;
     snapshot();
     doc.pages[sel.page].items = doc.pages[sel.page].items.filter((x) => !sel.ids.has(x.id));
@@ -2061,11 +2144,12 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
 
   function copySelection() {
     const items = selectedItems();
-    if (!items.length) return false;
-    clipboard = { items: structuredClone(items), pasted: 0, mark: `lm-ink:${uid()}` };
+    const blocks = selectedBlocks().map((bid) => paper.blockOps.get(bid)).filter(Boolean);
+    if (!items.length && !blocks.length) return false;
+    clipboard = { items: structuredClone(items), blocks: structuredClone(blocks), pasted: 0, mark: `lm-ink:${uid()}` };
     // Zuletzt Kopiertes gewinnt: Steht diese Marke noch in der Systemablage, wird die eigene eingefügt.
     navigator.clipboard?.writeText?.(clipboard.mark)?.catch?.(() => {});
-    status(`📋 ${items.length} kopiert`);
+    status(`📋 ${items.length + blocks.length} kopiert`);
     paintToolbar();
     return true;
   }
@@ -2080,7 +2164,10 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
    * Gruppen bleiben Gruppen, mit neuer Kennung.
    */
   function paste(source = clipboard) {
-    if (!source?.items.length || !pages.length) return;
+    if (!pages.length) return;
+    // Bausteine nur, wo das Dokument geändert werden darf: hinter den Baustein an der Stelle.
+    if (source?.blocks?.length && paper?.insertBlock && doc.bg === 'paper') void blocksIn(pastePlace().after, structuredClone(source.blocks));
+    if (!source?.items?.length) return;
     const page = targetPage();
     source.pasted = (source.pasted || 0) + 1;
     const b = boundsOfItems(source.items);
@@ -2105,6 +2192,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     snapshot();
     doc.pages[page].items.push(...fresh);
     if (!selecting()) state.tool = 'select';
+    state.blocks.clear();
     state.selection = { page, ids: new Set(fresh.map((x) => x.id)) };
     changed();
     drawItems(page);
@@ -2163,7 +2251,21 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     const key = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Strg+';
     const entries = [];
     const texts = items.filter((it) => it.type === 'text');
-    if (texts.length === 1) entries.push({ label: '✏️ Text bearbeiten', onClick: () => editText(texts[0].id) });
+    const blocks = selectedBlocks();
+    if (texts.length === 1 && !blocks.length) entries.push({ label: '✏️ Text bearbeiten', onClick: () => editText(texts[0].id) });
+    if (blocks.length === 1 && !items.length && editableBlock(blocks[0])) entries.push({ label: '✏️ Text bearbeiten', onClick: () => { void editBlockText(blocks[0]); } });
+    if (blocks.length && !items.length) {
+      entries.push({ label: `Kopieren (${key}C)`, onClick: () => copySelection() });
+      entries.push({ label: `Ausschneiden (${key}X)`, onClick: () => cutSelection() });
+    }
+    if (blocks.length) {
+      const order = topBlocks().map((b) => b.bid);
+      const first = order.indexOf(blocks[0]);
+      const last = order.indexOf(blocks[blocks.length - 1]);
+      if (first > 0) entries.push({ label: '↑ Nach oben', onClick: () => { void moveBlocks(blocks, first > 1 ? order[first - 2] : null); } });
+      if (last < order.length - 1) entries.push({ label: '↓ Nach unten', onClick: () => { void moveBlocks(blocks, order[last + 1]); } });
+    }
+    if (blocks.length && !items.length) entries.push({ label: 'Löschen (Entf)', danger: true, onClick: () => deleteSelection() });
     if (items.length) {
       entries.push({ label: `Kopieren (${key}C)`, onClick: () => copySelection() });
       entries.push({ label: `Ausschneiden (${key}X)`, onClick: () => cutSelection() });
@@ -2195,7 +2297,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     }
     if (items.length) {
       entries.push({ label: `Duplizieren (${key}D)`, onClick: () => duplicateSelection() });
-      if (items.length > 1 && !groupOfSelection()) entries.push({ label: `Gruppieren (${key}G)`, onClick: () => groupSelection() });
+      if (items.length > 1 && !groupOfSelection() && !blocks.length) entries.push({ label: `Gruppieren (${key}G)`, onClick: () => groupSelection() });
       if (items.some((it) => it.group)) entries.push({ label: `Gruppierung aufheben (${key}⇧G)`, onClick: () => ungroupSelection() });
       entries.push({ label: 'Löschen (Entf)', danger: true, onClick: () => deleteSelection() });
     }
@@ -2229,6 +2331,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     snapshot();
     doc.pages[page].items.push(item);
     if (!selecting()) state.tool = 'select';
+    state.blocks.clear(); // Das Neue ist jetzt das Gewählte – sonst nähme Löschen z. B. das Karo mit.
     state.selection = { page, ids: new Set([item.id]) };
     changed();
     drawItems(page);
@@ -2259,15 +2362,33 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     // Schreibfläche: freies Blatt, Karo-/Linienfeld, Feld. Ohne Dokument-Rechte bleibt alles in der eigenen Ebene.
     const free = doc.bg !== 'paper' || !paper.insertBlock || !!karoBlockAt(cx, cy)
       || doc.pages[page].items.some((it) => it.type === 'field' && x >= it.x && x <= it.x + it.w && y >= it.y && y <= it.y + it.h);
-    const after = free ? null : ([...topBlocks()].reverse().find((b) => b.top <= y)?.bid ?? null);
+    const after = doc.bg === 'paper' ? ([...topBlocks()].reverse().find((b) => b.top <= y)?.bid ?? null) : null;
     return { page, x, y, free, after };
   }
   /** Neue Bausteine ins Dokument (Lehrkraft); Reihenfolge bleibt auch ohne insertBlocks des Gastgebers. */
-  const blocksIn = (after, blocks) => runInsert(async () => {
+  const blocksIn = (after, blocks) => docChange(async () => {
     if (paper.insertBlocks) return paper.insertBlocks(after, blocks);
     for (const b of [...blocks].reverse()) await paper.insertBlock(after, b);
     return true;
   });
+  /** Änderung am Dokument, mit Rückgängig (auch für die Ebene: Striche hängen an ihren Bausteinen). */
+  function docChange(fn) {
+    if (paper.blockOps) {
+      state.undo.push({ doc: paper.blockOps.snapshot(), ink: stateJson() });
+      if (state.undo.length > 100) state.undo.shift();
+      state.redo = [];
+    }
+    return runInsert(fn);
+  }
+  async function editBlockText(bid) {
+    const block = paper.blockOps.get(bid);
+    if (!block) return;
+    const result = await openEditor({ title: 'Baustein bearbeiten', spec: { content: [structuredClone(block)] }, formula: true });
+    if (!result) return;
+    await docChange(() => (result.content.length ? paper.blockOps.replace(bid, result.content) : paper.blockOps.remove([bid])));
+  }
+  /** Bausteine verschieben; was an ihnen hängt, wandert mit. */
+  const moveBlocks = (bids, after) => docChange(() => paper.blockOps.move(bids, after));
 
   function pasteContent(content, at) {
     if (!content.length) return;
@@ -2368,7 +2489,9 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     };
     /** Liegt die Stelle auf der Auswahl oder ihren Anfassern? */
     const selectionAt = (page, x, y) => {
-      if (!selecting() || state.selection?.page !== page) return false;
+      if (!selecting()) return false;
+      if (page === 0 && [...state.blocks].some((bid) => inBlock(blockBox(bid), x, y))) return true;
+      if (state.selection?.page !== page) return false;
       if (handleAt(page, x, y)) return true;
       const b = selectionBounds();
       return !!b && x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h;
@@ -2376,10 +2499,48 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     /** Antippen wählt das Element an der Stelle; daneben hebt es die Auswahl auf. */
     const selectAt = (x, y) => {
       const hit = itemAt(doc.pages[p.i].items, x, y, 6 / state.zoom);
-      if (!hit) { clearSelection(); return; }
+      if (!hit) {
+        const block = blockForSelect(x, y);
+        clearSelection();
+        if (block) {
+          state.blocks.add(block);
+          paintSelection();
+          paintToolbar();
+        }
+        return;
+      }
+      state.blocks.clear();
       state.selection = { page: p.i, ids: withGroups(p.i, new Set([hit.id])) };
       paintSelection();
       paintToolbar();
+    };
+    /** Baustein zum Antippen: nur bei der Lehrkraft; ein Quiz bleibt bedienbar (wählen geht über den Bereich). */
+    const blockForSelect = (x, y) => {
+      if (!p.paper || !paper.blockOps) return null;
+      const b = [...topBlocks()].reverse().find((q) => y >= q.top && y <= q.bottom);
+      if (!b || b.el.dataset.inserted || b.el.querySelector('.ds-quiz-live') || b.el.closest('.ds-quiz-live')) return null;
+      return inBlock(blockBox(b.bid), x, y) ? b.bid : null;
+    };
+    /** Stelle, an der gezogene Bausteine landen würden: `{ after, y }`. */
+    const dropAt = (y, moving) => {
+      const others = topBlocks().filter((b) => !moving.includes(b.bid));
+      let after = null;
+      let line = others[0]?.top ?? 0;
+      for (const b of others) {
+        if ((b.top + b.bottom) / 2 > y) break;
+        after = b.bid;
+        line = b.bottom;
+      }
+      return { after, y: line };
+    };
+    const dropLine = (y) => {
+      let el = p.el.querySelector('.ink-block-drop');
+      if (y === null) { el?.remove(); return; }
+      if (!el) {
+        el = Object.assign(document.createElement('div'), { className: 'ink-block-drop' });
+        p.el.appendChild(el);
+      }
+      el.style.top = `${(y / p.h) * 100}%`;
     };
     /** Geste: beim Abheben `run`, nach langem Drücken ohne Bewegen das Menü dieser Stelle. */
     const tapWithMenu = (e, x, y, run) => {
@@ -2542,7 +2703,11 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
         } else if (b && x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) {
           gesture = { kind: 'move', id: e.pointerId, from: [x, y], base: base() };
           pressForMenu(e);
+        } else if (p.paper && [...state.blocks].some((bid) => inBlock(blockBox(bid), x, y))) {
+          gesture = { kind: 'blockMove', id: e.pointerId, anchor: [e.clientX, e.clientY], bids: selectedBlocks() };
+          pressForMenu(e);
         } else if (hit && tool === 'select') {
+          state.blocks.clear();
           // Antippen wählt das Element (eine Linie zeigt ihre Anfasser) – gleich weiterziehen verschiebt es.
           state.selection = { page: p.i, ids: withGroups(p.i, new Set([hit.id])) };
           paintSelection();
@@ -2562,8 +2727,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
             }, PRESS_MS);
           }
         } else {
-          clearSelection();
-          gesture = tapWithMenu(e, x, y, () => {});
+          gesture = tapWithMenu(e, x, y, () => selectAt(x, y));
         }
       } else if (tool === 'field') {
         clearSelection();
@@ -2589,6 +2753,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
       if (gesture.kind === 'stroke' || gesture.kind === 'shape') gesture.el?.remove();
       if (gesture.kind === 'laser') laserEnd(gesture.trail);
       if (gesture.kind === 'rect') showSvg(p.svg.querySelector('.ink-sel-rect'), false);
+      if (gesture.kind === 'blockMove') dropLine(null);
       // Erster von zwei Fingern (oder Handballen): Gelöschtes kommt zurück, Verschobenes an seinen Platz.
       if (gesture.kind === 'erase' && gesture.removed && gesture.base) {
         doc.pages[p.i].items = gesture.base;
@@ -2661,6 +2826,12 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
       } else if (gesture.kind === 'erase') {
         const [x, y] = toPage(e);
         erase(p.i, x, y, gesture);
+      } else if (gesture.kind === 'blockMove') {
+        if (!gesture.moved && Math.hypot(e.clientX - gesture.anchor[0], e.clientY - gesture.anchor[1]) <= HOLD_SLACK) return;
+        gesture.moved = true;
+        clearTimeout(gesture.press);
+        gesture.drop = dropAt(toPage(e)[1], gesture.bids);
+        dropLine(gesture.drop.y);
       } else if (gesture.kind === 'tap') {
         if (gesture.from && Math.hypot(e.clientX - gesture.from[0], e.clientY - gesture.from[1]) > HOLD_SLACK) {
           gesture.moved = true;
@@ -2775,6 +2946,13 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
         if (big) addShape(p.i, geom);
       } else if (g.kind === 'erase') {
         if (g.removed) changed();
+      } else if (g.kind === 'blockMove') {
+        dropLine(null);
+        if (g.moved && e.type === 'pointerup' && g.drop) {
+          const order = topBlocks().map((b) => b.bid);
+          const before = order[order.indexOf(g.bids[0]) - 1] ?? null;
+          if (g.drop.after !== before) void moveBlocks(g.bids, g.drop.after);
+        }
       } else if (g.kind === 'rect' && g.textArea) {
         showSvg(p.svg.querySelector('.ink-sel-rect'), false);
         if (e.type !== 'pointerup') return;
@@ -2802,6 +2980,13 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
           const rect = { x: g.from[0], y: g.from[1], w: g.to[0] - g.from[0], h: g.to[1] - g.from[1] };
           const ids = withGroups(p.i, new Set(doc.pages[p.i].items.filter((it) => inSelection(it, rect)).map((it) => it.id)));
           state.selection = ids.size ? { page: p.i, ids } : null;
+          // Bausteine nur, wenn das Rechteck sie von oben bis unten umfasst: Ein Strich im Karo wählt nicht das Karo.
+          state.blocks.clear();
+          if (p.paper && paper.blockOps) {
+            const y0 = Math.min(g.from[1], g.to[1]);
+            const y1 = Math.max(g.from[1], g.to[1]);
+            for (const b of topBlocks()) if (!b.el.dataset.inserted && b.top >= y0 && b.bottom <= y1) state.blocks.add(b.bid);
+          }
           paintSelection();
           paintToolbar();
         } else if (e.type === 'pointerup') {
@@ -2847,6 +3032,10 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     function surfaceMenu(clientX, clientY, x, y) {
       const hit = itemAt(doc.pages[p.i].items, x, y, 6 / state.zoom);
       const selected = state.selection?.page === p.i && state.selection.ids.size;
+      if (selecting() && !hit && state.blocks.size && [...state.blocks].some((bid) => inBlock(blockBox(bid), x, y))) {
+        selectionMenu(clientX, clientY);
+        return;
+      }
       if (hit || (selected && selecting())) {
         if (hit && !(state.selection?.page === p.i && state.selection.ids.has(hit.id))) {
           state.selection = { page: p.i, ids: withGroups(p.i, new Set([hit.id])) };
@@ -3119,7 +3308,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     if (t.closest?.('.ink-text') || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) || t.isContentEditable) return;
     const mod = e.ctrlKey || e.metaKey;
     const k = e.key.toLowerCase();
-    const sel = !!state.selection?.ids.size;
+    const sel = hasSelection();
     if ((e.key === 'Delete' || e.key === 'Backspace') && sel) { e.preventDefault(); deleteSelection(); }
     else if (e.key === 'Escape' && state.poly) cancelPolygon();
     else if (e.key === 'Enter' && state.poly) { e.preventDefault(); finishPolygon(); }

@@ -107,7 +107,7 @@ export function askTable() {
   });
 }
 
-export function openBlockDialog(start, { apply, remove }) {
+export function openBlockDialog(start, { apply, remove, cancel = () => {} }) {
   // Alter „Platz“: wird zum unsichtbaren Schreibfeld (eine Zeile ≈ 0,5 cm), wie in LearningModules.
   const block = start.type === 'spacer'
     ? { ...(start.id ? { id: start.id } : {}), type: 'karo', lines: Number.isInteger(start.lines) ? start.lines : 3, pattern: 'frei' }
@@ -138,7 +138,7 @@ export function openBlockDialog(start, { apply, remove }) {
   document.body.appendChild(overlay);
   const close = () => overlay.remove();
   const form = overlay.querySelector('form');
-  overlay.querySelector('[data-cancel]').addEventListener('click', close);
+  overlay.querySelector('[data-cancel]').addEventListener('click', () => { close(); cancel(); });
   overlay.querySelector('[data-del]').addEventListener('click', () => { remove(); close(); });
   if (formula) {
     const tex = form.elements.latex;

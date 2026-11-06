@@ -12,7 +12,9 @@ const CM = 96 / 2.54;
 const BODY_CM = { portrait: 29.7 - 2.27, landscape: 21 - 2.27 };
 
 // Was nicht über eine Seite hinweg geteilt wird.
-const ATOMIC = 'tr, img, svg, figure, pre, h1, h2, h3, h4, h5, h6, .ds-karo, .ds-formula, .ds-quiz, .ds-code, .ds-group-box, .ds-float, .ds-columns, .ds-spacer, .ds-pagebreak';
+const ATOMIC = 'tr, img, svg, figure, pre, h1, h2, h3, h4, h5, h6, .ds-karo, .ds-formula, .ds-quiz, .ds-code, .ds-group-box, .ds-float, .ds-columns, .ds-spacer, .ds-pagebreak, .ds-pagebreak-mark';
+// Eingefügter Seitenumbruch: in der Vorschau sichtbar, im Blatt des Stift-Editors als Marke.
+const MANUAL = '.ds-pagebreak, .ds-pagebreak-mark';
 // Text, der zwischen zwei Zeilen bricht.
 const LINES = 'p, li, blockquote';
 
@@ -35,20 +37,20 @@ export function markPageBreaks(sheet, { landscape = false, bodyCm = 0 } = {}) {
   const bottom = (el) => (el.getBoundingClientRect().bottom - origin) / z;
   // Eingefügte Seitenumbrüche, wo immer sie stehen (auch in einer Aufgabe):
   // Dahinter beginnt eine neue Seite.
-  const manual = [...docEl.querySelectorAll('.ds-pagebreak')].filter((el) => el.offsetHeight)
+  const manual = [...docEl.querySelectorAll(MANUAL)].filter((el) => el.offsetHeight)
     .map((el) => ({ el, y: top(el), end: bottom(el) })).sort((a, b) => a.y - b.y);
   const pending = manual.slice();
   const breaks = [];
   let pageEnd = H;
 
   const visit = (el) => {
-    if (!el.offsetHeight || el.matches('.ds-pagebreak')) return;
+    if (!el.offsetHeight || el.matches(MANUAL)) return;
     const t = top(el);
     const b = bottom(el);
     // Liegt hinter einem eingefügten Umbruch: Die Seite beginnt dort neu.
     while (pending.length && t >= pending[0].end - 0.5) pageEnd = pending.shift().end + H;
     // Ein Seitenumbruch im Baustein (etwa in einer Aufgabe) zählt auch, wenn alles passt.
-    const inner = !el.matches(ATOMIC) && el.querySelector('.ds-pagebreak');
+    const inner = !el.matches(ATOMIC) && el.querySelector(MANUAL);
     if (b <= pageEnd + 0.5 && !inner) return;
     // Liegt ganz hinter dem Seitenende (etwa im Abstand davor): Umbruch im Abstand.
     while (t >= pageEnd) { breaks.push(pageEnd); pageEnd += H; }

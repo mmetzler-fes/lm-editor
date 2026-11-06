@@ -252,10 +252,15 @@ body.ink-open { overflow: hidden; }
   .ink-print-sheet [data-btype="table"], .ink-print-sheet [data-btype="code"], .ink-print-sheet [data-btype="quiz"],
   .ink-print-sheet [data-btype="spacer"] { break-inside: avoid; }
   .ink-print-sheet h2, .ink-print-sheet h3, .ink-print-sheet h4 { break-after: avoid; }
-  .ink-print-sheet .ds-pagebreak-mark { break-after: page; }
+  .ink-print-sheet .ds-pagebreak-mark { break-after: page; border: 0; margin: 0; height: 0; overflow: hidden; }
+  .ink-print-sheet .ds-autobreak { display: none; }
   /* Im Quiz nichts zum Klicken; die Fragen bleiben. */
   .ink-print-sheet .ds-quiz button.btn-sm, .ink-print-sheet .ds-quiz-size, .ink-print-sheet .ds-actions, .ink-print-sheet .ds-solutions-toggle { display: none !important; }
 }
+
+/* Seitenumbruch im Blatt: am Bildschirm eine gestrichelte Linie (wie in der Vorschau), im Druck nur der Umbruch. */
+.lm-paper .ds-pagebreak-mark { border-top: 1px dashed #94a3b8; margin: 1.2em 0; text-align: center; line-height: 0; }
+.lm-paper .ds-pagebreak-mark span { background: #fff; color: #64748b; font-size: 9pt; padding: 0 8px; }
 
 /* Unsichtbares Schreibfeld: beim Beschriften gestrichelt angedeutet, im Druck nicht. */
 .ink-paper-host .ds-karo-frei { outline: 1px dashed rgba(100, 116, 139, 0.35); outline-offset: -1px; }

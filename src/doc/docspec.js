@@ -1213,7 +1213,7 @@ function renderBlockHtml(block, ctx) {
     case 'pagebreak':
       // Mit blockIds (Blatt im Stift-Editor) eine unsichtbare Marke – der Druck bricht dort um.
       return ctx.options.showPageBreaks ? '<div class="ds-pagebreak"><span>Seitenumbruch</span></div>'
-        : ctx.options.blockIds ? '<div class="ds-pagebreak-mark" aria-hidden="true"></div>' : '';
+        : ctx.options.blockIds ? '<div class="ds-pagebreak-mark" aria-hidden="true"><span>Seitenumbruch</span></div>' : '';
     case 'quiz':
       // Platzhalter; im Durchlauf hängt h5p-renderer.js das Modul hinein.
       return `<div class="ds-quiz" data-module="${esc(block.module ?? '')}"${typeof block.scale === 'number' ? ` data-scale="${block.scale}"` : ''}><p class="ds-quiz-title">🧩 ${richText(isText(block.title) ? block.title : 'Quiz')}</p>`

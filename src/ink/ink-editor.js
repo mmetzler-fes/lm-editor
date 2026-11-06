@@ -8,6 +8,7 @@ import { svgEl, itemSvg, fieldSvg, shapeSvg, imageSvg, inkSvgFor, inkSvgBox, fie
 import { isRich, richHtml, richHasFormula, mergeParagraphs, PX_PT as RICH_PX_PT } from './ink-rich.js';
 import { pasteToSpec } from '../doc/paste.js';
 import { askTable } from '../editor/block-dialog.js';
+import { markPageBreaks } from '../doc/page-breaks.js';
 import {
   FILL_COLORS, DASHES, SHAPE_WIDTHS, usesPoints, shapeCorners, rotateHandle, resizedShape, rotatedShape,
   normalizedAngle, toPolygon, shapeFromDrag, shapeCenter, shapeBox, isClosed, SHAPE_TEXT_SIZE, rotatePoint,
@@ -1025,6 +1026,8 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
   function measurePaper() {
     const page = pages[0];
     const v = paperView;
+    // Wo im Druck eine Seite endet (wie in der Vorschau des Dokument-Editors): Linien „Seite 2“ …
+    try { markPageBreaks(v.el, { landscape: !!paper.landscape }); } catch (_) { /* nur Anzeige */ }
     page.w = v.el.offsetWidth * PX_PT;
     page.h = v.el.offsetHeight * PX_PT;
     for (const svg of [page.svg, page.top]) svg.setAttribute('viewBox', `0 0 ${page.w} ${page.h}`);
@@ -1359,6 +1362,18 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
       { label: '▤ Tabelle', onClick: () => { void insertTable(after); } },
       { label: '🖼 Bild', onClick: () => { void pickImageFile().then((file) => { if (file) void insertImage(after, file); }); } },
     ];
+    // Bausteine wie im Dokument-Editor – nur, wo das Dokument geändert werden darf (Lehrkraft).
+    if (paper.insertBlock) {
+      const starter = (label, title, block) => ({ label, onClick: () => { void insertStarter(after, title, block); } });
+      entries.push(
+        starter('💡 Lösung', 'Neue Lösung', { type: 'solution', blocks: [{ type: 'text', text: 'Musterlösung' }] }),
+        { label: '∑ Formel', onClick: () => { void insertFormula(after); } },
+        starter('⌨ Code', 'Neuer Code', { type: 'code', code: '// Quelltext' }),
+        starter('▢ Kasten', 'Neuer Kasten', { type: 'box', title: 'Merke', blocks: [{ type: 'text', text: '…' }] }),
+        starter('▥ Spalten (nebeneinander)', 'Neue Spalten', { type: 'columns', blocks: [{ type: 'column', blocks: [{ type: 'text', text: 'Links' }] }, { type: 'column', blocks: [{ type: 'text', text: 'Rechts' }] }] }),
+        { label: '⤓ Seitenumbruch', onClick: () => { void blocksIn(after, [{ type: 'pagebreak' }]); } },
+      );
+    }
     for (const item of paper.insertItems?.() || []) {
       entries.push({ label: item.label, onClick: () => runInsert(() => item.run(after)) });
     }
@@ -1404,6 +1419,17 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     // Gleich zum Ausfüllen öffnen.
     const result = await openEditor({ title: 'Neue Tabelle', spec: { content: [block] }, formula: !!paper.insertBlock }, newTextPlace(after));
     if (result) await insertContent(after, result.content);
+  }
+  /** Baustein mit Vorgabe gleich in der Textfläche öffnen (Kasten, Code, Lösung, Spalten) – wie ▤ Tabelle. */
+  async function insertStarter(after, title, block) {
+    const result = await openEditor({ title, spec: { content: [block] }, formula: true }, { after });
+    if (result) await insertContent(after, result.content);
+  }
+  /** Formel: der Formeldialog (LaTeX mit Vorschau), dann als Baustein ins Dokument. */
+  async function insertFormula(after) {
+    const { openBlockDialog } = await import('../editor/block-dialog.js');
+    const block = await new Promise((resolve) => openBlockDialog({ type: 'formula', latex: '' }, { apply: resolve, remove: () => resolve(null), cancel: () => resolve(null) }));
+    if (block && String(block.latex || '').trim()) await blocksIn(after, [block]);
   }
   async function insertImage(after, file) {
     if (paper.insertBlock) {
@@ -2299,9 +2325,15 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     drawItems(page);
   }
 
-  function duplicateSelection() {
-    const items = selectedItems();
-    if (items.length) paste({ items: structuredClone(items), pasted: 0 });
+  /**
+   * Auswahl verdoppeln, ohne die Ablage zu ändern: eigene Objekte leicht versetzt,
+   * Bausteine (Lehrkraft) direkt hinter den letzten gewählten – wie im Dokument-Editor.
+   */
+  function duplicateSelection(items = selectedItems(), bids = selectedBlocks()) {
+    if (items.length) { paste({ items: structuredClone(items), pasted: 0 }); return; }
+    if (!bids.length || !paper?.insertBlock || !paper.blockOps || doc.bg !== 'paper') return;
+    const blocks = bids.map((bid) => paper.blockOps.get(bid)).filter(Boolean);
+    if (blocks.length) void blocksIn(bids[bids.length - 1], structuredClone(blocks));
   }
 
   function groupSelection() {
@@ -2356,6 +2388,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     if (texts.length === 1 && !blocks.length) entries.push({ label: '✏️ Text bearbeiten', onClick: () => editText(texts[0].id) });
     if (blocks.length === 1 && !items.length && editableBlock(blocks[0])) entries.push({ label: '✏️ Text bearbeiten', onClick: () => { void editBlockText(blocks[0]); } });
     if (blocks.length && !items.length) {
+      if (paper?.insertBlock && paper.blockOps && doc.bg === 'paper') entries.push({ label: `⧉ Verdoppeln (${key}D)`, onClick: () => duplicateSelection([], blocks) });
       entries.push({ label: `Kopieren (${key}C)`, onClick: () => copySelection() });
       entries.push({ label: `Ausschneiden (${key}X)`, onClick: () => cutSelection() });
     }
@@ -2397,7 +2430,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
       entries.push({ label: '⬇ Ganz nach hinten', onClick: () => restack(false) });
     }
     if (items.length) {
-      entries.push({ label: `Duplizieren (${key}D)`, onClick: () => duplicateSelection() });
+      entries.push({ label: `⧉ Verdoppeln (${key}D)`, onClick: () => duplicateSelection() });
       if (items.length > 1 && !groupOfSelection() && !blocks.length) entries.push({ label: `Gruppieren (${key}G)`, onClick: () => groupSelection() });
       if (items.some((it) => it.group)) entries.push({ label: `Gruppierung aufheben (${key}⇧G)`, onClick: () => ungroupSelection() });
       entries.push({ label: 'Löschen (Entf)', danger: true, onClick: () => deleteSelection() });

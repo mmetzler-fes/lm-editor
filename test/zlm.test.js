@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { zipSync, strToU8 } from '../src/vendor/fflate/fflate.js';
-import { createZlm, writeZlm, readZlm, studentVersionOf, specForView, specFromView, ZlmError, ZLM_MIME, FORMAT_VERSION } from '../src/zlm/zlm.js';
+import { createZlm, createModuleZlm, mainModuleOf, writeZlm, readZlm, studentVersionOf, specForView, specFromView, ZlmError, ZLM_MIME, FORMAT_VERSION } from '../src/zlm/zlm.js';
 
 const now = new Date('2026-10-23T10:00:00Z');
 
@@ -151,4 +151,24 @@ test('specFromView: vorhandene Bilder behalten ihren Namen, neue kommen nach med
   assert.equal(Object.keys(doc.media).length, 2);
   // Danach lässt sich die Datei schreiben und wieder lesen.
   assert.deepEqual([...readZlm(writeZlm(doc, { now })).media[added.slice(6)]], [1, 2, 3, 4]);
+});
+
+test('Art module: Quiz ohne Dokument, mit Untermodul und App-Datei', () => {
+  const quiz = { id: 'k3f9a2x1', type: 'multipleChoice', title: 'Ohm-Quiz', content: { question: 'R?' } };
+  const kid = { id: 'k3f9a2x2', parentId: 'k3f9a2x1', type: 'trueFalse', title: 'Teil', content: {} };
+  const doc = createModuleZlm({ module: quiz, children: [kid], media: { 'app-1.html': strToU8('<p>x</p>') }, now });
+  assert.equal(doc.manifest.kind, 'module');
+  assert.deepEqual(doc.spec.content.map((b) => [b.type, b.module]), [['quiz', 'k3f9a2x1']]);
+  const back = readZlm(writeZlm(doc, { now }));
+  assert.equal(back.manifest.module, 'k3f9a2x1');
+  assert.deepEqual(mainModuleOf(back), quiz);
+  assert.deepEqual(back.modules.k3f9a2x2, kid);
+  assert.equal(new TextDecoder().decode(back.media['app-1.html']), '<p>x</p>');
+  assert.equal(mainModuleOf(readZlm(writeZlm(sample(), { now }))), null);
+});
+
+test('Art module ohne genanntes Modul wird abgelehnt', () => {
+  const doc = createModuleZlm({ module: { id: 'k3f9a2x1', type: 'trueFalse', title: 'Q', content: {} }, now });
+  doc.manifest.module = 'fehlt12345';
+  assert.throws(() => writeZlm(doc, { now }), /manifest.module/);
 });

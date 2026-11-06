@@ -31,7 +31,9 @@ schon an den ersten Bytes.
 }
 ```
 
-`kind`: `worksheet` (Arbeitsblatt), `exam` (Klassenarbeit) oder `text`.
+`kind`: `worksheet` (Arbeitsblatt), `exam` (Klassenarbeit), `text` oder `module`
+(ein Lernmodul ohne Dokument, siehe unten). Programme, die eine Art nicht kennen, lesen
+sie als `worksheet`.
 `variant` (optional): `student` bei einer Schülerfassung. Sie enthält keine Lösungen und keine Stift-Ebenen,
 und das Programm zeigt dafür keine Lampe. Quizze prüfen selbst und haben ihre Antworten weiter in der Datei.
 `id`: erkennt das Dokument wieder (z. B. seinen Entwurf im Browser); fehlt
@@ -68,6 +70,24 @@ Ein Lernmodul wie in LearningModules:
 ```json
 { "id": "k3f9a2x1", "type": "multipleChoice", "title": "Kurzquiz Ohm", "content": { … } }
 ```
+
+## Art `module`: Quiz oder HTML-App ohne Dokument
+
+Ein einzelnes Lernmodul – ein Quiz, eine Übung oder eine HTML-App – lässt sich ohne Dokument als `.zlm`
+speichern, z. B. für die Sicherung eines Lernthemas oder zum Weitergeben.
+
+```json
+{ "format": "zlm", "version": 1, "kind": "module", "module": "k3f9a2x1", "title": "Kurzquiz Ohm", … }
+```
+
+- `manifest.module` nennt das Modul; es liegt wie sonst in `modules/<id>.json`, seine Untermodule
+  (`parentId`) daneben. Fehlt es, wird die Datei abgelehnt.
+- `document.json` enthält nur den Quiz-Baustein dieses Moduls
+  (`{ "spec": { "titel": "…", "content": [{ "type": "quiz", "module": "k3f9a2x1" }] } }`). Ein Programm,
+  das die Art nicht kennt, zeigt die Datei so als Dokument mit diesem Quiz.
+- **HTML-App:** Die Datei der App liegt in `media/` (z. B. `media/app-3f2a9c1e.html`), im Modul steht statt
+  der Kennung auf dem Server `content.app.file: "media/app-3f2a9c1e.html"`.
+- Bilder in Quizzen stehen wie bei eingebetteten Modulen als `data:`-Adresse im Modul.
 
 ## layers/&lt;id&gt;.json
 

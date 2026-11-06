@@ -13,7 +13,7 @@ import { newBlockId } from '../doc/ids.js';
 
 export const ZLM_MIME = 'application/vnd.lm-editor.zlm+zip';
 export const FORMAT_VERSION = 1;
-export const KINDS = ['worksheet', 'exam', 'text'];
+export const KINDS = ['worksheet', 'exam', 'text', 'module'];
 
 const LIMITS = { entries: 2000, entryBytes: 50e6, totalBytes: 200e6 };
 // Name einer Datei in modules/, media/, layers/: keine Unterordner, kein „..“.
@@ -39,6 +39,38 @@ export function createZlm({ title = 'Neues Dokument', kind = 'worksheet', lang =
     layers: {},
     preview: null,
   };
+}
+
+/**
+ * Ein Lernmodul ohne Dokument (Quiz, HTML-App) als .zlm: Art `module`, `manifest.module` nennt es.
+ * `document.json` enthält nur seinen Quiz-Baustein – ältere Programme zeigen es so als Dokument mit Quiz.
+ * `children`: Untermodule (`parentId` = das Modul). Bilder bleiben, wie in modules/ üblich, im Modul.
+ */
+export function createModuleZlm({ module, children = [], media = {}, lang = 'de', now = new Date() }) {
+  if (!module || typeof module !== 'object' || !NAME_RE.test(String(module.id || ''))) throw new ZlmError('Modul ohne gültige Kennung.');
+  const stamp = now.toISOString();
+  const title = String(module.title || 'Lernmodul');
+  const modules = { [module.id]: module };
+  for (const c of children) if (c && NAME_RE.test(String(c.id || ''))) modules[c.id] = c;
+  return {
+    manifest: { format: 'zlm', version: FORMAT_VERSION, id: newBlockId() + newBlockId(), title, kind: 'module', module: String(module.id), lang, created: stamp, modified: stamp },
+    spec: { titel: title, content: [{ id: newBlockId(), type: 'quiz', module: String(module.id) }] },
+    modules,
+    media: { ...media },
+    layers: {},
+    preview: null,
+  };
+}
+
+/** Das Lernmodul einer .zlm der Art `module` (sonst null). */
+export function mainModuleOf(doc) {
+  if (doc?.manifest?.kind !== 'module') return null;
+  return doc.modules?.[doc.manifest.module] || null;
+}
+
+function checkModuleKind(manifest, modules) {
+  if (manifest.kind !== 'module') return;
+  if (typeof manifest.module !== 'string' || !modules?.[manifest.module]) throw new ZlmError('Art „module“: manifest.module nennt kein Modul in modules/.');
 }
 
 /** Lösungsblöcke entfernen, wo immer sie stehen (Aufgaben, Kästen, Tabellenzellen). */
@@ -84,6 +116,7 @@ export function studentVersionOf(doc) {
 export function writeZlm(doc, { generator = 'lm-editor', now = new Date() } = {}) {
   const manifest = { ...doc.manifest, format: 'zlm', version: FORMAT_VERSION, modified: now.toISOString(), generator };
   if (!KINDS.includes(manifest.kind)) throw new ZlmError(`Unbekannte Art „${manifest.kind}“.`);
+  checkModuleKind(manifest, doc.modules);
   const json = (v) => strToU8(JSON.stringify(v, null, 1));
   // mimetype zuerst und unkomprimiert (wie ODF) – fflate hält die Reihenfolge der Schlüssel ein.
   const files = { mimetype: [strToU8(ZLM_MIME), { level: 0 }] };
@@ -155,6 +188,7 @@ export function readZlm(bytes) {
     else if (dir === 'layers' && name.endsWith('.json')) doc.layers[name.slice(0, -5)] = parse(path);
     else if (dir === 'media') doc.media[name] = entries[path];
   }
+  checkModuleKind(manifest, doc.modules);
   return doc;
 }
 

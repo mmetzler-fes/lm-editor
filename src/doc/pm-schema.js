@@ -35,7 +35,7 @@ export const PM_NODES = {
 
   table: {
     group: 'block', content: 'tableRow+',
-    attrs: ['id', 'caption', 'widths', 'heights', 'lineWidth', 'lineStyle', 'lineColor', 'width', 'position', 'spaceBefore', 'spaceAfter', 'padding', 'align', 'valign', 'border'],
+    attrs: ['id', 'caption', 'widths', 'heights', 'lineWidth', 'lineStyle', 'lineColor', 'width', 'position', 'spaceBefore', 'spaceAfter', 'padding', 'align', 'valign', 'border', 'headerColumn'],
   },
   tableRow: { content: '(tableCell | tableHeader)*', attrs: ['header'] },
   tableCell: { content: 'paragraph block*', attrs: ['colspan', 'rowspan', 'align', 'valign', 'background', 'images', 'beside'] },

@@ -16,7 +16,7 @@
  * Feste Block-IDs (ids.js) reisen als data-id mit – an ihnen hängen die
  * Striche der Schüler.
  */
-import { richText, renderDocSpecHtml, tableColgroup, tableAllFixed, tableRowAttr, tableLineStyle, TABLE_LINE_STYLES, TEXT_COLORS, HIGHLIGHTS, FONT_SIZES, BASE_FONT_PT, LINE_HEIGHTS, LIST_MARKERS, LIST_NUMBERINGS, LINE_COLORS, CELL_BACKGROUNDS, CELL_VALIGNS, paraStyle, INLINE_MATH_SOURCE, CODE_SIZES, CODE_SIZE_PT } from './docspec.js';
+import { richText, renderDocSpecHtml, tableColgroup, tableAllFixed, firstColumnCells, tableRowAttr, tableLineStyle, TABLE_LINE_STYLES, TEXT_COLORS, HIGHLIGHTS, FONT_SIZES, BASE_FONT_PT, LINE_HEIGHTS, LIST_MARKERS, LIST_NUMBERINGS, LINE_COLORS, CELL_BACKGROUNDS, CELL_VALIGNS, paraStyle, INLINE_MATH_SOURCE, CODE_SIZES, CODE_SIZE_PT } from './docspec.js';
 import { isBlockId } from './ids.js';
 
 const MARKUP_CHARS = /[\\*`[\]]/g;
@@ -317,6 +317,7 @@ function tableBlock(el, warnings, used = new Set()) {
   if (el.getAttribute('data-caption')) block.caption = el.getAttribute('data-caption');
   // Ohne Linien: z. B. Abbildungen nebeneinander mit Unterschrift.
   if (el.classList.contains('ws-table-plain')) block.border = false;
+  if (el.dataset.headerCol) block.headerColumn = true;
   if (['left', 'center', 'right'].includes(el.dataset.align)) block.align = el.dataset.align;
   if (CELL_VALIGNS.includes(el.dataset.valign)) block.valign = el.dataset.valign;
   // Linien: Stärke (pt) und Art.
@@ -605,8 +606,11 @@ function listItemsHtml(items, ordered, id = '') {
     : `<li>${richText(it)}</li>`)).join('')}</${tag}>`;
 }
 
-function cellsHtml(tag, row, blocksHtml = () => '') {
-  return row.map((c) => {
+/** Zellen einer Zeile; `hcol`: Index der Zelle in Spalte 0 einer Kopfspalte (Klasse ds-hcol, nur Aussehen). */
+function cellsHtml(tag, row, blocksHtml = () => '', hcol = -1) {
+  return row.map((c, k) => {
+    const cls = [k === hcol ? 'ds-hcol' : '', c && typeof c === 'object' && c.beside ? 'ws-cell-beside' : ''].filter(Boolean).join(' ');
+    const clsAttr = cls ? ` class="${cls}"` : '';
     if (c && typeof c === 'object') {
       const span = (n, v) => (Number.isInteger(v) && v > 1 ? ` ${n}="${v}"` : '');
       const images = (Array.isArray(c.images) ? c.images : []).map((b) => {
@@ -617,9 +621,9 @@ function cellsHtml(tag, row, blocksHtml = () => '') {
       // Leere Zelle mit <br>: Sonst nimmt sie keine Schreibmarke an (der Klick landete daneben).
       const css = [['left', 'center', 'right'].includes(c.align) ? `text-align:${c.align}` : '', CELL_VALIGNS.includes(c.valign) ? `vertical-align:${c.valign}` : '', CELL_BACKGROUNDS[c.background] ? `background-color:${CELL_BACKGROUNDS[c.background]}` : ''].filter(Boolean).join(';');
       const align = `${CELL_BACKGROUNDS[c.background] ? ` data-bg="${c.background}"` : ''}${css ? ` style="${css}"` : ''}`;
-      return `<${tag}${span('colspan', c.colspan)}${span('rowspan', c.rowspan)}${c.beside ? ' class="ws-cell-beside"' : ''}${align}>${richText(c.text ?? '')}${images}${inner}${!c.text && !images && !inner ? '<br>' : ''}</${tag}>`;
+      return `<${tag}${span('colspan', c.colspan)}${span('rowspan', c.rowspan)}${clsAttr}${align}>${richText(c.text ?? '')}${images}${inner}${!c.text && !images && !inner ? '<br>' : ''}</${tag}>`;
     }
-    return `<${tag}>${richText(c ?? '') || '<br>'}</${tag}>`;
+    return `<${tag}${clsAttr}>${richText(c ?? '') || '<br>'}</${tag}>`;
   }).join('');
 }
 
@@ -651,7 +655,9 @@ export function specToEditorHtml(spec) {
       case 'table': {
         const off = Array.isArray(b.header) ? 1 : 0;
         const cls = [b.border === false ? 'ws-table-plain' : '', tableAllFixed(b) ? 'ds-table-fixed' : ''].filter(Boolean).join(' ');
-        return `<table${idAttr(b)}${cls ? ` class="${cls}"` : ''}${['left', 'center', 'right'].includes(b.align) ? ` data-align="${b.align}"` : ''}${CELL_VALIGNS.includes(b.valign) ? ` data-valign="${b.valign}"` : ''}${b.lineWidth ? ` data-line-width="${esc(b.lineWidth)}"` : ''}${b.lineStyle ? ` data-line-style="${esc(b.lineStyle)}"` : ''}${b.lineColor ? ` data-line-color="${esc(b.lineColor)}"` : ''}${b.width ? ` data-width="${b.width}"` : ''}${b.position ? ` data-position="${esc(b.position)}"` : ''}${b.spaceBefore !== undefined ? ` data-sb="${b.spaceBefore}"` : ''}${b.spaceAfter !== undefined ? ` data-sa="${b.spaceAfter}"` : ''}${b.padding !== undefined ? ` data-pad="${b.padding}"` : ''}${tableLineStyle(b)}${b.caption ? ` data-caption="${esc(b.caption)}"` : ''}>${tableColgroup(b)}${off ? `<thead><tr${tableRowAttr(b, 0)}>${cellsHtml('th', b.header, blocks)}</tr></thead>` : ''}<tbody>${(b.rows || []).filter(Array.isArray).map((r, i) => `<tr${tableRowAttr(b, i + off)}>${cellsHtml('td', r, blocks)}</tr>`).join('')}</tbody></table>`;
+        // Kopfspalte: Die Zellen der ersten Spalte tragen ds-hcol (nur Aussehen; table-tools.js hält das aktuell).
+        const firsts = b.headerColumn === true ? firstColumnCells([...(off ? [b.header] : []), ...(b.rows || []).filter(Array.isArray)]).slice(off) : [];
+        return `<table${idAttr(b)}${cls ? ` class="${cls}"` : ''}${b.headerColumn === true ? ' data-header-col="1"' : ''}${['left', 'center', 'right'].includes(b.align) ? ` data-align="${b.align}"` : ''}${CELL_VALIGNS.includes(b.valign) ? ` data-valign="${b.valign}"` : ''}${b.lineWidth ? ` data-line-width="${esc(b.lineWidth)}"` : ''}${b.lineStyle ? ` data-line-style="${esc(b.lineStyle)}"` : ''}${b.lineColor ? ` data-line-color="${esc(b.lineColor)}"` : ''}${b.width ? ` data-width="${b.width}"` : ''}${b.position ? ` data-position="${esc(b.position)}"` : ''}${b.spaceBefore !== undefined ? ` data-sb="${b.spaceBefore}"` : ''}${b.spaceAfter !== undefined ? ` data-sa="${b.spaceAfter}"` : ''}${b.padding !== undefined ? ` data-pad="${b.padding}"` : ''}${tableLineStyle(b)}${b.caption ? ` data-caption="${esc(b.caption)}"` : ''}>${tableColgroup(b)}${off ? `<thead><tr${tableRowAttr(b, 0)}>${cellsHtml('th', b.header, blocks)}</tr></thead>` : ''}<tbody>${(b.rows || []).filter(Array.isArray).map((r, i) => `<tr${tableRowAttr(b, i + off)}>${cellsHtml('td', r, blocks, firsts[i] ?? -1)}</tr>`).join('')}</tbody></table>`;
       }
       case 'image': {
         if (typeof b.src !== 'string') return widgetHtml(b);

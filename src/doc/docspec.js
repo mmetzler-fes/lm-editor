@@ -275,6 +275,7 @@ function checkBlock(block, path, errors, inSolution, parent = '') {
       if (block.align !== undefined) need(CELL_ALIGNS.includes(block.align), `align: ${CELL_ALIGNS.join(', ')} (Ausrichtung aller Zellen).`);
       if (block.valign !== undefined) need(CELL_VALIGNS.includes(block.valign), `valign: ${CELL_VALIGNS.join(', ')} (senkrechte Ausrichtung aller Zellen).`);
       if (block.border !== undefined) need(typeof block.border === 'boolean', 'border: true oder false (false = ohne Linien, z. B. Abbildungen nebeneinander).');
+      if (block.headerColumn !== undefined) need(typeof block.headerColumn === 'boolean', 'headerColumn: true oder false (erste Spalte als Kopf, wie die Kopfzeile).');
       for (const row of [...(Array.isArray(block.header) ? [block.header] : []), ...(Array.isArray(block.rows) ? block.rows : [])]) {
         if (Array.isArray(row) && !row.every(cellOk)) {
           errors.push(`${at}: Zelle ist ein Text oder { text, colspan, rowspan } mit Zahlen von 1 bis 20.`);
@@ -1016,6 +1017,28 @@ export function tableAllFixed(block) {
   return n > 0 && w.length >= n && w.slice(0, n).every((x) => !!tableLength(x));
 }
 
+/**
+ * Erste Spalte je Zeile: Index der Zelle, die in Spalte 0 beginnt (oder -1,
+ * wenn dort eine verbundene Zelle von oben hineinreicht). `rows` wie in der
+ * Spec (Zellen als Text oder { text, colspan, rowspan }).
+ */
+export function firstColumnCells(rows) {
+  const covered = new Set();
+  return rows.map((row, r) => {
+    let c = 0;
+    let first = -1;
+    (Array.isArray(row) ? row : []).forEach((cell, k) => {
+      while (covered.has(`${r}:${c}`)) c++;
+      if (c === 0) first = k;
+      const cs = cell && typeof cell === 'object' && Number.isInteger(cell.colspan) && cell.colspan > 1 ? cell.colspan : 1;
+      const rs = cell && typeof cell === 'object' && Number.isInteger(cell.rowspan) && cell.rowspan > 1 ? cell.rowspan : 1;
+      for (let dr = 1; dr < rs; dr++) for (let dc = 0; dc < cs; dc++) covered.add(`${r + dr}:${c + dc}`);
+      c += cs;
+    });
+    return first;
+  });
+}
+
 /** `cols` gleich breite Spalten über `totalCm` (Breite der Tabelle, sonst Satzbreite) – z. B. ["4.1cm", …]. */
 export function equalWidths(cols, totalCm = TEXT_WIDTH_CM) {
   const each = Math.max(0.5, Math.floor((totalCm / Math.max(1, cols)) * 10) / 10);
@@ -1156,10 +1179,13 @@ function renderBlockHtml(block, ctx) {
       const off = Array.isArray(block.header) ? 1 : 0;
       const head = off
         ? `<thead><tr${tableRowAttr(block, 0)}>${block.header.map((c) => cellHtml('th', c ?? '', ctx)).join('')}</tr></thead>` : '';
-      const rows = (block.rows || []).filter(Array.isArray)
-        .map((r, i) => `<tr${tableRowAttr(block, i + off)}>${r.map((c) => cellHtml('td', c ?? '', ctx)).join('')}</tr>`).join('');
+      // Kopfspalte: die Zelle, die in Spalte 0 beginnt, als <th> (wie die Kopfzeile).
+      const bodyRows = (block.rows || []).filter(Array.isArray);
+      const firsts = block.headerColumn === true ? firstColumnCells([...(off ? [block.header] : []), ...bodyRows]).slice(off) : [];
+      const rows = bodyRows
+        .map((r, i) => `<tr${tableRowAttr(block, i + off)}>${r.map((c, k) => cellHtml(firsts[i] === k ? 'th' : 'td', c ?? '', ctx)).join('')}</tr>`).join('');
       // Eigener Abstand unten (spaceAfter) ersetzt den der Hülle – wie im Druck.
-      return `${caption}<div class="ds-table-wrap"${spaceOk(block.spaceAfter) ? ' style="margin-bottom:0"' : ''}><table class="ds-table${block.border === false ? ' ds-table-plain' : ''}${tableAllFixed(block) ? ' ds-table-fixed' : ''}${CELL_ALIGNS.includes(block.align) ? ` ds-align-${block.align}` : ''}${CELL_VALIGNS.includes(block.valign) ? ` ds-valign-${block.valign}` : ''}"${tableLineStyle(block)}>${tableColgroup(block)}${head}<tbody>${rows}</tbody></table></div>`;
+      return `${caption}<div class="ds-table-wrap"${spaceOk(block.spaceAfter) ? ' style="margin-bottom:0"' : ''}><table class="ds-table${block.border === false ? ' ds-table-plain' : ''}${tableAllFixed(block) ? ' ds-table-fixed' : ''}${block.headerColumn === true ? ' ds-header-col' : ''}${CELL_ALIGNS.includes(block.align) ? ` ds-align-${block.align}` : ''}${CELL_VALIGNS.includes(block.valign) ? ` ds-valign-${block.valign}` : ''}"${tableLineStyle(block)}>${tableColgroup(block)}${head}<tbody>${rows}</tbody></table></div>`;
     }
     case 'formula': {
       const align = block.align === 'left' ? ' ds-formula-left' : '';

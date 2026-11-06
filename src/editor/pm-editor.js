@@ -254,6 +254,7 @@ function tableView({ node, getPos, editor }) {
     const { heights } = current.attrs;
     [...body.children].forEach((tr, r) => { tr.style.height = lengthCss(Array.isArray(heights) ? heights[r] : ''); });
     // Alle Spalten fest → so breit wie ihre Summe, sonst füllt die Tabelle die Zeile (wie Vorschau und Druck).
+    dom.classList.toggle('ds-header-col', current.attrs.headerColumn === true);
     const cols = TableMap.get(current).width;
     dom.classList.toggle('ds-table-fixed', cols > 0 && Array.isArray(widths) && widths.length >= cols && widths.slice(0, cols).every((w) => !!lengthCss(w)));
   };
@@ -631,8 +632,47 @@ export function createPmEditor(element, spec, host = {}) {
     distribute(pos, what) {
       const node = editor.state.doc.nodeAt(pos);
       if (!node) return;
-      const value = what === 'cols' ? equalWidths(TableMap.get(node).width, Number(node.attrs.width) || TEXT_WIDTH_CM) : null;
+      const map = TableMap.get(node);
+      let value = what === 'cols' ? equalWidths(map.width, Number(node.attrs.width) || TEXT_WIDTH_CM) : null;
+      // Mehrere Spalten markiert: nur diese – sie teilen sich ihre gemeinsame Breite gleichmäßig.
+      const span = what === 'cols' ? this.selectedColumns(pos) : null;
+      if (span) {
+        const was = Array.isArray(node.attrs.widths) ? node.attrs.widths : [];
+        const cmOf = (c) => {
+          const fixed = parseFloat(lengthCss(was[c]));
+          if (fixed) return /mm$/.test(String(was[c])) ? fixed / 10 : fixed;
+          // Automatische Spalte: wie gezeichnet (eine Zelle, die nur diese Spalte belegt).
+          for (let r = 0; r < map.height; r++) {
+            const offset = map.map[r * map.width + c];
+            const rect = map.findCell(offset);
+            if (rect.right - rect.left !== 1) continue;
+            const el = editor.view.nodeDOM(pos + 1 + offset);
+            if (el?.getBoundingClientRect) return el.getBoundingClientRect().width / (96 / 2.54);
+          }
+          return 2;
+        };
+        const total = Array.from({ length: span.right - span.left }, (_, i) => cmOf(span.left + i)).reduce((a, b) => a + b, 0);
+        const same = equalWidths(span.right - span.left, total);
+        value = Array.from({ length: map.width }, (_, c) => (c >= span.left && c < span.right ? same[c - span.left] : was[c] ?? ''));
+      }
       editor.view.dispatch(editor.state.tr.setNodeAttribute(pos, what === 'rows' ? 'heights' : 'widths', value));
+      editor.view.focus();
+    },
+    /** Markierte Spalten der Tabelle an `pos` ({ left, right }, rechts ausschließlich) – null bei weniger als zwei. */
+    selectedColumns(pos) {
+      const sel = editor.state.selection;
+      if (!(sel instanceof CellSelection)) return null;
+      const node = editor.state.doc.nodeAt(pos);
+      if (!node || sel.$anchorCell.node(-1) !== node) return null; // Markierung in einer anderen Tabelle
+      const map = TableMap.get(node);
+      const rect = map.rectBetween(sel.$anchorCell.pos - pos - 1, sel.$headCell.pos - pos - 1);
+      return rect.right - rect.left >= 2 ? { left: rect.left, right: rect.right } : null;
+    },
+    /** Erste Spalte als Kopf (wie die Kopfzeile) ein- oder ausschalten. */
+    toggleHeaderColumn(pos) {
+      const node = editor.state.doc.nodeAt(pos);
+      if (!node) return;
+      editor.view.dispatch(editor.state.tr.setNodeAttribute(pos, 'headerColumn', node.attrs.headerColumn === true ? null : true));
       editor.view.focus();
     },
     /** Das gewählte Bild und die Bilder direkt dahinter: { from, to, images } oder null. */

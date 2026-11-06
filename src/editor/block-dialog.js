@@ -31,33 +31,79 @@ export function applyBlockFields(block, f) {
   return block;
 }
 
-/** Tabelle einfügen: Spalten, Zeilen, Kopfzeile. Liefert den Baustein oder `null`. */
+const TABLE_MAX = { cols: 20, rows: 100 };
+const GRID = { cols: 10, rows: 8 };
+
+/** Tabelle als Baustein: `rows` zählt alle Zeilen, eine Kopfzeile mit; leere Zellen. */
+export function tableBlock({ cols, rows, header = false, headerColumn = false }) {
+  const row = () => Array.from({ length: cols }, () => '');
+  return {
+    type: 'table',
+    ...(header ? { header: row() } : {}),
+    ...(headerColumn ? { headerColumn: true } : {}),
+    rows: Array.from({ length: Math.max(1, header ? rows - 1 : rows) }, row),
+  };
+}
+
+/**
+ * Tabelle einfügen: Größe im Raster wählen (Zeiger bzw. Finger, ein Klick fügt
+ * ein) oder als Zahl eingeben – bis 20 × 100 –, dazu Kopfzeile und Kopfspalte.
+ * Liefert den Baustein oder `null`.
+ */
 export function askTable() {
   return new Promise((resolve) => {
     const overlay = document.createElement('div');
     overlay.className = 'confirm-overlay';
-    overlay.innerHTML = `<form class="import-modules-card ds-widget-dialog">
+    const cells = [];
+    for (let r = 1; r <= GRID.rows; r++) for (let c = 1; c <= GRID.cols; c++) cells.push(`<button type="button" class="ds-tgrid-cell" data-c="${c}" data-r="${r}" tabindex="-1" aria-label="${c} × ${r}"></button>`);
+    overlay.innerHTML = `<form class="import-modules-card ds-widget-dialog ds-table-ask" role="dialog" aria-modal="true" aria-label="Tabelle einfügen">
       <h3>▤ Tabelle einfügen</h3>
+      <div class="ds-tgrid" style="grid-template-columns:repeat(${GRID.cols}, 1fr)">${cells.join('')}</div>
+      <p class="ds-tgrid-size" aria-live="polite">3 Spalten × 4 Zeilen</p>
       <div class="ds-field-form">
-        <label>Spalten <input type="number" name="cols" min="1" max="20" value="3"></label>
-        <label>Zeilen <input type="number" name="rows" min="1" max="100" value="3"></label>
-        <label><input type="checkbox" name="header"> Kopfzeile</label>
+        <label>Spalten <input type="number" name="cols" inputmode="numeric" min="1" max="${TABLE_MAX.cols}" value="3" required></label>
+        <label>Zeilen <input type="number" name="rows" inputmode="numeric" min="1" max="${TABLE_MAX.rows}" value="4" required></label>
+      </div>
+      <div class="ds-field-form">
+        <label><input type="checkbox" name="header" checked> Kopfzeile</label>
+        <label><input type="checkbox" name="headerColumn"> Kopfspalte</label>
       </div>
       <div class="confirm-actions">
         <button type="submit" class="btn btn-primary">Einfügen</button>
         <button type="button" class="btn btn-secondary" data-cancel>Abbrechen</button>
       </div></form>`;
     document.body.appendChild(overlay);
-    const done = (value) => { overlay.remove(); resolve(value); };
-    overlay.querySelector('[data-cancel]').addEventListener('click', () => done(null));
-    overlay.querySelector('form').addEventListener('submit', (e) => {
-      e.preventDefault();
-      const f = e.target.elements;
-      const cols = Math.max(1, Math.min(20, Number(f.cols.value) || 1));
-      const rows = Math.max(1, Math.min(100, Number(f.rows.value) || 1));
-      const row = () => Array.from({ length: cols }, () => '');
-      done({ type: 'table', ...(f.header.checked ? { header: row() } : {}), rows: Array.from({ length: Math.max(1, f.header.checked ? rows - 1 : rows) }, row) });
+    const form = overlay.querySelector('form');
+    const f = form.elements;
+    const size = overlay.querySelector('.ds-tgrid-size');
+    const clamp = (v, max) => Math.min(max, Math.max(1, Math.round(Number(v)) || 1));
+    const paint = (cols, rows) => {
+      for (const b of overlay.querySelectorAll('.ds-tgrid-cell')) b.classList.toggle('on', Number(b.dataset.c) <= cols && Number(b.dataset.r) <= rows);
+      size.textContent = `${cols} Spalte${cols === 1 ? '' : 'n'} × ${rows} Zeile${rows === 1 ? '' : 'n'}`;
+    };
+    const fromFields = () => paint(clamp(f.cols.value, TABLE_MAX.cols), clamp(f.rows.value, TABLE_MAX.rows));
+    const done = (value) => { document.removeEventListener('keydown', onKey, true); overlay.remove(); resolve(value); };
+    const onKey = (e) => { if (e.key === 'Escape') { e.stopPropagation(); done(null); } };
+    document.addEventListener('keydown', onKey, true);
+    const block = () => tableBlock({ cols: clamp(f.cols.value, TABLE_MAX.cols), rows: clamp(f.rows.value, TABLE_MAX.rows), header: f.header.checked, headerColumn: f.headerColumn.checked });
+    const grid = overlay.querySelector('.ds-tgrid');
+    grid.addEventListener('pointerover', (e) => {
+      const b = e.target.closest('.ds-tgrid-cell');
+      if (b) paint(Number(b.dataset.c), Number(b.dataset.r));
     });
+    grid.addEventListener('pointerleave', fromFields);
+    grid.addEventListener('click', (e) => {
+      const b = e.target.closest('.ds-tgrid-cell');
+      if (!b) return;
+      f.cols.value = b.dataset.c;
+      f.rows.value = b.dataset.r;
+      done(block());
+    });
+    form.addEventListener('input', fromFields);
+    overlay.querySelector('[data-cancel]').addEventListener('click', () => done(null));
+    form.addEventListener('submit', (e) => { e.preventDefault(); done(block()); });
+    fromFields();
+    f.cols.select();
   });
 }
 

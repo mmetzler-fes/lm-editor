@@ -191,6 +191,7 @@ export function mountTiptapSurface(box, host) {
   };
   const tableMenu = () => {
     const at = pm.tableAt();
+    const check = (on, label) => `${on ? '✓ ' : ''}${label}`;
     return [
       ...(host.tableProps ? [{ label: '⚙ Tabelleneigenschaften …', onClick: tableDialog }, '-'] : []),
       { label: '⬆ Zeile darüber', onClick: () => pm.table.addRowBefore() },
@@ -199,7 +200,10 @@ export function mountTiptapSurface(box, host) {
       { label: '➡ Spalte rechts', onClick: () => pm.table.addColumnAfter() }, '-',
       { label: '⊞ Zellen verbinden', onClick: () => pm.table.mergeCells() },
       { label: '⊟ Zelle teilen', onClick: () => pm.table.splitCell() }, '-',
-      { label: '⇔ Spalten gleichmäßig verteilen', title: 'Alle Spalten gleich breit über die Breite der Tabelle (sonst die Seitenbreite, 16,5 cm)', onClick: () => pm.distribute(at.pos, 'cols') },
+      { label: check(at.node.attrs.headerColumn === true, 'Kopfspalte'), title: 'Erste Spalte als Kopf – fett und hinterlegt, wie die Kopfzeile', onClick: () => pm.toggleHeaderColumn(at.pos) }, '-',
+      pm.selectedColumns(at.pos)
+        ? { label: '⇔ Markierte Spalten gleich breit', title: 'Die markierten Spalten teilen sich ihre gemeinsame Breite gleichmäßig', onClick: () => pm.distribute(at.pos, 'cols') }
+        : { label: '⇔ Spalten gleichmäßig verteilen', title: 'Alle Spalten gleich breit über die Breite der Tabelle (sonst die Seitenbreite, 16,5 cm). Mehrere Zellen markiert: nur diese Spalten', onClick: () => pm.distribute(at.pos, 'cols') },
       { label: '⇔ Spaltenbreiten automatisch', title: 'Keine festen Breiten: Die Tabelle füllt die Zeile, die Spalten richten sich nach dem Inhalt', onClick: () => pm.distribute(at.pos, 'auto') },
       { label: '⇕ Zeilen ohne feste Höhe', onClick: () => pm.distribute(at.pos, 'rows') }, '-',
       { label: '⬚ Ganze Tabelle auswählen', onClick: () => pm.selectAt(at.pos) },

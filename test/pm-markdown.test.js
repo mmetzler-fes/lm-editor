@@ -246,3 +246,16 @@ test('Beispiele überstehen den Weg', () => {
     roundTrip(JSON.parse(fs.readFileSync(new URL(`./fixtures/${f}.json`, import.meta.url), 'utf8')));
   }
 });
+
+test('Markdown: „##“ ohne Titel – der folgende kurze Absatz wird zum Titel („1.1 Welche …“ in einer Zeile)', () => {
+  const spec = (text) => pmToSpec(markdownToPm(text)).content;
+  assert.deepEqual(spec('##\n\nWelche Aufgaben hat ein ERD?\n\n## Strom\n\nBerechne I.\n'), [
+    { type: 'task', title: 'Welche Aufgaben hat ein ERD?' },
+    { type: 'task', title: 'Strom' },
+    { type: 'text', text: 'Berechne I.' },
+  ]);
+  // nicht bei langem Text, Zeilenumbruch oder Überschrift ohne Nummer
+  assert.deepEqual(spec(`##\n\n${'x'.repeat(301)}\n`).map((b) => b.type), ['task', 'text']);
+  assert.deepEqual(spec('##\n\nZeile 1\\\nZeile 2\n').map((b) => b.type), ['task', 'text']);
+  assert.deepEqual(spec('####\n\nText\n').map((b) => b.type), ['heading', 'text']);
+});

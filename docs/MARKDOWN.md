@@ -52,6 +52,10 @@ Doppelte Spannung heißt doppelter Strom.
 | `## Titel {.plain}` | Überschrift ohne Nummer, Stufe 2 |
 | `### Titel {.task #a1b2}` | Rolle und ID ausdrücklich |
 
+Eine nummerierte Überschrift ohne Titel (`##` allein), auf die ein kurzer
+Absatz folgt (bis 300 Zeichen, ohne Zeilenumbruch), bekommt diesen Absatz als
+Titel: „1.1 Welche Aufgaben …“ steht dann in einer Zeile.
+
 Aufgaben enthalten ihre Bausteine nicht, sie folgen ihnen ([SCHEMA.md](SCHEMA.md)).
 
 ## Text

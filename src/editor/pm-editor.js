@@ -57,11 +57,41 @@ const Basics = Extension.create({
       Enter: () => this.editor.commands.splitListItem('listItem'),
       Tab: () => goToNextCell(1)(this.editor.state, this.editor.view.dispatch) || this.editor.commands.sinkListItem('listItem'),
       'Shift-Tab': () => goToNextCell(-1)(this.editor.state, this.editor.view.dispatch) || this.editor.commands.liftListItem('listItem'),
+      // Wie in Word: Text unter einer leeren Überschrift rückt in deren Zeile – die Überschrift
+      // (z. B. „1.1“ einer Aufgabe) bleibt, statt gelöscht zu werden.
+      Backspace: () => joinIntoEmptyHeading(this.editor, -1),
+      Delete: () => joinIntoEmptyHeading(this.editor, 1),
       'Alt-ArrowUp': () => moveBlock(this.editor, -1),
       'Alt-ArrowDown': () => moveBlock(this.editor, 1),
     };
   },
 });
+
+/**
+ * Backspace am Anfang eines Absatzes hinter einer leeren Überschrift (dir -1)
+ * bzw. Entf in einer leeren Überschrift vor einem Absatz (dir 1): Der Text des
+ * Absatzes wird zum Titel der Überschrift. ProseMirror würde sonst die leere
+ * Überschrift löschen – und mit ihr die Aufgabe. Sonst false (normales Verhalten).
+ */
+export function joinIntoEmptyHeading(editor, dir) {
+  const { state } = editor;
+  const { selection } = state;
+  if (!selection.empty) return false;
+  const $p = selection.$from;
+  const here = $p.parent;
+  if (dir < 0 ? $p.parentOffset !== 0 || here.type.name !== 'paragraph' : here.type.name !== 'heading' || here.content.size !== 0) return false;
+  const index = $p.index($p.depth - 1);
+  const container = $p.node($p.depth - 1);
+  const other = container.maybeChild(index + dir);
+  if (!other) return false;
+  const [heading, para] = dir < 0 ? [other, here] : [here, other];
+  if (heading.type.name !== 'heading' || heading.content.size !== 0 || para.type.name !== 'paragraph') return false;
+  const headingPos = dir < 0 ? $p.before() - heading.nodeSize : $p.before();
+  const tr = state.tr.replaceWith(headingPos, headingPos + heading.nodeSize + para.nodeSize, heading.type.create(heading.attrs, para.content));
+  tr.setSelection(TextSelection.create(tr.doc, headingPos + 1));
+  editor.view.dispatch(tr.scrollIntoView());
+  return true;
+}
 
 /** Der Baustein an der Auswahl: gewählter Baustein, sonst der Block der Schreibmarke (auf der Ebene seines Behälters). */
 function currentBlock(state) {

@@ -599,8 +599,36 @@ function readFrontMatter(text) {
 export function markdownToPm(text, opts = {}) {
   const { meta, body } = readFrontMatter(String(text ?? '').replace(/\r\n?/g, '\n').replace(/^\uFEFF/, ''));
   const reader = new Reader(md.parse(body, {}), opts);
-  const content = reader.blocks();
+  const content = fillEmptyHeadings(reader.blocks());
   return node('doc', meta && Object.keys(meta).length ? { meta } : null, content);
+}
+
+// Längster Absatz, der als Titel in die Zeile einer leeren Überschrift rückt.
+const RUN_IN_MAX = 300;
+
+/**
+ * `##` ohne Titel, darunter die Aufgabenstellung (so schreiben es KIs gern, weil
+ * Nummern im Titel verboten sind): Der Absatz wird zum Titel – „1.1 Welche …“
+ * steht dann in einer Zeile, statt „1.1“ allein. Nur für nummerierte
+ * Überschriften (Abschnitt, Aufgabe, Teilaufgabe) und kurze Absätze ohne
+ * Zeilenumbruch; auch in Kästen und Lösungen.
+ */
+export function fillEmptyHeadings(list) {
+  const out = [];
+  const textOf = (n) => (n.content || []).map((x) => (x.type === 'text' ? x.text : x.type === 'inlineMath' ? 'x' : '')).join('');
+  for (let i = 0; i < (list || []).length; i++) {
+    const n = list[i];
+    const next = list[i + 1];
+    if (n?.type === 'heading' && ['section', 'task', 'subtask'].includes(n.attrs?.role) && !(n.content || []).length
+      && next?.type === 'paragraph' && (next.content || []).length && !(next.content || []).some((x) => x.type === 'hardBreak')
+      && textOf(next).length <= RUN_IN_MAX) {
+      out.push({ ...n, content: next.content });
+      i++;
+      continue;
+    }
+    out.push(['box', 'solution', 'column', 'columns'].includes(n?.type) && Array.isArray(n.content) ? { ...n, content: fillEmptyHeadings(n.content) } : n);
+  }
+  return out;
 }
 
 // ---------- Knoten → Markdown: Auszeichnung ----------

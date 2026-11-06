@@ -2399,6 +2399,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
       if (first > 0) entries.push({ label: '↑ Nach oben', onClick: () => { void moveBlocks(blocks, first > 1 ? order[first - 2] : null); } });
       if (last < order.length - 1) entries.push({ label: '↓ Nach unten', onClick: () => { void moveBlocks(blocks, order[last + 1]); } });
     }
+    if (mergeableBlocks(blocks)) entries.push({ label: '⤵ Zu einem Textblock zusammenfassen', onClick: () => { void mergeBlocks(blocks); } });
     if (blocks.length && !items.length) entries.push({ label: 'Löschen (Entf)', danger: true, onClick: () => deleteSelection() });
     if (items.length) {
       entries.push({ label: `Kopieren (${key}C)`, onClick: () => copySelection() });
@@ -2610,6 +2611,34 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     await docChange(() => (result.content.length ? paper.blockOps.replace(bid, mergeParagraphs(result.content)) : paper.blockOps.remove([bid])));
     if (result.content.length) selectBlocks([bid]);
   }
+  /**
+   * Mehrere direkt aufeinanderfolgende Textbausteine (Lehrkraft): Lassen sie sich zu einem
+   * zusammenfassen? Nur einfache Absätze – Listen, Tabellen usw. bleiben eigene Bausteine.
+   */
+  function mergeableBlocks(bids) {
+    if (bids.length < 2 || !paper?.insertBlock || !paper.blockOps || doc.bg !== 'paper') return false;
+    const order = topBlocks().map((b) => b.bid);
+    const at = bids.map((bid) => order.indexOf(bid)).sort((a, b) => a - b);
+    if (at[0] < 0 || at.some((v, i) => i && v !== at[i - 1] + 1)) return false;
+    return bids.every((bid) => {
+      const b = paper.blockOps.get(bid);
+      return b && (typeof b === 'string' || ((b.type || 'text') === 'text' && typeof b.text === 'string' && !b.blocks));
+    });
+  }
+  /** Textbausteine zu einem zusammenfassen: Absätze hintereinander im ersten, die anderen entfallen. */
+  async function mergeBlocks(bids) {
+    const order = topBlocks().map((b) => b.bid);
+    const sorted = [...bids].sort((a, b) => order.indexOf(a) - order.indexOf(b));
+    const specs = sorted.map((bid) => paper.blockOps.get(bid)).map((b) => (typeof b === 'string' ? { type: 'text', text: b } : b));
+    const merged = { ...specs[0], text: specs.map((b) => String(b.text).trim()).filter(Boolean).join('\n\n') };
+    // Erst die hinteren entfernen (ihre Kennungen gelten noch), dann den ersten ersetzen.
+    await docChange(async () => {
+      await paper.blockOps.remove(sorted.slice(1));
+      await paper.blockOps.replace(sorted[0], [merged]);
+    });
+    selectBlocks([sorted[0]]);
+  }
+
   /** Bausteine verschieben; was an ihnen hängt, wandert mit. */
   const moveBlocks = (bids, after) => docChange(() => paper.blockOps.move(bids, after));
 

@@ -14,8 +14,16 @@ import { loadEditorStyles } from '../app/editor-styles.js';
 // „Fertig“. Quizze, Schreibfelder und Umbrüche gibt es hier nicht; Formeln und Bilder gehören nicht in
 // eine Textfläche (`formula`: nur im Baustein).
 
-const empty = (spec) => !JSON.stringify(spec?.content || []).match(/"(text|code|latex)":"[^"]*\S/)
-  && !(spec?.content || []).some((b) => b && typeof b === 'object' && ['table', 'formula', 'box'].includes(b.type));
+/**
+ * Leer heißt: nichts als leere Absätze. Alles andere zählt – auch eine Überschrift (Text im `title`),
+ * ein Schreibfeld, Bild oder Quiz. Sonst entfernte „Fertig“ den Baustein (z. B. eine Aufgabe, deren
+ * Text per Backspace in die Überschrift gerückt ist).
+ */
+export const empty = (spec) => (spec?.content || []).every((b) => {
+  if (b === null || b === undefined) return true;
+  if (typeof b !== 'object') return !String(b).trim();
+  return (b.type || 'text') === 'text' && !String(b.text ?? '').trim() && !(Array.isArray(b.blocks) && b.blocks.length);
+});
 
 /** Ergebnis: die Spec – `null` bei „Abbrechen“. */
 export function openRichEditor({ title = 'Text', spec, widthCm = 16.5, formula = false, surfaceHost, barHost }) {

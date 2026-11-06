@@ -51,3 +51,13 @@ test('Textblock: Beim erneuten Bearbeiten sind es wieder zwei Absätze', () => {
   const doc = specToPm({ content: [{ type: 'text', text: 'erste\n\nzweite' }] });
   assert.equal(doc.content.filter((n) => n.type === 'paragraph').length, 2);
 });
+
+test('Textfläche: leer sind nur leere Absätze – eine Aufgabe mit Titel und Karo ist es nicht', async () => {
+  const { empty } = await import('../src/ink/ink-rich-editor.js');
+  const e = (content) => empty({ content });
+  assert.equal(e([]), true);
+  assert.equal(e([{ type: 'text', text: '  ' }]), true);
+  assert.equal(e([{ type: 'task', title: 'Welche Aufgaben erfüllt ein Relationenmodell?' }, { type: 'karo', lines: 6 }]), false);
+  assert.equal(e([{ type: 'karo', lines: 4 }]), false);
+  assert.equal(e([{ type: 'text', text: 'x' }]), false);
+});

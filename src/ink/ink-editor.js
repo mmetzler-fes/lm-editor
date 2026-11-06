@@ -2452,12 +2452,16 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     const result = await openEditor({ title: 'Textfläche', spec: { content: item.content }, widthCm: item.w / CM },
       { free: { page, x: item.x, y: item.y, w: item.w, id: item.id } });
     if (!result) return;
+    // Während der Bearbeitung kann das Blatt neu vermessen worden sein (reflowPaper legt die Objekte
+    // neu an) – daher die Textfläche über ihre Kennung neu suchen, nicht das alte Objekt ändern.
+    const now = doc.pages.findIndex((pg) => (pg.items || []).some((it) => it.id === id));
+    if (now < 0) return;
     snapshot();
-    if (result.content.length) item.content = result.content;
-    else doc.pages[page].items = doc.pages[page].items.filter((it) => it !== item);
+    if (result.content.length) doc.pages[now].items = doc.pages[now].items.map((it) => (it.id === id ? { ...it, content: result.content } : it));
+    else doc.pages[now].items = doc.pages[now].items.filter((it) => it.id !== id);
     if (!result.content.length) state.selection = null;
     changed();
-    drawItems(page);
+    drawItems(now);
     paintToolbar();
   }
   /**

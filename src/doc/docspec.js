@@ -995,6 +995,33 @@ export function tableLength(v) {
   return TABLE_LENGTH_RE.test(t) ? t : '';
 }
 
+// Nutzbare Textbreite der Vorlage (A4 hoch) – so breit wird eine Tabelle im Druck ohne eigene Breite.
+export const TEXT_WIDTH_CM = 16.5;
+
+/** Zahl der Spalten einer Tabelle (verbundene Zellen zählen mit ihrer Breite). */
+export function tableColumnCount(block) {
+  const span = (c) => (c && typeof c === 'object' && Number.isInteger(c.colspan) && c.colspan > 1 ? c.colspan : 1);
+  const rows = [...(Array.isArray(block?.header) ? [block.header] : []), ...(Array.isArray(block?.rows) ? block.rows : [])];
+  return Math.max(0, ...rows.filter(Array.isArray).map((r) => r.reduce((n, c) => n + span(c), 0)));
+}
+
+/**
+ * Haben alle Spalten eine feste Breite? Dann ist die Tabelle so breit wie
+ * deren Summe – sonst so breit wie die Zeile (bzw. ihre `width`), und die
+ * Spalten ohne Breite teilen sich den Rest. So rechnet auch der Druck.
+ */
+export function tableAllFixed(block) {
+  const n = tableColumnCount(block);
+  const w = Array.isArray(block?.widths) ? block.widths : [];
+  return n > 0 && w.length >= n && w.slice(0, n).every((x) => !!tableLength(x));
+}
+
+/** `cols` gleich breite Spalten über `totalCm` (Breite der Tabelle, sonst Satzbreite) – z. B. ["4.1cm", …]. */
+export function equalWidths(cols, totalCm = TEXT_WIDTH_CM) {
+  const each = Math.max(0.5, Math.floor((totalCm / Math.max(1, cols)) * 10) / 10);
+  return Array.from({ length: cols }, () => `${each}cm`);
+}
+
 /** <colgroup> mit den festen Spaltenbreiten (`widths`) – leer ohne. */
 export function tableColgroup(block) {
   const w = Array.isArray(block?.widths) ? block.widths.map(tableLength) : [];
@@ -1132,7 +1159,7 @@ function renderBlockHtml(block, ctx) {
       const rows = (block.rows || []).filter(Array.isArray)
         .map((r, i) => `<tr${tableRowAttr(block, i + off)}>${r.map((c) => cellHtml('td', c ?? '', ctx)).join('')}</tr>`).join('');
       // Eigener Abstand unten (spaceAfter) ersetzt den der Hülle – wie im Druck.
-      return `${caption}<div class="ds-table-wrap"${spaceOk(block.spaceAfter) ? ' style="margin-bottom:0"' : ''}><table class="ds-table${block.border === false ? ' ds-table-plain' : ''}${CELL_ALIGNS.includes(block.align) ? ` ds-align-${block.align}` : ''}${CELL_VALIGNS.includes(block.valign) ? ` ds-valign-${block.valign}` : ''}"${tableLineStyle(block)}>${tableColgroup(block)}${head}<tbody>${rows}</tbody></table></div>`;
+      return `${caption}<div class="ds-table-wrap"${spaceOk(block.spaceAfter) ? ' style="margin-bottom:0"' : ''}><table class="ds-table${block.border === false ? ' ds-table-plain' : ''}${tableAllFixed(block) ? ' ds-table-fixed' : ''}${CELL_ALIGNS.includes(block.align) ? ` ds-align-${block.align}` : ''}${CELL_VALIGNS.includes(block.valign) ? ` ds-valign-${block.valign}` : ''}"${tableLineStyle(block)}>${tableColgroup(block)}${head}<tbody>${rows}</tbody></table></div>`;
     }
     case 'formula': {
       const align = block.align === 'left' ? ' ds-formula-left' : '';

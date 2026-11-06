@@ -16,7 +16,7 @@
  * Feste Block-IDs (ids.js) reisen als data-id mit – an ihnen hängen die
  * Striche der Schüler.
  */
-import { richText, renderDocSpecHtml, tableColgroup, tableRowAttr, tableLineStyle, TABLE_LINE_STYLES, TEXT_COLORS, HIGHLIGHTS, FONT_SIZES, BASE_FONT_PT, LINE_HEIGHTS, LIST_MARKERS, LIST_NUMBERINGS, LINE_COLORS, CELL_BACKGROUNDS, CELL_VALIGNS, paraStyle, INLINE_MATH_SOURCE, CODE_SIZES, CODE_SIZE_PT } from './docspec.js';
+import { richText, renderDocSpecHtml, tableColgroup, tableAllFixed, tableRowAttr, tableLineStyle, TABLE_LINE_STYLES, TEXT_COLORS, HIGHLIGHTS, FONT_SIZES, BASE_FONT_PT, LINE_HEIGHTS, LIST_MARKERS, LIST_NUMBERINGS, LINE_COLORS, CELL_BACKGROUNDS, CELL_VALIGNS, paraStyle, INLINE_MATH_SOURCE, CODE_SIZES, CODE_SIZE_PT } from './docspec.js';
 import { isBlockId } from './ids.js';
 
 const MARKUP_CHARS = /[\\*`[\]]/g;
@@ -650,7 +650,8 @@ export function specToEditorHtml(spec) {
       }
       case 'table': {
         const off = Array.isArray(b.header) ? 1 : 0;
-        return `<table${idAttr(b)}${b.border === false ? ' class="ws-table-plain"' : ''}${['left', 'center', 'right'].includes(b.align) ? ` data-align="${b.align}"` : ''}${CELL_VALIGNS.includes(b.valign) ? ` data-valign="${b.valign}"` : ''}${b.lineWidth ? ` data-line-width="${esc(b.lineWidth)}"` : ''}${b.lineStyle ? ` data-line-style="${esc(b.lineStyle)}"` : ''}${b.lineColor ? ` data-line-color="${esc(b.lineColor)}"` : ''}${b.width ? ` data-width="${b.width}"` : ''}${b.position ? ` data-position="${esc(b.position)}"` : ''}${b.spaceBefore !== undefined ? ` data-sb="${b.spaceBefore}"` : ''}${b.spaceAfter !== undefined ? ` data-sa="${b.spaceAfter}"` : ''}${b.padding !== undefined ? ` data-pad="${b.padding}"` : ''}${tableLineStyle(b)}${b.caption ? ` data-caption="${esc(b.caption)}"` : ''}>${tableColgroup(b)}${off ? `<thead><tr${tableRowAttr(b, 0)}>${cellsHtml('th', b.header, blocks)}</tr></thead>` : ''}<tbody>${(b.rows || []).filter(Array.isArray).map((r, i) => `<tr${tableRowAttr(b, i + off)}>${cellsHtml('td', r, blocks)}</tr>`).join('')}</tbody></table>`;
+        const cls = [b.border === false ? 'ws-table-plain' : '', tableAllFixed(b) ? 'ds-table-fixed' : ''].filter(Boolean).join(' ');
+        return `<table${idAttr(b)}${cls ? ` class="${cls}"` : ''}${['left', 'center', 'right'].includes(b.align) ? ` data-align="${b.align}"` : ''}${CELL_VALIGNS.includes(b.valign) ? ` data-valign="${b.valign}"` : ''}${b.lineWidth ? ` data-line-width="${esc(b.lineWidth)}"` : ''}${b.lineStyle ? ` data-line-style="${esc(b.lineStyle)}"` : ''}${b.lineColor ? ` data-line-color="${esc(b.lineColor)}"` : ''}${b.width ? ` data-width="${b.width}"` : ''}${b.position ? ` data-position="${esc(b.position)}"` : ''}${b.spaceBefore !== undefined ? ` data-sb="${b.spaceBefore}"` : ''}${b.spaceAfter !== undefined ? ` data-sa="${b.spaceAfter}"` : ''}${b.padding !== undefined ? ` data-pad="${b.padding}"` : ''}${tableLineStyle(b)}${b.caption ? ` data-caption="${esc(b.caption)}"` : ''}>${tableColgroup(b)}${off ? `<thead><tr${tableRowAttr(b, 0)}>${cellsHtml('th', b.header, blocks)}</tr></thead>` : ''}<tbody>${(b.rows || []).filter(Array.isArray).map((r, i) => `<tr${tableRowAttr(b, i + off)}>${cellsHtml('td', r, blocks)}</tr>`).join('')}</tbody></table>`;
       }
       case 'image': {
         if (typeof b.src !== 'string') return widgetHtml(b);

@@ -98,7 +98,8 @@
 .worksheet-content td > table,
 .worksheet-content th > table { margin: 4px 0; }
 .ds-surface table { display: table; width: 100%; }
-.ds-surface table:has(> colgroup) { width: auto; }
+/* Wie Vorschau und Druck: nur wenn jede Spalte fest ist, so breit wie ihre Summe (ds-table-fixed). */
+.ds-surface table.ds-table-fixed, .ds-surface table.ws-table-plain { width: auto; }
 .ds-surface td img,
 .ds-surface th img { display: block; margin: 4px 0; }
 .ds-surface td.ws-cell-beside img,

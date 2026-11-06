@@ -9,7 +9,7 @@ import {
   history, undo, redo, gapCursor, dropCursor, tableEditing, goToNextCell, isInTable,
   addRowBefore, addRowAfter, addColumnBefore, addColumnAfter, deleteRow, deleteColumn, deleteTable, mergeCells, splitCell, TableMap, CellSelection,
 } from '../vendor/tiptap/tiptap.mjs';
-import { KARO_MAX_WIDTH_CM, INLINE_MATH_SOURCE, latexToMathml, tableLineStyle } from '../doc/docspec.js';
+import { KARO_MAX_WIDTH_CM, INLINE_MATH_SOURCE, latexToMathml, tableLineStyle, TEXT_WIDTH_CM, equalWidths } from '../doc/docspec.js';
 import { widgetHtml } from '../doc/docspec-html.js';
 import { isInlinePaste, pasteToSpec } from '../doc/paste.js';
 import { pmExtensions } from '../doc/pm-tiptap.js';
@@ -253,6 +253,9 @@ function tableView({ node, getPos, editor }) {
     }));
     const { heights } = current.attrs;
     [...body.children].forEach((tr, r) => { tr.style.height = lengthCss(Array.isArray(heights) ? heights[r] : ''); });
+    // Alle Spalten fest → so breit wie ihre Summe, sonst füllt die Tabelle die Zeile (wie Vorschau und Druck).
+    const cols = TableMap.get(current).width;
+    dom.classList.toggle('ds-table-fixed', cols > 0 && Array.isArray(widths) && widths.length >= cols && widths.slice(0, cols).every((w) => !!lengthCss(w)));
   };
   paint();
   queueMicrotask(paint); // die Zeilen setzt ProseMirror erst nach dem Anlegen
@@ -621,9 +624,15 @@ export function createPmEditor(element, spec, host = {}) {
     },
     /** Position des Bausteins, zu dem `el` (NodeView) gehört. */
     posOfDom: (el) => editor.view.posAtDOM(el, 0),
-    /** Spalten teilen sich die Breite gleichmäßig bzw. Zeilen ohne feste Höhe. */
+    /**
+     * Spalten gleich breit über die Breite der Tabelle (sonst die Satzbreite) –
+     * bzw. Zeilen ohne feste Höhe; `what: 'auto'` nimmt die festen Spaltenbreiten weg.
+     */
     distribute(pos, what) {
-      editor.view.dispatch(editor.state.tr.setNodeAttribute(pos, what === 'cols' ? 'widths' : 'heights', null));
+      const node = editor.state.doc.nodeAt(pos);
+      if (!node) return;
+      const value = what === 'cols' ? equalWidths(TableMap.get(node).width, Number(node.attrs.width) || TEXT_WIDTH_CM) : null;
+      editor.view.dispatch(editor.state.tr.setNodeAttribute(pos, what === 'rows' ? 'heights' : 'widths', value));
       editor.view.focus();
     },
     /** Das gewählte Bild und die Bilder direkt dahinter: { from, to, images } oder null. */

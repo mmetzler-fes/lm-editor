@@ -439,3 +439,24 @@ describe('Absatz und Tabelle als Ganzes', () => {
     expect(ds.validateDocSpec({ content: [{ ...block, width: 30 }] }).join(' ')).toContain('width:');
   });
 });
+
+describe('Tabellen: Breite wie im Druck', () => {
+  const t = (extra) => ({ type: 'table', rows: [['', '', ''], [{ text: '', colspan: 2 }, '']], ...extra });
+  it('zählt Spalten mit verbundenen Zellen', () => {
+    expect(ds.tableColumnCount(t())).toBe(3);
+    expect(ds.tableColumnCount({ type: 'table', header: ['A', 'B', 'C', 'D'], rows: [['a']] })).toBe(4);
+  });
+  it('alle Spalten fest → so breit wie ihre Summe (ds-table-fixed), sonst füllt sie die Zeile', () => {
+    expect(ds.tableAllFixed(t())).toBe(false);
+    expect(ds.tableAllFixed(t({ widths: ['3cm', '', '2cm'] }))).toBe(false);
+    expect(ds.tableAllFixed(t({ widths: ['3cm', '4cm'] }))).toBe(false);
+    expect(ds.tableAllFixed(t({ widths: ['3cm', '4cm', '20mm'] }))).toBe(true);
+    expect(ds.renderDocSpecHtml({ content: [t({ widths: ['3cm', '4cm', '2cm'] })] })).toContain('ds-table-fixed');
+    expect(ds.renderDocSpecHtml({ content: [t({ widths: ['3cm'] })] }).includes('ds-table-fixed')).toBe(false);
+  });
+  it('gleichmäßig verteilen: gleich breit über die Satzbreite bzw. die Breite der Tabelle', () => {
+    expect(ds.equalWidths(3)).toEqual(['5.5cm', '5.5cm', '5.5cm']);
+    expect(ds.equalWidths(4, 10)).toEqual(['2.5cm', '2.5cm', '2.5cm', '2.5cm']);
+    expect(ds.equalWidths(7)).toEqual(Array(7).fill('2.3cm')); // abgerundet: nie breiter als die Zeile
+  });
+});

@@ -9,7 +9,7 @@ import {
   history, undo, redo, gapCursor, dropCursor, tableEditing, goToNextCell, isInTable,
   addRowBefore, addRowAfter, addColumnBefore, addColumnAfter, deleteRow, deleteColumn, deleteTable, mergeCells, splitCell, TableMap, CellSelection,
 } from '../vendor/tiptap/tiptap.mjs';
-import { KARO_MAX_WIDTH_CM, INLINE_MATH_SOURCE, latexToMathml, tableLineStyle, TEXT_WIDTH_CM, equalWidths } from '../doc/docspec.js';
+import { KARO_MAX_WIDTH_CM, INLINE_MATH_SOURCE, latexToMathml, tableLineStyle, TEXT_WIDTH_CM, equalWidths, parseSlashCommand, headingNumber } from '../doc/docspec.js';
 import { widgetHtml } from '../doc/docspec-html.js';
 import { isInlinePaste, pasteToSpec } from '../doc/paste.js';
 import { pmExtensions } from '../doc/pm-tiptap.js';
@@ -38,6 +38,35 @@ const BlockIds = Extension.create({
   },
 });
 
+/**
+ * Slash-Commands („/befehl …“ allein in einem Absatz, Enter fügt den Baustein ein): Befehlstabelle
+ * und Werte-Auswertung stehen in docspec.js (parseSlashCommand), gemeinsam mit docspec-editor.js in
+ * LearningModules; hier nur das Auslösen. `/quiz` bleibt ohne Vorgabe – diese Fläche kennt keine
+ * Dialoge (s. Kopf der Datei), die Quiz-Auswahl liegt beim Gastgeber (➕-Menü).
+ */
+function handleSlashCommand(editor) {
+  const { state, view } = editor;
+  const { $from, empty } = state.selection;
+  if (!empty || $from.parent.type.name !== 'paragraph') return false;
+  const cmd = parseSlashCommand($from.parent.textContent);
+  if (!cmd) return false;
+  const from = $from.before();
+  const to = $from.after();
+  if (cmd.escaped !== undefined) {
+    // „//write“ → wörtlich „/write“, kein Kommando; Enter noch einmal drücken geht normal weiter.
+    const text = cmd.escaped ? state.schema.text(cmd.escaped) : null;
+    const tr = state.tr.replaceWith(from, to, state.schema.nodes.paragraph.create(null, text));
+    view.dispatch(tr.setSelection(TextSelection.near(tr.doc.resolve(from + 1), 1)));
+    return true;
+  }
+  if (!cmd.built) return false; // quiz: keine Vorgabe möglich, hier kein Dialog – Enter bleibt normal
+  const nodes = specToPm({ content: [cmd.built] }).content.map((j) => PmNode.fromJSON(state.schema, j));
+  const tr = state.tr.replaceWith(from, to, Fragment.fromArray(nodes));
+  tr.setSelection(nodes[0].isAtom ? NodeSelection.create(tr.doc, from) : TextSelection.near(tr.doc.resolve(from + 1)));
+  view.dispatch(tr.scrollIntoView());
+  return true;
+}
+
 /** Felder einer Tiptap-Erweiterung: Tastenkürzel und was ProseMirror mitbringt. */
 const Basics = Extension.create({
   name: 'basics',
@@ -54,7 +83,7 @@ const Basics = Extension.create({
       'Mod-i': mark('italic'),
       'Mod-u': mark('underline'),
       'Shift-Enter': () => this.editor.commands.insertContent({ type: 'hardBreak' }),
-      Enter: () => this.editor.commands.splitListItem('listItem'),
+      Enter: () => handleSlashCommand(this.editor) || this.editor.commands.splitListItem('listItem'),
       Tab: () => goToNextCell(1)(this.editor.state, this.editor.view.dispatch) || this.editor.commands.sinkListItem('listItem'),
       'Shift-Tab': () => goToNextCell(-1)(this.editor.state, this.editor.view.dispatch) || this.editor.commands.liftListItem('listItem'),
       // Wie in Word: Text unter einer leeren Überschrift rückt in deren Zeile – die Überschrift
@@ -377,6 +406,66 @@ function tableView({ node, getPos, editor }) {
   };
 }
 
+const NUMBERED_ROLES = ['section', 'task', 'subtask'];
+
+/**
+ * Überschrift: Abschnitt/Aufgabe/Teilaufgabe bekommen die Nummer als eigenes, nicht editierbares
+ * Objekt davor (wie in der Vorschau) – in einem eigenen Innenraum (contentDOM), damit ProseMirror
+ * nur den Titel als Text sieht. Der Text selbst kommt wie gehabt aus VIEW.heading (pm-tiptap.js).
+ */
+function headingView({ node }) {
+  const role = node.attrs.role || 'plain';
+  const numbered = NUMBERED_ROLES.includes(role);
+  const tag = numbered ? { section: 'h2', task: 'h3', subtask: 'h4' }[role] : `h${Math.min(6, (Number(node.attrs.level) || 1) + 1)}`;
+  const dom = document.createElement(tag);
+  dom.dataset.pm = 'heading';
+  dom.dataset.ds = numbered ? role : 'heading';
+  let contentDOM = dom;
+  if (numbered) {
+    const num = document.createElement('span');
+    num.className = 'ds-num';
+    num.contentEditable = 'false';
+    dom.appendChild(num);
+    contentDOM = document.createElement('span');
+    dom.appendChild(contentDOM);
+  }
+  return {
+    dom,
+    contentDOM,
+    // Andere Art (Nummer da/weg): Tiptap baut die Fläche an der Stelle neu.
+    update: (next) => next.type.name === 'heading' && NUMBERED_ROLES.includes(next.attrs.role || 'plain') === numbered,
+  };
+}
+
+/**
+ * Zahlen der Nummern-Objekte aktuell halten: läuft bei jeder Änderung einmal durchs ganze
+ * Dokument (wie headingNumber in docspec.js, dieselbe Zählung) – nötig, weil sich die Nummer
+ * einer Überschrift ändert, wenn sich eine andere davor einfügt oder verschiebt, nicht nur bei
+ * einer Änderung an ihr selbst (das sähe headingView() allein nicht).
+ */
+const HeadingNumbers = Extension.create({
+  name: 'headingNumbers',
+  addProseMirrorPlugins() {
+    return [new Plugin({
+      key: new PluginKey('headingNumbers'),
+      view: (editorView) => {
+        const refresh = () => {
+          const counters = [0, 0, 0];
+          editorView.state.doc.descendants((node, pos) => {
+            if (node.type.name !== 'heading' || !NUMBERED_ROLES.includes(node.attrs.role)) return;
+            const label = headingNumber(node.attrs.role, counters);
+            const dom = editorView.nodeDOM(pos);
+            const span = dom?.nodeType === 1 ? dom.querySelector(':scope > .ds-num') : null;
+            if (span) span.textContent = `${label} `;
+          });
+        };
+        refresh();
+        return { update: (view, prevState) => { if (!view.state.doc.eq(prevState.doc)) refresh(); } };
+      },
+    })];
+  },
+});
+
 /** Baustein an `getPos()` durch die neue Fassung (auch mehrere) ersetzen. */
 function applyAt(editor, getPos) {
   return (next) => {
@@ -408,6 +497,7 @@ export function createPmEditor(element, spec, host = {}) {
   const nodeViews = Object.fromEntries(ATOMS.map((t) => [t, atomView(host)]));
   nodeViews.inlineMath = mathView;
   nodeViews.table = tableView;
+  nodeViews.heading = headingView;
   const toDoc = (s) => {
     const json = specToPm(s);
     return json.content?.length ? json : { ...json, content: [{ type: 'paragraph' }] };
@@ -429,6 +519,7 @@ export function createPmEditor(element, spec, host = {}) {
       }),
       BlockIds,
       Basics,
+      HeadingNumbers,
     ],
     editorProps: {
       attributes: { spellcheck: 'true', 'aria-label': 'Inhalt bearbeiten' },

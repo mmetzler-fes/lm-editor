@@ -135,7 +135,7 @@ export function mountTiptapSurface(box, host) {
       <button type="button" class="rt-btn" data-do="undo" title="Rückgängig (Strg+Z)">↶</button>
       <button type="button" class="rt-btn" data-do="redo" title="Wiederholen (Strg+Y)">↷</button>
     </div>
-    <div class="ds-surface ds-pm-surface worksheet-content"></div>
+    <div class="ds-surface ds-pm-surface worksheet-content lm-paper"></div>
     <p class="hint">${host.hint ?? 'Neuer Editor (Tiptap). '}➕ oder Rechtsklick fügt ein. Bausteine (grau) anklicken zum Verschieben, Doppelklick zum Bearbeiten; Strg+Z macht auch das rückgängig.</p>`;
   const toolbar = box.querySelector('.ds-pm-toolbar');
   const select = toolbar.querySelector('.ds-vblock');

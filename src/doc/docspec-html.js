@@ -16,7 +16,7 @@
  * Feste Block-IDs (ids.js) reisen als data-id mit – an ihnen hängen die
  * Striche der Schüler.
  */
-import { richText, renderDocSpecHtml, tableColgroup, tableAllFixed, firstColumnCells, tableRowAttr, tableLineStyle, TABLE_LINE_STYLES, TEXT_COLORS, HIGHLIGHTS, FONT_SIZES, BASE_FONT_PT, LINE_HEIGHTS, LIST_MARKERS, LIST_NUMBERINGS, LINE_COLORS, CELL_BACKGROUNDS, CELL_VALIGNS, paraStyle, INLINE_MATH_SOURCE, CODE_SIZES, CODE_SIZE_PT } from './docspec.js';
+import { richText, renderDocSpecHtml, tableColgroup, tableAllFixed, firstColumnCells, tableRowAttr, tableLineStyle, TABLE_LINE_STYLES, TEXT_COLORS, HIGHLIGHTS, FONT_SIZES, BASE_FONT_PT, LINE_HEIGHTS, LIST_MARKERS, LIST_NUMBERINGS, LINE_COLORS, CELL_BACKGROUNDS, CELL_VALIGNS, paraStyle, INLINE_MATH_SOURCE, CODE_SIZES, CODE_SIZE_PT, headingNumber } from './docspec.js';
 import { isBlockId } from './ids.js';
 
 const MARKUP_CHARS = /[\\*`[\]]/g;
@@ -73,6 +73,8 @@ function inline(node, images, warnings) {
     const tag = c.tagName;
     // Formel im Text: zurück zu $…$ (die MathML darin ist nur Anzeige).
     if (c.classList?.contains('ds-math') && c.dataset?.tex !== undefined) { out += `$${c.dataset.tex}$`; continue; }
+    // Nummer vor Abschnitt/Aufgabe/Teilaufgabe: nur Anzeige, nie Text (wird aus der Position errechnet).
+    if (c.classList?.contains('ds-num')) continue;
     if (tag === 'BR') { out += '\\\n'; continue; }
     if (tag === 'IMG') { images.push(c); continue; }
     if (BLOCK_TAGS.has(tag)) {
@@ -629,16 +631,20 @@ function cellsHtml(tag, row, blocksHtml = () => '', hcol = -1) {
 
 /** Spec → HTML für den visuellen Editor (Rückweg: htmlToDocSpec). */
 export function specToEditorHtml(spec) {
+  // Zählt wie renderDocSpecHtml (docspec.js): dieselbe Nummer wie in der Vorschau, als eigenes,
+  // nicht editierbares Objekt vor dem Titel – inline() lässt es beim Rückweg aus.
+  const counters = [0, 0, 0];
+  const numSpan = (type) => `<span class="ds-num" contenteditable="false">${headingNumber(type, counters)}</span> `;
   const blocks = (list) => (list || []).map((b) => {
     if (typeof b === 'string' || typeof b === 'number') return paragraphsHtml(b);
     if (!b || typeof b !== 'object') return '';
     switch (b.type || 'text') {
       case 'section':
-        return `<h2 data-ds="section"${idAttr(b)}>${richText(b.title ?? b.text ?? '')}</h2>${b.title !== undefined && b.text ? paragraphsHtml(b.text) : ''}${blocks(b.blocks)}`;
+        return `<h2 data-ds="section"${idAttr(b)}>${numSpan('section')}${richText(b.title ?? b.text ?? '')}</h2>${b.title !== undefined && b.text ? paragraphsHtml(b.text) : ''}${blocks(b.blocks)}`;
       case 'task':
       case 'subtask': {
         const tag = b.type === 'task' ? 'h3' : 'h4';
-        return `<${tag} data-ds="${b.type}"${idAttr(b)}>${richText(b.title ?? b.text ?? '')}</${tag}>${b.title !== undefined && b.text ? paragraphsHtml(b.text) : ''}${blocks(b.blocks)}`;
+        return `<${tag} data-ds="${b.type}"${idAttr(b)}>${numSpan(b.type)}${richText(b.title ?? b.text ?? '')}</${tag}>${b.title !== undefined && b.text ? paragraphsHtml(b.text) : ''}${blocks(b.blocks)}`;
       }
       case 'heading': {
         const level = [1, 2, 3].includes(b.level) ? b.level + 1 : 2;

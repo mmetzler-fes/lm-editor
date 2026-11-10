@@ -63,6 +63,63 @@ const tableWidthOk = (v) => typeof v === 'number' && v >= 2 && v <= 25.5;
 const paddingOk = (v) => typeof v === 'number' && v >= 0 && v <= 1;
 
 /**
+ * Slash-Commands („/befehl …“ allein in einem Absatz, Enter fügt den Baustein ein): Befehl →
+ * Bausteinart (`what`, für insertWhat/insertEntries der Editoren) und `build(args)` → fertiges
+ * Objekt (die Vorgabe, wenn keine Werte getippt wurden – nur `quiz` hat keine, dafür öffnet jeder
+ * Editor seine eigene Auswahl). Eine Stelle für alle Editor-Flächen (docspec-editor.js in
+ * LearningModules, der Tiptap-Editor hier in lm-editor) – Namen englisch und kurz.
+ */
+export const SLASH_COMMANDS = {
+  write: {
+    what: 'karo',
+    build: (args) => {
+      const parts = args.split(/\s+/).filter(Boolean);
+      const pattern = KARO_PATTERNS.includes(parts[0]) ? parts.shift() : null;
+      const n = parseInt(parts[0], 10);
+      return { type: 'karo', lines: n > 0 ? n : 4, ...(pattern && pattern !== 'karo' ? { pattern } : {}) };
+    },
+  },
+  space: {
+    what: 'karo',
+    build: (args) => {
+      const n = parseInt(args, 10);
+      return { type: 'karo', lines: n > 0 ? n : 2, pattern: 'frei' };
+    },
+  },
+  formula: { what: 'formula', build: (args) => ({ type: 'formula', latex: args.trim() || 'U = R \\cdot I' }) },
+  code: { what: 'code', build: (args) => ({ type: 'code', code: args.trim() || '// Quelltext' }) },
+  table: {
+    what: 'table',
+    build: (args) => {
+      const m = /^(\d+)\s*x\s*(\d+)$/i.exec(args.trim());
+      const cols = m ? Math.max(1, Math.min(20, Number(m[1]))) : 3;
+      const rows = m ? Math.max(1, Math.min(100, Number(m[2]))) : 3;
+      return { type: 'table', rows: Array.from({ length: rows }, () => Array(cols).fill('')) };
+    },
+  },
+  box: { what: 'box', build: (args) => ({ type: 'box', title: args.trim() || 'Merke', blocks: [{ type: 'text', text: '…' }] }) },
+  columns: { what: 'columns', build: () => ({ type: 'columns', blocks: [{ type: 'column', blocks: [{ type: 'text', text: 'links …' }] }, { type: 'column', blocks: [{ type: 'text', text: 'rechts …' }] }] }) },
+  break: { what: 'pagebreak', build: () => ({ type: 'pagebreak' }) },
+  frame: { what: 'frame', build: () => ({ type: 'group', width: '12cm', ratio: 0.25, items: [{ text: 'Text', size: 11, x: 0, y: 0, w: 50, h: 30 }] }) },
+  solution: { what: 'solution', build: () => ({ type: 'solution', blocks: [{ type: 'text', text: 'Musterlösung' }] }) },
+  quiz: { what: 'quiz', build: () => null }, // keine Vorgabe möglich – der Editor öffnet seine Quiz-Auswahl
+};
+
+/**
+ * Zeile „/befehl …“ (ganz allein in einem Absatz) → `{ what, built }` (Kommando), `{ escaped }`
+ * (mit „//“ entwertet – wörtlich „/…“, kein Kommando) oder null (weder noch, normal weitertippen).
+ * „//write“ tippen und das Kommando bleibt Text: ein Slash entwerten reicht, wie ein Backslash sonst.
+ */
+export function parseSlashCommand(text) {
+  const raw = String(text ?? '').trim();
+  if (/^\/\//.test(raw)) return { escaped: raw.slice(1) };
+  const m = /^\/(\w+)(?:\s+([\s\S]*))?$/.exec(raw);
+  const cmd = m && SLASH_COMMANDS[m[1].toLowerCase()];
+  if (!cmd) return null;
+  return { what: cmd.what, built: cmd.build(m[2] || '') };
+}
+
+/**
  * style-Attribut einer Tabelle: Linien (CSS-Variablen; innere Tabellen setzen
  * eigene), Breite, Lage, Abstand oben/unten und Innenabstand der Zellen.
  */
@@ -1077,7 +1134,8 @@ function cellHtml(tag, c, ctx = null) {
   return `<${tag}${span('colspan', c?.colspan)}${span('rowspan', c?.rowspan)}${alignAttr}>${richText(c?.text ?? '')}${images}${inner}</${tag}>`;
 }
 
-function headingNumber(type, c) {
+/** Nächste Nummer für `type` (section/task/subtask) – zählt in `c` ([Section, Task, Subtask]) weiter; auch für den Editor (docspec-html.js). */
+export function headingNumber(type, c) {
   if (type === 'section') { c[0]++; c[1] = 0; c[2] = 0; return `${c[0]}.`; }
   if (type === 'task') { c[1]++; c[2] = 0; return `${c[0]}.${c[1]}`; }
   c[2]++;

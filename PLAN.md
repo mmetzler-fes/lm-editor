@@ -64,7 +64,7 @@ nie, sie ist nur das Datenmodell darunter.
 - [x] Schreibfeld (Block `karo`): Breite (`width`) und Muster (`pattern`: Karo, Linien, leer) – im Renderer, in der Anzeige, im Dokument-Editor von LearningModules und im Stift-Editor (Anfasser rechts/Ecke, Umschalter beim Auswählen)
 - [x] Auswahl: Kopieren, Ausschneiden, Einfügen, Duplizieren, Gruppieren/Aufheben – Tastenkürzel, Kontextmenü (Rechtsklick, langes Drücken, Knopf ⋯)
 - [x] Werkzeug „Feld“: Rechteck aufziehen, deckt ab (Karo, Linien, weiß) – z. B. auf PDF-Seiten; Ecken ziehen, kopieren, gruppieren
-- [x] Übernehmen: ausgeblendeter Text der .odt (Lösungen im Arbeitsblatt) wird ein Lösungs-Baustein statt sichtbarer Text – in `odt.ts` (LearningModules) und `src/import/odt.js` gleich, Abgleich mit `tools/sync-odt.sh`
+- [x] Übernehmen: ausgeblendeter Text der .odt (Lösungen im Arbeitsblatt) wird ein Lösungs-Baustein statt sichtbarer Text – im gemeinsamen Kern `src/import/odt-core.js`
 - [x] Übernehmen: leere Tabellen (so schreibt der Renderer Karos in die .odt) werden wieder Schreibfelder, Tabellen mit einer Zelle wieder Kästen
 
 ### 3 Standalone-Webapp
@@ -78,7 +78,7 @@ nie, sie ist nur das Datenmodell darunter.
 - [x] „In LearningModules öffnen“: die .zlm von Fenster zu Fenster an den Server der Lehrkraft (`app/send-to-lm.js`, dort `views/zlm-receive.js`), ablegen wie bei „Öffnen mit“
 - [x] Bilder aus `media/` einfügen: beim Bearbeiten als data:-Adresse, mit „Fertig“ zurück nach `media/` (`specFromView`), gleiche Bilder liegen einmal da
 - [x] Übernehmen ohne Server: `.odt` (Leser aus LearningModules nach `src/import/odt.js` übertragen, gleiche Ergebnisse geprüft; `docspec-html.js` liegt jetzt hier) und `.pdf` als Bilder der Seiten (pdf.js, weißer Rand abgeschnitten); Bilder nach `media/`; Hinweise, was nicht mitkam; gespeichert wird als neue `.zlm`
-- [ ] LearningModules liest `.odt` ebenfalls mit `src/import/odt.js` im Browser (der Server wandelt nur noch .docx um) – dann entfällt `odt.ts`
+- [x] Ein .odt-Leser für beide: `src/import/odt-core.js` ohne imports; der Browser packt mit fflate aus (`src/import/odt.js`), LearningModules auf dem Server mit adm-zip (`odt.ts` lädt den Kern). Die frühere Kopie und `tools/sync-odt.sh` entfallen (2026-11-10)
 - [x] installierbare Web-App (manifest.webmanifest, „Öffnen mit“ für .zlm/.odt/.odp/.odg/.pdf über launchQueue), offline über Service Worker (sw.js: online immer aktuell, ohne Netz aus dem Cache), veröffentlicht über GitHub Pages (.github/workflows/pages.yml)
 - [x] Browser-Druck mit Druck-CSS als Rückfall ohne Renderer – erledigt mit 🖨 im Stift-Editor (Phase 5)
 - [x] Übernehmen: `.xopp` (Xournal++, `src/import/xopp.js`): Striche, Textfelder und Bilder als Stift-Ebene – im Stift-Editor und in LearningModules

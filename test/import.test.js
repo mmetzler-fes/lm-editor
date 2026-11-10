@@ -19,7 +19,9 @@ test('.odt → HTML: Überschriften, Tabellen, Bild; Titel aus dem Dateinamen, o
   const { title, html, stats, warnings } = odtToHtml(odt, 'erweitert.odt');
   assert.equal(title, 'erweitert');
   assert.equal(odtToHtml(odt, '').title, 'Erweiterte Blöcke');
-  assert.deepEqual(stats, { headings: 2, paragraphs: 23, tables: 4, images: 1, drawings: 0, exported: 0 });
+  // Eine der vier Tabellen ist randlos mit Text neben dem Bild – die wird zu Spalten (wie auf dem Server).
+  assert.deepEqual(stats, { headings: 2, paragraphs: 23, tables: 3, images: 1, drawings: 0, exported: 0 });
+  assert.match(html, /<table class="ws-columns">/);
   assert.match(html, /<h2/);
   assert.match(html, /<img src="data:image\/png;base64,/);
   assert.deepEqual(warnings, []);

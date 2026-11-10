@@ -5,6 +5,7 @@
 
 import { KARO_MAX_WIDTH_CM, latexToMathml } from '../doc/docspec.js';
 import { escapeAttr, escapeHtml } from '../util/dom.js';
+import { mathmlToLatex, mathmlForEditing, looksLikeMathml } from '../doc/mathml-latex.js';
 
 const TITLES = { karo: 'Schreibfeld', formula: 'Formel', quiz: 'Quiz', group: 'Zeichenrahmen', spacer: 'Platz' };
 const SCALES = [0.5, 0.6, 0.7, 0.8, 0.9, 1, 1.1, 1.25, 1.5];
@@ -118,8 +119,11 @@ export function openBlockDialog(start, { apply, remove, cancel = () => {} }) {
       <label>Breite <input type="number" name="width" min="1" max="${KARO_MAX_WIDTH_CM}" step="0.5" placeholder="ganz" value="${escapeAttr(parseFloat(block.width) || '')}"> cm</label>
       <label>Muster <select name="pattern">${PATTERNS.map(([v, l]) => `<option value="${v}" ${v === (block.pattern || 'karo') ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
     </div>` : formula ? `<div class="ds-field-form ds-formula-form">
-      <label class="ds-fx-label">Formel (LaTeX) <textarea name="latex" class="ds-fx-tex" rows="3" spellcheck="false" placeholder="z. B. I = \\frac{U}{R}">${escapeHtml(block.latex)}</textarea></label>
+      <label class="ds-fx-label">Formel <select class="ds-fx-mode" title="Gespeichert wird immer LaTeX"><option value="latex">LaTeX</option><option value="mathml">MathML</option></select>
+        <textarea class="ds-fx-tex" rows="3" spellcheck="false"></textarea></label>
+      <input type="hidden" name="latex" value="${escapeAttr(block.latex)}">
       <div class="ds-fx-preview docspec" aria-live="polite"></div>
+      <span class="hint ds-fx-hint"></span>
       <label>Lage <select name="align"><option value="">mittig</option><option value="left" ${block.align === 'left' ? 'selected' : ''}>links</option></select></label>
     </div>` : block.type === 'quiz' ? `<div class="ds-field-form">
       <label>Größe im Blatt <select name="scale">${SCALES.map((v) => `<option value="${v}" ${v === (typeof block.scale === 'number' ? block.scale : 1) ? 'selected' : ''}>${Math.round(v * 100)} %</option>`).join('')}</select></label>
@@ -140,19 +144,59 @@ export function openBlockDialog(start, { apply, remove, cancel = () => {} }) {
   const form = overlay.querySelector('form');
   overlay.querySelector('[data-cancel]').addEventListener('click', () => { close(); cancel(); });
   overlay.querySelector('[data-del]').addEventListener('click', () => { remove(); close(); });
+  // Formel: Eingabe in LaTeX oder MathML (Wahl je Gerät); gespeichert wird immer LaTeX (verstecktes Feld).
+  let fxError = '';
   if (formula) {
-    const tex = form.elements.latex;
+    const tex = overlay.querySelector('.ds-fx-tex');
+    const mode = overlay.querySelector('.ds-fx-mode');
+    const hint = overlay.querySelector('.ds-fx-hint');
+    const stored = overlay.querySelector('input[name=latex]');
     const preview = overlay.querySelector('.ds-fx-preview');
+    try { mode.value = localStorage.getItem('lm_fx_input') === 'mathml' ? 'mathml' : 'latex'; } catch (_) { mode.value = 'latex'; }
+    const HINTS = {
+      latex: 'Schreibweise wie in LaTeX: \\frac{a}{b}, \\sqrt{x}, x^2, U_{ges}, \\cdot, \\pi, \\Omega, \\text{V}. Eingefügtes MathML wird umgewandelt.',
+      mathml: 'MathML, z. B. aus Word, LibreOffice oder einer Webseite kopiert. Gespeichert wird LaTeX – die Vorschau zeigt, was ankommt.',
+    };
     const show = () => {
-      try { preview.innerHTML = `<div class="ds-formula">${latexToMathml(tex.value)}</div>`; }
+      if (fxError) { preview.innerHTML = `<p class="ds-error">${escapeHtml(fxError)}</p>`; return; }
+      try { preview.innerHTML = `<div class="ds-formula">${latexToMathml(stored.value)}</div>`; }
       catch (err) { preview.innerHTML = `<p class="ds-error">${escapeHtml(err.message)}</p>`; }
     };
-    tex.addEventListener('input', show);
+    const fill = () => {
+      hint.textContent = HINTS[mode.value];
+      tex.placeholder = mode.value === 'mathml' ? '<math><mi>I</mi><mo>=</mo><mfrac><mi>U</mi><mi>R</mi></mfrac></math>' : 'z. B. I = \\frac{U}{R}';
+      tex.rows = mode.value === 'mathml' ? 5 : 3;
+      if (mode.value === 'latex') { tex.value = stored.value; return; }
+      try { tex.value = stored.value.trim() ? mathmlForEditing(latexToMathml(stored.value)) : ''; } catch (_) { tex.value = ''; }
+    };
+    tex.addEventListener('input', () => {
+      fxError = '';
+      const value = tex.value;
+      if (mode.value === 'mathml' || looksLikeMathml(value)) {
+        if (!value.trim()) stored.value = '';
+        else {
+          try {
+            stored.value = mathmlToLatex(value);
+            if (mode.value === 'latex') tex.value = stored.value; // eingefügtes MathML steht danach als LaTeX da
+          } catch (err) { fxError = err.message; }
+        }
+      } else stored.value = value;
+      show();
+    });
+    mode.addEventListener('change', () => {
+      try { localStorage.setItem('lm_fx_input', mode.value); } catch (_) { /* egal */ }
+      fxError = '';
+      fill();
+      show();
+      tex.focus();
+    });
+    fill();
     show();
   }
-  form.querySelector('input, textarea, select')?.focus();
+  (formula ? overlay.querySelector('.ds-fx-tex') : form.querySelector('input:not([type=hidden]), textarea, select'))?.focus();
   form.addEventListener('submit', (e) => {
     e.preventDefault();
+    if (fxError) return; // MathML lässt sich nicht lesen – die Vorschau zeigt den Grund
     const values = Object.fromEntries(new FormData(form).entries());
     apply(applyBlockFields(block, values));
     close();

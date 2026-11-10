@@ -805,9 +805,43 @@ class DrawingSvg {
         const defs = [...this.markers].map(([color, id]) => `<marker id="${id}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">` +
             `<path d="M0,0L10,5L0,10z" fill="${esc(color)}"/></marker>`).join('');
         const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${x} ${y} ${w} ${h}" width="${w}" height="${h}">` +
-            (defs ? `<defs>${defs}</defs>` : '') + this.parts.join('') + '</svg>';
+            (defs ? `<defs>${defs}</defs>` : '') + fitTextToEdges(this.parts.join('')) + '</svg>';
         return `<img src="data:image/svg+xml;base64,${utf8Base64(svg)}" alt="Zeichnung" width="${w}">`;
     }
+}
+/**
+ * Eine Zeile darf nicht über die nächste senkrechte Kante rechts von ihr laufen (Linie, Rahmen,
+ * Tabellenrand auf ihrer Höhe). Solche Zeilen bekommen `textLength` – der Browser setzt sie dann
+ * genau so breit, mit welcher Schrift auch immer (Ersatzschrift, PDF-Import mit zu breiten
+ * Rahmen). Müsste eine Zeile um mehr als 30 % schrumpfen, liegt sie mit Absicht auf der Linie
+ * (Beschriftung) und bleibt, wie sie ist. Gedrehte Teile (transform) zählen nicht mit.
+ */
+function fitTextToEdges(body) {
+    const edges = [];
+    for (const m of body.matchAll(/<line x1="([\d.-]+)" y1="([\d.-]+)" x2="([\d.-]+)" y2="([\d.-]+)"([^>]*)\/>/g)) {
+        if (/transform=/.test(m[5]) || Math.abs(+m[1] - +m[3]) > 1.5 || Math.abs(+m[2] - +m[4]) < 10) continue;
+        edges.push({ x: +m[1], y1: Math.min(+m[2], +m[4]), y2: Math.max(+m[2], +m[4]) });
+    }
+    for (const m of body.matchAll(/<rect x="([\d.-]+)" y="([\d.-]+)" width="([\d.]+)" height="([\d.]+)"([^>]*)\/>/g)) {
+        if (/transform=/.test(m[5]) || /stroke="none"/.test(m[5]) || +m[4] < 10) continue;
+        edges.push({ x: +m[1], y1: +m[2], y2: +m[2] + +m[4] }, { x: +m[1] + +m[3], y1: +m[2], y2: +m[2] + +m[4] });
+    }
+    if (!edges.length) return body;
+    return body.replace(/<text x="([\d.-]+)" y="([\d.-]+)"([^>]*)>([^<]*)<\/text>/g, (all, xs, ys, attrs, text) => {
+        if (/transform=|textLength=/.test(attrs) || !/text-anchor="start"/.test(attrs)) return all;
+        const size = Number(/font-size="([\d.]+)"/.exec(attrs)?.[1] || 0);
+        if (!size || !text.trim()) return all;
+        const x = +xs; const y = +ys;
+        const plain = text.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'").replace(/&amp;/g, '&');
+        const w = textWidth(plain.replace(/ +$/, ''), size, /font-weight="bold"/.test(attrs));
+        // Nächste Kante rechts vom Zeilenanfang auf Höhe der Zeile (Grundlinie bis Oberlänge)
+        const right = edges.filter((e) => e.x > x + 2 && e.y1 < y && e.y2 > y - size * 0.7).reduce((m, e) => Math.min(m, e.x), Infinity);
+        if (!Number.isFinite(right)) return all;
+        const room = right - x - 3;
+        const length = Math.min(w, room);
+        if (length < 0.7 * w) return all;
+        return `<text x="${xs}" y="${ys}"${attrs} textLength="${length.toFixed(1)}" lengthAdjust="spacingAndGlyphs">${text}</text>`;
+    });
 }
 /** So lang wird eine Überschrift nicht – ein Absatz mit Überschriften-Vorlage (sieht im Dokument aus wie Text). */
 const MAX_HEADING_CHARS = 200;
@@ -953,6 +987,79 @@ export function odtPackageToHtml(pkg, fileName = '', opts = {}) {
         const beside = anchored(frame) && frame.attrs['svg:x'] !== undefined && width > 0 && width < 380;
         return beside ? `${BESIDE_OPEN}${html}${BESIDE_CLOSE}` : html;
     };
+    /** Lage und Größe einer Form oder eines Rahmens in px (Drehungen nicht nachgerechnet). */
+    const extentOf = (n) => {
+        if (n.name === 'draw:g') {
+            const kids = elements(n).map(extentOf).filter(Boolean);
+            return kids.length ? unionOf(kids) : null;
+        }
+        if (n.name === 'draw:line' || n.name === 'draw:connector') {
+            const x1 = toPx(n.attrs['svg:x1']) ?? 0; const x2 = toPx(n.attrs['svg:x2']) ?? 0;
+            const y1 = toPx(n.attrs['svg:y1']) ?? 0; const y2 = toPx(n.attrs['svg:y2']) ?? 0;
+            return { x: Math.min(x1, x2), y: Math.min(y1, y2), w: Math.abs(x2 - x1), h: Math.abs(y2 - y1) };
+        }
+        const x = toPx(n.attrs['svg:x']); const y = toPx(n.attrs['svg:y']);
+        const w = toPx(n.attrs['svg:width']) ?? toPx(n.attrs['fo:min-width']);
+        const h = toPx(n.attrs['svg:height']) ?? toPx(n.attrs['fo:min-height']);
+        return x === undefined || y === undefined || !w ? null : { x, y, w, h: h ?? 0 };
+    };
+    const unionOf = (list) => {
+        const x = Math.min(...list.map((b) => b.x)); const y = Math.min(...list.map((b) => b.y));
+        return { x, y, w: Math.max(...list.map((b) => b.x + b.w)) - x, h: Math.max(...list.map((b) => b.y + b.h)) - y };
+    };
+    const overlap = (a, b) => Math.max(0, Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x)) * Math.max(0, Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y));
+    /**
+     * Große Textrahmen (Fließtext, nicht Beschriftung) aus einer Zeichnung lösen, wenn sie
+     * neben, über oder unter ihr liegen statt auf ihr: Dann werden sie echter Text – neben
+     * der Zeichnung als Spalte, darüber/darunter als eigener Absatz. In einer Zeichnung wäre
+     * der Text fest umbrochen und liefe mit einer anderen Schrift über den Rand; so bricht er
+     * selbst um und bleibt editierbar. Liefert HTML oder null (dann alles wie bisher zeichnen).
+     */
+    const MIN_FREE_TEXT = 60;
+    const splitTextFrames = (frames, shapes) => {
+        // Kandidaten auch in Gruppen (draw:g): Folien und Tafelbilder fassen Text und Zeichnung oft zusammen.
+        const isCandidate = (f) => f.name === 'draw:frame' && isTextFrame(f) && textOf(f).trim().length >= MIN_FREE_TEXT;
+        const inGroups = (list) => list.flatMap((n) => (n.name === 'draw:g' ? inGroups(elements(n)) : isCandidate(n) ? [n] : []));
+        const text = [...frames.filter(isCandidate), ...inGroups(shapes)]
+            .map((f) => ({ f, b: extentOf(f) })).filter((t) => t.b && t.b.h > 0);
+        if (!text.length) return null;
+        const taken = new Set(text.map((t) => t.f));
+        // Gruppen ohne die herausgelösten Rahmen (flache Kopie, Kinder gefiltert).
+        const without = (n) => (n.name === 'draw:g'
+            ? { ...n, children: n.children.filter((c) => typeof c === 'string' || !taken.has(c)).map((c) => (typeof c === 'string' ? c : without(c))) }
+            : n);
+        const others = [...frames.filter((f) => !taken.has(f)), ...shapes.map(without)]
+            .filter((n) => n.name !== 'draw:g' || elements(n).length);
+        const ext = others.map(extentOf).filter(Boolean);
+        if (!ext.length) return null;
+        const R = unionOf(ext);
+        const free = text.filter((t) => overlap(t.b, R) <= 0.1 * t.b.w * t.b.h);
+        if (!free.length) return null;
+        // Rahmen, die auf der Zeichnung liegen, bleiben darin (an ihrer Stelle in der Stapelfolge).
+        const keep = new Set(text.filter((t) => !free.includes(t)).map((t) => t.f));
+        const restore = (orig) => (orig.name === 'draw:g'
+            ? { ...orig, children: orig.children.filter((c) => typeof c === 'string' || !taken.has(c) || keep.has(c)).map((c) => (typeof c === 'string' ? c : restore(c))) }
+            : orig);
+        const img = drawing([...frames.filter((f) => !taken.has(f) || keep.has(f)), ...shapes.map(restore)].filter((n) => n.name !== 'draw:g' || elements(n).length));
+        const html = (t) => {
+            const box = elements(t.f).find((x) => x.name === 'draw:text-box');
+            const inner = blocks(box);
+            return styles.graphic(t.f.attrs['draw:style-name'], 'border') === 'none' ? inner : `<div class="ws-box">${inner}</div>`;
+        };
+        const items = [{ b: R, html: img ? `<p>${img}</p>` : '' }, ...free.map((t) => ({ b: t.b, html: html(t) }))];
+        // Neben der Zeichnung: senkrecht überlappend → Spalten von links nach rechts; sonst übereinander.
+        const vOverlap = (a, b) => Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y) > 0.25 * Math.min(a.h || 1, b.h || 1);
+        const beside = items.filter((i) => i === items[0] || vOverlap(i.b, R)).sort((a, b) => a.b.x - b.b.x);
+        const stacked = items.filter((i) => !beside.includes(i));
+        let row = '';
+        if (beside.length > 1) {
+            const total = beside.reduce((n, i) => n + i.b.w, 0) || 1;
+            const widths = beside.map((i) => `<col style="width:${((17 * i.b.w) / total).toFixed(1)}cm">`).join('');
+            row = `<table class="ws-columns"><colgroup>${widths}</colgroup><tbody><tr>${beside.map((i) => `<td>${i.html || '<p><br></p>'}</td>`).join('')}</tr></tbody></table>`;
+        } else row = items[0].html;
+        const rowItem = { b: unionOf(beside.map((i) => i.b)), html: row };
+        return [rowItem, ...stacked].sort((a, b) => a.b.y - b.b.y).map((i) => i.html).join('');
+    };
     /** Frei verankert (am Absatz, Zeichen, Seite) statt wie ein Buchstabe im Text. */
     const anchored = (c) => !!c.attrs['text:anchor-type'] && c.attrs['text:anchor-type'] !== 'as-char';
     const isImageFrame = (f) => elements(f).some((c) => c.name === 'draw:image');
@@ -1081,6 +1188,11 @@ export function odtPackageToHtml(pkg, fileName = '', opts = {}) {
         const compose = shapes.length > 0 ||
             (frames.length > 1 && frames.some(isTextFrame) && frames.some(isImageFrame));
         if (compose) {
+            const split = splitTextFrames(frames, shapes);
+            if (split) {
+                out.push({ block: split });
+                return out;
+            }
             const img = drawing([...frames, ...shapes]);
             if (img)
                 out.push({ block: `<p>${img}</p>` });

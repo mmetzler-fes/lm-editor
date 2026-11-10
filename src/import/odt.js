@@ -5,9 +5,9 @@
 // lädt. Hier steht nur das Auspacken; der Import selbst gehört in den Kern.
 
 import { unzipSync, strFromU8 } from '../vendor/fflate/fflate.js';
-import { odtPackageToHtml, wrapLine, usableTitle } from './odt-core.js';
+import { odtPackageToHtml, wrapLine, usableTitle, textWidth } from './odt-core.js';
 
-export { wrapLine, usableTitle };
+export { wrapLine, usableTitle, textWidth };
 
 // Gegen ZIP-Bomben: höchstens so viel auspacken.
 const MAX_ENTRIES = 5000;

@@ -129,7 +129,7 @@ for (const [chars, w] of [
         ARIAL_W[ch] = w;
 const SVG_FONT = "Arial, Helvetica, 'Liberation Sans', Arimo, sans-serif";
 /** Breite in px – genug, um wie LibreOffice umzubrechen. Unbekannte Zeichen (Griechisch …) ≈ 0,6 em. */
-function textWidth(s, size, bold) {
+export function textWidth(s, size, bold) {
     let em = 0;
     for (const ch of s)
         em += (ARIAL_W[ch] ?? (/[A-Z]/.test(ch) ? 667 : 600)) / 1000;

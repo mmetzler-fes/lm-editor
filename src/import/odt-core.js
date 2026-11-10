@@ -841,6 +841,15 @@ export function odtPackageToHtml(pkg, fileName = '', opts = {}) {
     const stylesXml = read('styles.xml');
     const stylesRoot = stylesXml ? parseXml(stylesXml) : undefined;
     styles.read(stylesRoot);
+    // Nummerierte Gliederung (Extras → Kapitelnummerierung, auch die Druckvorlage von
+    // LearningModules): Ebenen mit Nummernformat. Eine Überschrift dieser Ebene ist dann
+    // Abschnitt (1.), Aufgabe (1.1) bzw. Teilaufgabe (1.1.1) – außer als Listenkopf
+    // (text:is-list-header), so schreibt LibreOffice Überschriften ohne Nummer.
+    const outlineNumbered = {};
+    const outlineStyle = stylesRoot ? find(stylesRoot, 'text:outline-style') : undefined;
+    for (const l of outlineStyle ? elements(outlineStyle) : []) {
+        if (l.name === 'text:outline-level-style' && (l.attrs['style:num-format'] || '').trim()) outlineNumbered[Number(l.attrs['text:level'])] = true;
+    }
     styles.read(find(content, 'office:automatic-styles'));
     const slideBody = find(content, 'office:presentation') ?? find(content, 'office:drawing');
     const body = find(content, 'office:text') ?? slideBody;
@@ -1474,7 +1483,13 @@ export function odtPackageToHtml(pkg, fileName = '', opts = {}) {
                 const tag = c.name === 'text:h' && textOf(c).trim().length <= MAX_HEADING_CHARS ? headingTag(c)
                     : styles.inherits(c.attrs['text:style-name'], /^Title$/i) ? 'h2'
                         : styles.inherits(c.attrs['text:style-name'], /^Subtitle$/i) ? 'h3' : 'p';
-                const rawHtml = paragraph(c, tag);
+                const outlineLevel = Number(c.attrs['text:outline-level'] || 1);
+                const numbered = c.name === 'text:h' && /^h[2-4]$/.test(tag) && outlineLevel <= 3
+                    && outlineNumbered[outlineLevel] && c.attrs['text:is-list-header'] !== 'true';
+                const plainHtml = paragraph(c, tag);
+                const rawHtml = numbered
+                    ? plainHtml.replace(/^<(h[2-4])(?=[ >])/, `<$1 data-ds="${['section', 'task', 'subtask'][outlineLevel - 1]}"`)
+                    : plainHtml;
                 const html = c.name === 'text:p' && tag === 'p' ? recognizeParagraphPattern(c, rawHtml) : rawHtml;
                 // Ausgeblendet (Lösung im Arbeitsblatt): bleibt verborgen – als Lösung, nicht als Text.
                 if (styles.prop(c.attrs['text:style-name'], 'hidden')) {

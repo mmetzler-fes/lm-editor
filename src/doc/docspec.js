@@ -69,12 +69,17 @@ const paddingOk = (v) => typeof v === 'number' && v >= 0 && v <= 1;
  * Editor seine eigene Auswahl). Eine Stelle für alle Editor-Flächen (docspec-editor.js in
  * LearningModules, der Tiptap-Editor hier in lm-editor) – Namen englisch und kurz.
  */
+// Englische Namen für die Muster im Slash-Command „/write“ – gespeichert wird weiter der deutsche Wert.
+const KARO_PATTERN_ALIASES = { grid: 'karo', lines: 'linien', blank: 'leer', invisible: 'frei' };
+
 export const SLASH_COMMANDS = {
   write: {
     what: 'karo',
     build: (args) => {
       const parts = args.split(/\s+/).filter(Boolean);
-      const pattern = KARO_PATTERNS.includes(parts[0]) ? parts.shift() : null;
+      const word = parts[0]?.toLowerCase();
+      const pattern = KARO_PATTERNS.includes(word) ? word : KARO_PATTERN_ALIASES[word] || null;
+      if (pattern) parts.shift();
       const n = parseInt(parts[0], 10);
       return { type: 'karo', lines: n > 0 ? n : 4, ...(pattern && pattern !== 'karo' ? { pattern } : {}) };
     },

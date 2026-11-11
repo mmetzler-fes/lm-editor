@@ -24,6 +24,7 @@ const CORE = [
   'src/doc/pm-markdown.js',
   'src/doc/pm-schema.js',
   'src/doc/pm-tiptap.js',
+  'src/doc/symbol-font.js',
   'src/editor/block-dialog.js',
   'src/editor/paragraph-dialog.js',
   'src/editor/pm-editor.js',

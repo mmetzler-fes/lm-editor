@@ -16,6 +16,7 @@
  * Feste Block-IDs (ids.js) reisen als data-id mit – an ihnen hängen die
  * Striche der Schüler.
  */
+import { fixSymbolChars } from './symbol-font.js';
 import { richText, renderDocSpecHtml, tableColgroup, tableAllFixed, firstColumnCells, tableRowAttr, tableLineStyle, TABLE_LINE_STYLES, TEXT_COLORS, HIGHLIGHTS, FONT_SIZES, BASE_FONT_PT, LINE_HEIGHTS, LIST_MARKERS, LIST_NUMBERINGS, LINE_COLORS, CELL_BACKGROUNDS, CELL_VALIGNS, paraStyle, INLINE_MATH_SOURCE, CODE_SIZES, CODE_SIZE_PT, headingNumber } from './docspec.js';
 import { isBlockId } from './ids.js';
 
@@ -572,7 +573,8 @@ function blocksOf(parent, warnings, used = new Set()) {
 
 /** HTML-Text → { spec, warnings } */
 export function htmlToDocSpec(html) {
-  const doc = new DOMParser().parseFromString(`<body>${html || ''}</body>`, 'text/html');
+  // Zeichen aus Words Symbolschrift (U+F057 …) gleich als echte Zeichen (Ω …) übernehmen.
+  const doc = new DOMParser().parseFromString(`<body>${fixSymbolChars(html || '')}</body>`, 'text/html');
   const warnings = [];
   const content = blocksOf(doc.body, warnings);
   return { spec: { content }, warnings: [...new Set(warnings)] };

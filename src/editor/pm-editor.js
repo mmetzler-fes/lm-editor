@@ -192,6 +192,7 @@ function atomView(host) {
       if (what === 'edit') host.editBlock?.(blockOfNode(current), applyAt(editor, getPos));
       else if (what === 'del') editor.commands.deleteSelection();
       else if (what === 'dup') duplicate(editor);
+      else if (what === 'copy') void host.copyImage(blockOfNode(current));
       else moveBlock(editor, what === 'up' ? -1 : 1);
     };
     dom.addEventListener('dblclick', (e) => { e.preventDefault(); act('edit'); });
@@ -209,7 +210,8 @@ function atomView(host) {
         bar = document.createElement('div');
         bar.className = 'ds-wbar';
         bar.contentEditable = 'false';
-        for (const [what, label, title] of BAR) {
+        const copy = current.type.name === 'image' && host.copyImage ? [['copy', '📋', 'In die Zwischenablage kopieren (z. B. für LibreOffice Draw)']] : [];
+        for (const [what, label, title] of [...BAR.slice(0, 3), ...copy, ...BAR.slice(3)]) {
           const b = document.createElement('button');
           b.type = 'button';
           b.textContent = label;
@@ -513,7 +515,7 @@ const MATH_END = new RegExp(`(?<![\\\\$])${INLINE_MATH_SOURCE}$`);
 
 /**
  * Editor in `element` öffnen. `host`: { onChange(spec), editBlock(block, apply),
- * fullWidthCm(), onWarnings(list), onSelection() }.
+ * fullWidthCm(), onWarnings(list), onSelection(), copyImage(block) }.
  */
 export function createPmEditor(element, spec, host = {}) {
   const nodeViews = Object.fromEntries(ATOMS.map((t) => [t, atomView(host)]));

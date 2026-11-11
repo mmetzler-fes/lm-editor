@@ -152,6 +152,8 @@ export function mountTiptapSurface(box, host) {
     fullWidthCm: host.fullWidthCm,
     onWarnings: (list) => host.status(`⚠️ ${list.join(' · ')}`),
     imageFromFile: (file) => host.imageFromFile(file),
+    // 📋 in der Leiste über einem Bild – nur, wo der Gastgeber Bilder kopieren kann.
+    copyImage: window.appImageClipboard ? copyImage : null,
   });
   pm.el = el;
 

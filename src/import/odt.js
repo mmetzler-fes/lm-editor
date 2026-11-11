@@ -4,7 +4,8 @@
 // Kern src/import/odt-core.js – denselben, den LearningModules auf dem Server
 // lädt. Hier steht nur das Auspacken; der Import selbst gehört in den Kern.
 
-import { unzipSync, strFromU8 } from '../vendor/fflate/fflate.js';
+import { unzipSync, strFromU8, strToU8 } from '../vendor/fflate/fflate.js';
+import { fixSymbolChars } from '../doc/symbol-font.js';
 import { odtPackageToHtml, wrapLine, usableTitle, textWidth } from './odt-core.js';
 
 export { wrapLine, usableTitle, textWidth };
@@ -41,12 +42,15 @@ export function odtToHtml(buffer, fileName = '', opts = {}) {
         throw new Error('Die Datei ist kein gültiges OpenDocument (.odt).');
     }
     const pkg = {
-        text: (name) => (files[name] ? strFromU8(files[name]) : undefined),
+        // Zeichen aus Words Symbolschrift (U+F057 …) gleich als echte Zeichen (Ω …) – auch im
+        // Text der Zeichnungen, die odt-core als SVG baut.
+        text: (name) => (files[name] ? fixSymbolChars(strFromU8(files[name])) : undefined),
         file: (name) => (files[name] ? { size: files[name].length, get base64() { return b64(files[name]); } } : undefined),
     };
     let drawings = opts.drawings;
     if (drawings) {
-        drawings = new Map([...drawings].map(([k, d]) => [k, { widthMm: d.widthMm, svgBase64: d.svgBase64 ?? b64(d.svg) }]));
+        const svgBytes = (d) => d.svg ?? Uint8Array.from(atob(d.svgBase64), (c) => c.charCodeAt(0));
+        drawings = new Map([...drawings].map(([k, d]) => [k, { widthMm: d.widthMm, svgBase64: b64(strToU8(fixSymbolChars(strFromU8(svgBytes(d))))) }]));
     }
     return odtPackageToHtml(pkg, fileName, { ...opts, drawings });
 }

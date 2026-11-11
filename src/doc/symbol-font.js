@@ -6,7 +6,10 @@
  *
  * Grundlage ist die Adobe-Symbol-Kodierung. Ausnahmen: U+F0E0 und U+F0E8 sind Words
  * Autokorrektur-Pfeile aus Wingdings („-->“ → „→“, „==>“ → „➔“) – in Symbol wären es ◊ und ⎠,
- * die im Fließtext praktisch nie vorkommen. U+F0A7 ist der Wingdings-Aufzählungspunkt ▪.
+ * die im Fließtext praktisch nie vorkommen. Ebenso aus Wingdings: die Aufzählungszeichen
+ * U+F0A7 ▪, U+F0D8 ➢ (in Symbol ¬) sowie U+F0FC ✓ und U+F0FB ✗.
+ *
+ * Hat keine imports: Der Server lädt die Datei ebenso (src/core/interchange/odt/odt.ts).
  */
 
 const GREEK_UPPER = 'ΑΒΧΔΕΦΓΗΙϑΚΛΜΝΟΠΘΡΣΤΥςΩΞΨΖ'; // A … Z
@@ -24,9 +27,9 @@ const SYMBOL = {
   0xba: '≡', 0xbb: '≈', 0xbc: '…', 0xbf: '↵',
   0xc0: 'ℵ', 0xc1: 'ℑ', 0xc2: 'ℜ', 0xc3: '℘', 0xc4: '⊗', 0xc5: '⊕', 0xc6: '∅', 0xc7: '∩', 0xc8: '∪',
   0xc9: '⊃', 0xca: '⊇', 0xcb: '⊄', 0xcc: '⊂', 0xcd: '⊆', 0xce: '∈', 0xcf: '∉',
-  0xd0: '∠', 0xd1: '∇', 0xd2: '®', 0xd3: '©', 0xd4: '™', 0xd5: '∏', 0xd6: '√', 0xd7: '·', 0xd8: '¬', 0xd9: '∧', 0xda: '∨',
+  0xd0: '∠', 0xd1: '∇', 0xd2: '®', 0xd3: '©', 0xd4: '™', 0xd5: '∏', 0xd6: '√', 0xd7: '·', 0xd8: '➢', 0xd9: '∧', 0xda: '∨',
   0xdb: '⇔', 0xdc: '⇐', 0xdd: '⇑', 0xde: '⇒', 0xdf: '⇓',
-  0xe0: '→', 0xe1: '〈', 0xe5: '∑', 0xe8: '➔', 0xf1: '〉', 0xf2: '∫',
+  0xe0: '→', 0xe1: '〈', 0xe5: '∑', 0xe8: '➔', 0xf1: '〉', 0xf2: '∫', 0xfb: '✗', 0xfc: '✓',
 };
 for (let i = 0; i < 10; i++) SYMBOL[0x30 + i] = String(i);
 for (let i = 0; i < 26; i++) {

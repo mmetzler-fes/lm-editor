@@ -64,3 +64,23 @@ export function fixSymbolCharsInSpec(value, stats = { count: 0 }) {
   };
   return walk(value, '');
 }
+
+/**
+ * SVG einer Zeichnung, wie LibreOffice sie exportiert: Jedes Zeichen in Symbolschrift steht in
+ * einem eigenen <tspan font-family="Symbol" textLength="…">. Ohne die Schrift auf dem Gerät
+ * zöge der Browser den Ersatz auf diese Breite (ein Malpunkt würde zum Strich). Übersetzte
+ * Zeichen bekommen deshalb eine vorhandene Schrift und keine erzwungene Breite; danach
+ * fixSymbolChars für den Rest.
+ */
+export function fixSymbolSvg(svg) {
+  const s = String(svg ?? '');
+  if (!/[\uF020-\uF0FF]/.test(s)) return s;
+  const tspan = /<tspan\b([^>]*)>([^<]*[\uF020-\uF0FF][^<]*)<\/tspan>/g;
+  return fixSymbolChars(s.replace(tspan, (m, attrs, text) => {
+    if (!/font-family="[^"]*Symbol/i.test(attrs)) return m;
+    const clean = attrs
+      .replace(/font-family="[^"]*"/i, 'font-family="\'Times New Roman\', \'Liberation Serif\', serif"')
+      .replace(/\s(textLength|lengthAdjust)="[^"]*"/g, '');
+    return `<tspan${clean}>${text}</tspan>`;
+  }));
+}

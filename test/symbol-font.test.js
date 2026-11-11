@@ -23,3 +23,10 @@ test('Symbolschrift in einer DocSpec: zählt, lässt Code und IDs', () => {
   assert.equal(out.content[2].items[0], 'η = 0,8');
   assert.equal(stats.count, 2);
 });
+
+test('SVG von LibreOffice: Symbol-tspan ohne erzwungene Breite, mit vorhandener Schrift', async () => {
+  const { fixSymbolSvg } = await import('../src/doc/symbol-font.js');
+  const svg = `<text><tspan font-family="Symbol" font-size="404px" lengthAdjust="spacingAndGlyphs" textLength="269" fill="rgb(0,0,0)">${P(0xd7)}</tspan><tspan font-family="Arial" textLength="50">Ui</tspan></text>`;
+  const out = fixSymbolSvg(svg);
+  assert.equal(out, `<text><tspan font-family="'Times New Roman', 'Liberation Serif', serif" font-size="404px" fill="rgb(0,0,0)">·</tspan><tspan font-family="Arial" textLength="50">Ui</tspan></text>`);
+});

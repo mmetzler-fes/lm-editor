@@ -5,7 +5,7 @@
 // lädt. Hier steht nur das Auspacken; der Import selbst gehört in den Kern.
 
 import { unzipSync, strFromU8, strToU8 } from '../vendor/fflate/fflate.js';
-import { fixSymbolChars } from '../doc/symbol-font.js';
+import { fixSymbolChars, fixSymbolSvg } from '../doc/symbol-font.js';
 import { odtPackageToHtml, wrapLine, usableTitle, textWidth } from './odt-core.js';
 
 export { wrapLine, usableTitle, textWidth };
@@ -50,7 +50,7 @@ export function odtToHtml(buffer, fileName = '', opts = {}) {
     let drawings = opts.drawings;
     if (drawings) {
         const svgBytes = (d) => d.svg ?? Uint8Array.from(atob(d.svgBase64), (c) => c.charCodeAt(0));
-        drawings = new Map([...drawings].map(([k, d]) => [k, { widthMm: d.widthMm, svgBase64: b64(strToU8(fixSymbolChars(strFromU8(svgBytes(d))))) }]));
+        drawings = new Map([...drawings].map(([k, d]) => [k, { widthMm: d.widthMm, svgBase64: b64(strToU8(fixSymbolSvg(strFromU8(svgBytes(d))))) }]));
     }
     return odtPackageToHtml(pkg, fileName, { ...opts, drawings });
 }

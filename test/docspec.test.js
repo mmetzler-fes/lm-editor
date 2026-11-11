@@ -460,3 +460,10 @@ describe('Tabellen: Breite wie im Druck', () => {
     expect(ds.equalWidths(7)).toEqual(Array(7).fill('2.3cm')); // abgerundet: nie breiter als die Zeile
   });
 });
+
+describe('Zählung', () => {
+  it('Blatt beginnt ohne Abschnitt – obere Ebene zählt ab 1, nicht 0', () => {
+    const c = [0, 0, 0];
+    expect(['subtask', 'task', 'subtask', 'section', 'task'].map((t) => ds.headingNumber(t, c))).toEqual(['1.1.1', '1.2', '1.2.1', '2.', '2.1']);
+  });
+});

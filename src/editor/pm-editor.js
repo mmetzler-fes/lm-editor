@@ -9,7 +9,7 @@ import {
   history, undo, redo, gapCursor, dropCursor, tableEditing, goToNextCell, isInTable,
   addRowBefore, addRowAfter, addColumnBefore, addColumnAfter, deleteRow, deleteColumn, deleteTable, mergeCells, splitCell, TableMap, CellSelection,
 } from '../vendor/tiptap/tiptap.mjs';
-import { KARO_MAX_WIDTH_CM, INLINE_MATH_SOURCE, latexToMathml, tableLineStyle, TEXT_WIDTH_CM, equalWidths, parseSlashCommand, headingNumber } from '../doc/docspec.js';
+import { KARO_MAX_WIDTH_CM, INLINE_MATH_SOURCE, latexToMathml, tableLineStyle, TEXT_WIDTH_CM, equalWidths, parseSlashCommand, parseUnicodeEscape, headingNumber } from '../doc/docspec.js';
 import { widgetHtml } from '../doc/docspec-html.js';
 import { isInlinePaste, pasteToSpec } from '../doc/paste.js';
 import { pmExtensions } from '../doc/pm-tiptap.js';
@@ -67,6 +67,22 @@ function handleSlashCommand(editor) {
   return true;
 }
 
+/**
+ * „U+03A6“ direkt vor der Schreibmarke, Enter → „Φ“ (parseUnicodeEscape in docspec.js). Ein
+ * gewöhnliches Zeichen mit den Formatierungen davor; Strg+Z holt „U+03A6“ zurück.
+ */
+function handleUnicodeEscape(editor) {
+  const { state, view } = editor;
+  const { $from, empty } = state.selection;
+  if (!empty || !$from.parent.isTextblock || $from.parent.type.spec.code) return false;
+  const before = $from.parent.textBetween(0, $from.parentOffset, null, '￼');
+  const hit = parseUnicodeEscape(before);
+  if (!hit) return false;
+  const from = $from.pos - hit.length;
+  view.dispatch(state.tr.insertText(hit.char, from, $from.pos).scrollIntoView());
+  return true;
+}
+
 /** Felder einer Tiptap-Erweiterung: Tastenkürzel und was ProseMirror mitbringt. */
 const Basics = Extension.create({
   name: 'basics',
@@ -83,7 +99,7 @@ const Basics = Extension.create({
       'Mod-i': mark('italic'),
       'Mod-u': mark('underline'),
       'Shift-Enter': () => this.editor.commands.insertContent({ type: 'hardBreak' }),
-      Enter: () => handleSlashCommand(this.editor) || this.editor.commands.splitListItem('listItem'),
+      Enter: () => handleUnicodeEscape(this.editor) || handleSlashCommand(this.editor) || this.editor.commands.splitListItem('listItem'),
       Tab: () => goToNextCell(1)(this.editor.state, this.editor.view.dispatch) || this.editor.commands.sinkListItem('listItem'),
       'Shift-Tab': () => goToNextCell(-1)(this.editor.state, this.editor.view.dispatch) || this.editor.commands.liftListItem('listItem'),
       // Wie in Word: Text unter einer leeren Überschrift rückt in deren Zeile – die Überschrift
@@ -434,6 +450,9 @@ function headingView({ node }) {
     contentDOM,
     // Andere Art (Nummer da/weg): Tiptap baut die Fläche an der Stelle neu.
     update: (next) => next.type.name === 'heading' && NUMBERED_ROLES.includes(next.attrs.role || 'plain') === numbered,
+    // Die Nummer schreibt HeadingNumbers hinein – kein Tippen. Sonst läse ProseMirror das als
+    // Bearbeitung, zeichnete die Überschrift neu und die Nummer wäre wieder leer.
+    ignoreMutation: (m) => m.type !== 'selection' && !!dom.querySelector(':scope > .ds-num')?.contains(m.target),
   };
 }
 
@@ -456,11 +475,14 @@ const HeadingNumbers = Extension.create({
             const label = headingNumber(node.attrs.role, counters);
             const dom = editorView.nodeDOM(pos);
             const span = dom?.nodeType === 1 ? dom.querySelector(':scope > .ds-num') : null;
-            if (span) span.textContent = `${label} `;
+            if (span && span.textContent !== `${label} `) span.textContent = `${label} `;
           });
         };
+        // Nicht nur bei Änderungen am Dokument: Tiptap baut die Überschriften auch ohne solche neu
+        // (Node-Views kommen nach dem Start über setProps) – dann wären die Nummern leer.
         refresh();
-        return { update: (view, prevState) => { if (!view.state.doc.eq(prevState.doc)) refresh(); } };
+        queueMicrotask(refresh);
+        return { update: refresh };
       },
     })];
   },

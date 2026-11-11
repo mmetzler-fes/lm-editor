@@ -17,3 +17,16 @@ test('//write bleibt Text, Unbekanntes ist kein Kommando', () => {
   assert.deepEqual(parseSlashCommand('//write grid 2'), { escaped: '/write grid 2' });
   assert.equal(parseSlashCommand('/foo 2'), null);
 });
+
+test('U+03A6 + Enter: Sonderzeichen aus der Unicode-Schreibweise', async () => {
+  const { parseUnicodeEscape } = await import('../src/doc/docspec.js');
+  assert.deepEqual(parseUnicodeEscape('Fluss U+03A6'), { length: 6, char: 'Φ' });
+  assert.deepEqual(parseUnicodeEscape('u+03a9'), { length: 6, char: 'Ω' });
+  assert.deepEqual(parseUnicodeEscape('(U+1F600'), { length: 7, char: '😀' });
+  assert.equal(parseUnicodeEscape('U+03A6 danach'), null); // nur direkt vor der Schreibmarke
+  assert.equal(parseUnicodeEscape('ABU+03A6'), null); // nicht mitten im Wort
+  assert.equal(parseUnicodeEscape('U+03'), null);
+  assert.equal(parseUnicodeEscape('U+D800'), null); // Surrogat
+  assert.equal(parseUnicodeEscape('U+110000'), null);
+  assert.equal(parseUnicodeEscape('U+0007'), null); // Steuerzeichen
+});

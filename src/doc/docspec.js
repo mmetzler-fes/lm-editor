@@ -125,6 +125,21 @@ export function parseSlashCommand(text) {
 }
 
 /**
+ * Sonderzeichen über die Unicode-Schreibweise: Steht unmittelbar vor der Schreibmarke „U+03A6“
+ * (4–6 Hex-Ziffern, auch klein „u+03a6“, nicht mitten in einem Wort), macht Enter daraus „Φ“.
+ * `textBefore`: Text des Absatzes bis zur Schreibmarke. → `{ length, char }` (so viele Zeichen
+ * vor der Schreibmarke ersetzen) oder null (kein gültiger Code – Enter bleibt normal).
+ * Das Ergebnis ist ein gewöhnliches Zeichen: markieren, ausschneiden, kopieren wie jeder Text.
+ */
+export function parseUnicodeEscape(textBefore) {
+  const m = /(?<![0-9A-Za-z])[Uu]\+([0-9A-Fa-f]{4,6})$/.exec(String(textBefore ?? ''));
+  if (!m) return null;
+  const cp = parseInt(m[1], 16);
+  if (cp > 0x10ffff || (cp >= 0xd800 && cp <= 0xdfff) || cp < 0x20 || (cp >= 0x7f && cp < 0xa0)) return null;
+  return { length: m[0].length, char: String.fromCodePoint(cp) };
+}
+
+/**
  * style-Attribut einer Tabelle: Linien (CSS-Variablen; innere Tabellen setzen
  * eigene), Breite, Lage, Abstand oben/unten und Innenabstand der Zellen.
  */
@@ -1142,7 +1157,10 @@ function cellHtml(tag, c, ctx = null) {
 /** Nächste Nummer für `type` (section/task/subtask) – zählt in `c` ([Section, Task, Subtask]) weiter; auch für den Editor (docspec-html.js). */
 export function headingNumber(type, c) {
   if (type === 'section') { c[0]++; c[1] = 0; c[2] = 0; return `${c[0]}.`; }
+  // Fehlt die übergeordnete Ebene (Blatt beginnt mit einer Aufgabe), zählt sie ab 1 – nicht „0.1“.
+  if (!c[0]) c[0] = 1;
   if (type === 'task') { c[1]++; c[2] = 0; return `${c[0]}.${c[1]}`; }
+  if (!c[1]) c[1] = 1;
   c[2]++;
   return `${c[0]}.${c[1]}.${c[2]}`;
 }

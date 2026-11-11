@@ -16,6 +16,7 @@ import { pmExtensions } from '../doc/pm-tiptap.js';
 import { pmToSpec, specToPm, textToInline } from '../doc/pm-convert.js';
 import { pmToMarkdown } from '../doc/pm-markdown.js';
 import { missingIds } from './pm-ids.js';
+import { penSelects } from '../util/dom.js';
 
 const ATOMS = ['image', 'group', 'formula', 'karo', 'spacer', 'pagebreak', 'quiz', 'rawBlock'];
 const BAR = [['up', '↑', 'Nach oben'], ['down', '↓', 'Nach unten'], ['dup', '⧉', 'Verdoppeln'], ['edit', '✏️', 'Bearbeiten'], ['del', '✕', 'Entfernen']];
@@ -652,6 +653,9 @@ export function createPmEditor(element, spec, host = {}) {
     view.focus();
   };
 
+  // iPad: Der Stift markiert, statt Handschrift in Text zu verwandeln (penSelects, util/dom.js).
+  const unpen = host.penSelects === false ? () => {} : penSelects(editor.view.dom);
+
   return {
     editor,
     getSpec: () => pmToSpec(editor.getJSON()),
@@ -659,7 +663,7 @@ export function createPmEditor(element, spec, host = {}) {
     setSpec(next) {
       editor.commands.setContent(toDoc(next), { emitUpdate: false });
     },
-    destroy: () => editor.destroy(),
+    destroy: () => { unpen(); editor.destroy(); },
     focus: () => editor.view.focus(),
     /** Absatzart an der Auswahl: p, note, section, task, subtask, heading1–3, ul, ol. */
     blockKind() {

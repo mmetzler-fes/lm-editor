@@ -292,3 +292,72 @@ export function nearEdge(r, x, y, reach) {
 export function snapAngle(deg, step) {
   return ((Math.round(deg / step) * step) % 360 + 360) % 360;
 }
+
+/**
+ * Durchkritzeln zum Löschen (wie Scribble auf dem iPad, das auf einer Zeichenfläche nicht greift):
+ * Ist der Strich ein dichtes Hin und Her? Gezählt werden die Umkehrungen entlang der Achse, auf
+ * der er hin- und herläuft – mindestens 4 (also 5 Züge), jeder über mindestens ein Viertel der
+ * Breite, und der Weg mindestens 3,5-mal so lang wie die längere Seite. Ein Kringel, eine Wellen-
+ * oder Zickzacklinie mit wenigen Zacken, Schrift wie „mmmm“ zählen nicht.
+ */
+export function isScribble(points, minSize = 6) {
+  if (!points || points.length < 8) return false;
+  let x0 = Infinity; let y0 = Infinity; let x1 = -Infinity; let y1 = -Infinity;
+  let path = 0;
+  for (let i = 0; i < points.length; i++) {
+    const [x, y] = points[i];
+    x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y);
+    if (i) path += Math.hypot(x - points[i - 1][0], y - points[i - 1][1]);
+  }
+  const w = x1 - x0;
+  const h = y1 - y0;
+  const long = Math.max(w, h);
+  if (long < minSize || path < 3.5 * long) return false;
+  const reversals = (axis, extent) => {
+    const min = Math.max(minSize / 3, extent / 4);
+    // Erst die Richtung finden (weit genug vom Anfang weg), dann jede Umkehr um mindestens `min`.
+    const start = points[0][axis];
+    let dir = 0;
+    let turn = start;
+    let n = 0;
+    for (const pt of points) {
+      const v = pt[axis];
+      if (!dir) {
+        if (Math.abs(v - start) >= min) { dir = Math.sign(v - start); turn = v; }
+        continue;
+      }
+      if (dir > 0) {
+        if (v > turn) turn = v;
+        else if (turn - v >= min) { n++; dir = -1; turn = v; }
+      } else if (v < turn) turn = v;
+      else if (v - turn >= min) { n++; dir = 1; turn = v; }
+    }
+    return n;
+  };
+  // Entlang der längeren Seite reicht das; quer dazu (z. B. „WWWW“ über ein Wort) nur, wenn es
+  // sehr dicht ist – sonst sähe Schrift wie „mmmm“ schon wie Kritzeln aus.
+  const [along, across] = w >= h ? [reversals(0, w), reversals(1, h)] : [reversals(1, h), reversals(0, w)];
+  return along >= 4 || (across >= 5 && path >= 6 * long);
+}
+
+/**
+ * Was das Kritzeln löscht: Elemente, die es berührt und die überwiegend in seinem Rahmen liegen
+ * (etwas größer genommen) – ein langer Strich, über den nur ein Ende gekritzelt wird, bleibt.
+ */
+export function scribbleTargets(items, points, radius = 2) {
+  let x0 = Infinity; let y0 = Infinity; let x1 = -Infinity; let y1 = -Infinity;
+  for (const [x, y] of points) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
+  const padX = (x1 - x0) * 0.15 + radius;
+  const padY = (y1 - y0) * 0.15 + radius;
+  const inside = (x, y) => x >= x0 - padX && x <= x1 + padX && y >= y0 - padY && y <= y1 + padY;
+  const touched = (it) => {
+    if (it.type === 'stroke') return points.some(([x, y]) => hitsStroke(it, x, y, radius));
+    return points.some(([x, y]) => itemAt([it], x, y, radius));
+  };
+  const mostlyInside = (it) => {
+    if (it.type === 'stroke' && it.points?.length) return it.points.filter(([x, y]) => inside(x, y)).length >= it.points.length * 0.6;
+    const b = bounds(it);
+    return inside(b.x + b.w / 2, b.y + b.h / 2) && b.w <= (x1 - x0 + 2 * padX) * 1.2 && b.h <= (y1 - y0 + 2 * padY) * 1.2;
+  };
+  return items.filter((it) => (it.type === 'stroke' || it.type === 'shape') && touched(it) && mostlyInside(it));
+}

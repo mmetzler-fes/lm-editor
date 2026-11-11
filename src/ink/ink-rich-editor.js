@@ -53,6 +53,7 @@ export function openRichEditor({ title = 'Text', spec, widthCm = 16.5, formula =
     const pm = mountTiptapSurface(box, {
       spec: current,
       hint: '',
+      penSelects: false, // den Stift bedient diese Fläche selbst (s. u.)
       onChange: (next) => { current = next; changed = true; },
       editBlock,
       insertEntries: (surface) => [

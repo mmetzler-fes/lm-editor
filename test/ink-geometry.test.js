@@ -129,3 +129,49 @@ describe('Feld (Abdeckung)', () => {
     expect(g.corners(field)).toEqual([[100, 50], [180, 50], [180, 90], [100, 90]]);
   });
 });
+
+describe('Durchkritzeln', () => {
+  const { isScribble, scribbleTargets } = g;
+  // Hin und Her über 40 × 12 pt, n Züge, leicht schräg
+  const zigzag = (n, w = 40, h = 12, x0 = 100, y0 = 100) => {
+    const pts = [];
+    for (let i = 0; i <= n; i++) {
+      for (let k = 0; k < 6; k++) {
+        const t = k / 6;
+        const x = i % 2 ? x0 + w * (1 - t) : x0 + w * t;
+        pts.push([x, y0 + (h * (i + t)) / n, 0.5]);
+      }
+    }
+    return pts;
+  };
+  it('dichtes Hin und Her ist Kritzeln', () => {
+    expect(isScribble(zigzag(6))).toBe(true);
+    expect(isScribble(zigzag(10, 30, 8))).toBe(true);
+  });
+  it('wenige Zacken, Kringel, Wellen und gerade Striche nicht', () => {
+    expect(isScribble(zigzag(2))).toBe(false);
+    const circle = Array.from({ length: 40 }, (_, i) => [100 + 20 * Math.cos(i / 6), 100 + 20 * Math.sin(i / 6), 0.5]);
+    expect(isScribble(circle)).toBe(false);
+    const wave = Array.from({ length: 60 }, (_, i) => [100 + i * 3, 100 + 4 * Math.sin(i / 3), 0.5]);
+    expect(isScribble(wave)).toBe(false);
+    expect(isScribble(Array.from({ length: 20 }, (_, i) => [100 + i * 5, 100, 0.5]))).toBe(false);
+  });
+  it('löscht, was darunter liegt – ein langer Strich, nur am Ende gestreift, bleibt', () => {
+    const word = { id: 'w', type: 'stroke', width: 2, points: [[105, 104], [120, 108], [135, 104]] };
+    const long = { id: 'l', type: 'stroke', width: 2, points: [[130, 106], [400, 106]] };
+    const far = { id: 'f', type: 'stroke', width: 2, points: [[300, 300], [320, 320]] };
+    expect(scribbleTargets([word, long, far], zigzag(6)).map((it) => it.id)).toEqual(['w']);
+  });
+});
+
+describe('Durchkritzeln: Schrift ist kein Kritzeln', () => {
+  it('„mmmm“ (auf und ab, nach rechts) zählt nicht, dichtes „WWWW“ über ein Wort schon', () => {
+    const updown = (n, w, h, step) => {
+      const pts = [];
+      for (let i = 0; i <= n; i++) for (let k = 0; k < step; k++) pts.push([100 + (w * (i + k / step)) / n, i % 2 ? 100 + h * (1 - k / step) : 100 + (h * k) / step, 0.5]);
+      return pts;
+    };
+    expect(g.isScribble(updown(8, 40, 8, 5))).toBe(false); // mmmm
+    expect(g.isScribble(updown(14, 30, 14, 6))).toBe(true); // dichtes WWWW
+  });
+});

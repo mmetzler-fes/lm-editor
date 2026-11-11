@@ -1,7 +1,7 @@
 import {
   A4, CM, strokeOutline, polyline, hitsStroke, bounds, inSelection, moved, ruling,
   pageToRuler, inRuler, nearEdge, projectOnSegment, snapAngle, itemAt, extremesAlong,
-  isBox, resizedBox, resizedKeepingRatio, corners, MM, textBox as textFrame,
+  isBox, resizedBox, resizedKeepingRatio, corners, MM, textBox as textFrame, isScribble, scribbleTargets,
 } from './ink-geometry.js';
 import { rulerSvg, rulerHandles } from './ink-ruler.js';
 import { svgEl, itemSvg, fieldSvg, shapeSvg, imageSvg, inkSvgFor, inkSvgBox, fieldMaxCm } from './ink-view.js';
@@ -1487,19 +1487,35 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     return Math.max(0.3, Math.min(2.5, room / pageW));
   }
 
-  function setZoom(z) {
+  /**
+   * Zoom setzen. `at` (Bildschirmpunkt, z. B. die Mitte zwischen zwei Fingern): Die Stelle des
+   * Blatts darunter bleibt dort stehen. Ohne `at` bleibt der Anteil des Gescrollten gleich.
+   */
+  function setZoom(z, at = null) {
     const keep = scroller.scrollTop / (scroller.scrollHeight || 1);
+    const before = state.zoom;
     state.zoom = Math.max(0.3, Math.min(4, z));
     state.zoomSet = true;
+    const r = scroller.getBoundingClientRect();
+    const ax = at ? at.x - r.left : 0;
+    const ay = at ? at.y - r.top : 0;
+    const cx = scroller.scrollLeft + ax;
+    const cy = scroller.scrollTop + ay;
+    const place = () => {
+      if (!at) { scroller.scrollTop = keep * scroller.scrollHeight; return; }
+      const f = state.zoom / before;
+      scroller.scrollLeft = cx * f - ax;
+      scroller.scrollTop = cy * f - ay;
+    };
     // Das Dokument nur vergrößern, nicht neu aufbauen – Eingaben in Quizzen bleiben.
     if (pages[0]?.paper) {
       sizePage(pages[0]);
       drawItems(0);
       placeRuler(true);
-      scroller.scrollTop = keep * scroller.scrollHeight;
+      place();
       return;
     }
-    void layout().then(() => { scroller.scrollTop = keep * scroller.scrollHeight; });
+    void layout().then(place);
   }
 
   // ---------- Geodreieck ----------
@@ -3213,10 +3229,21 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
           if (Math.hypot(hi[0] - lo[0], hi[1] - lo[1]) >= 2) { g.item.points = [lo, hi]; g.line = true; }
         }
         if (g.line) g.item.line = true;
-        snapshot();
-        doc.pages[p.i].items.push(g.item);
-        changed();
-        drawItems(p.i);
+        // Durchgekritzelt (dichtes Hin und Her mit dem Stift über Strichen): löscht sie, statt zu zeichnen.
+        const hit = g.item.tool === 'pen' && !g.line && !g.snap && isScribble(g.item.points)
+          ? new Set(scribbleTargets(doc.pages[p.i].items, g.item.points, ERASER / 2 / Math.max(0.6, state.zoom))) : null;
+        if (hit?.size) {
+          snapshot();
+          doc.pages[p.i].items = doc.pages[p.i].items.filter((it) => !hit.has(it));
+          changed();
+          drawItems(p.i);
+          status(`🧽 Durchgekritzelt: ${hit.size === 1 ? '1 Element' : `${hit.size} Elemente`} gelöscht – ↶ holt ${hit.size === 1 ? 'es' : 'sie'} zurück`);
+        } else {
+          snapshot();
+          doc.pages[p.i].items.push(g.item);
+          changed();
+          drawItems(p.i);
+        }
       } else if (g.kind === 'tap') {
         if (e.type === 'pointerup' && !g.moved) g.run();
       } else if (g.kind === 'laser') {
@@ -3633,6 +3660,39 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
   const noZoom = (e) => e.preventDefault();
   document.addEventListener('gesturestart', noZoom, { passive: false });
   document.addEventListener('gesturechange', noZoom, { passive: false });
+  // Zwei Finger zusammen-/auseinanderziehen zoomt das Blatt (Safari meldet die Geste mit
+  // e.scale). Während der Geste nur per CSS vergrößert – flüssig, auch bei vielen Seiten –,
+  // beim Loslassen einmal richtig, mit der Stelle zwischen den Fingern als Fixpunkt.
+  // Verschieben die Finger dabei (zwei Finger scrollen, bindInput), läuft das weiter: Der Fixpunkt
+  // ist eine Stelle des Blatts (c), beim Loslassen kommt sie dorthin, wo sie gerade zu sehen ist.
+  let pinch = null;
+  const pinchStart = (e) => {
+    if (!scroller.contains(e.target) || state.editing) return;
+    const r = scroller.getBoundingClientRect();
+    const x = Number.isFinite(e.clientX) ? e.clientX : r.left + r.width / 2;
+    const y = Number.isFinite(e.clientY) ? e.clientY : r.top + r.height / 2;
+    pinch = { z0: state.zoom, s: 1, c: [scroller.scrollLeft + x - r.left, scroller.scrollTop + y - r.top] };
+    pagesEl.style.transformOrigin = `${pinch.c[0]}px ${pinch.c[1]}px`;
+  };
+  const pinchChange = (e) => {
+    if (!pinch) return;
+    const z = Math.max(0.3, Math.min(4, pinch.z0 * e.scale));
+    pinch.s = z / pinch.z0;
+    pagesEl.style.transform = `scale(${pinch.s})`;
+  };
+  const pinchEnd = () => {
+    if (!pinch) return;
+    const { z0, s, c } = pinch;
+    pinch = null;
+    pagesEl.style.transform = '';
+    pagesEl.style.transformOrigin = '';
+    if (Math.abs(s - 1) < 0.03) return; // nur verschoben
+    const r = scroller.getBoundingClientRect();
+    setZoom(z0 * s, { x: r.left + c[0] - scroller.scrollLeft, y: r.top + c[1] - scroller.scrollTop });
+  };
+  document.addEventListener('gesturestart', pinchStart);
+  document.addEventListener('gesturechange', pinchChange);
+  document.addEventListener('gestureend', pinchEnd);
   let wheelZoom = 1;
   let wheelTimer = null;
   const onWheel = (e) => {
@@ -3659,6 +3719,9 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     document.removeEventListener('visibilitychange', onHide);
     document.removeEventListener('gesturestart', noZoom);
     document.removeEventListener('gesturechange', noZoom);
+    document.removeEventListener('gesturestart', pinchStart);
+    document.removeEventListener('gesturechange', pinchChange);
+    document.removeEventListener('gestureend', pinchEnd);
     barObserver.disconnect();
     for (const v of Object.values(pdfs)) Promise.resolve(v).then((d) => d?.destroy?.()).catch(() => {});
     overlay.remove();

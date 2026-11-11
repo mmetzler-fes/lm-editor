@@ -407,3 +407,68 @@ export function attachPointerDrag(el, { onHover, onDrop, onLongPress, canLongPre
     window.addEventListener('pointercancel', end);
   });
 }
+
+/**
+ * Apple Pencil in einer Schreibfläche (contenteditable): markieren statt Handschrift.
+ * Safari macht aus Stiftstrichen in Textfeldern sonst Text (Scribble) – teils fügt es Buchstaben
+ * ein, teils markiert es. Stift-Berührungen (touchType 'stylus', nur Safari kennt sie) werden
+ * deshalb angehalten, und der Stift bedient die Schreibmarke selbst: Antippen setzt sie, Ziehen
+ * markiert, Doppeltippen markiert das Wort. Knöpfe, Links und nicht editierbare Bausteine
+ * (contenteditable="false") bleiben, wie sie sind – dort schreibt Scribble ohnehin nicht.
+ * Gibt eine Funktion zum Abmelden zurück.
+ */
+export function penSelects(el) {
+  if (typeof Touch === 'undefined' || !('touchType' in Touch.prototype)) return () => {};
+  const SKIP = 'button, a, select, summary, label, input, textarea, [role="button"], [contenteditable="false"]';
+  const own = (t) => el.contains(t) && !t.closest?.(SKIP);
+  const hold = (e) => {
+    if (e.cancelable && [...e.touches].some((x) => x.touchType === 'stylus') && own(e.target)) e.preventDefault();
+  };
+  const caretAt = (x, y) => {
+    const r = document.caretRangeFromPoint?.(x, y);
+    return r && el.contains(r.startContainer) ? [r.startContainer, r.startOffset] : null;
+  };
+  let anchor = null;
+  let lastTap = 0;
+  let lastXY = [0, 0];
+  const down = (e) => {
+    if (e.pointerType !== 'pen' || !own(e.target)) return;
+    const at = caretAt(e.clientX, e.clientY);
+    if (!at) return;
+    el.focus({ preventScroll: true });
+    const sel = window.getSelection();
+    const now = Date.now();
+    const again = now - lastTap < 350 && Math.hypot(e.clientX - lastXY[0], e.clientY - lastXY[1]) < 20;
+    lastTap = now;
+    lastXY = [e.clientX, e.clientY];
+    sel.setBaseAndExtent(at[0], at[1], at[0], at[1]);
+    if (again && sel.modify) {
+      // Doppeltippen: das Wort an der Stelle
+      sel.modify('move', 'backward', 'word');
+      sel.modify('extend', 'forward', 'word');
+      anchor = null;
+      return;
+    }
+    anchor = at;
+  };
+  const move = (e) => {
+    if (!anchor || e.pointerType !== 'pen' || !e.buttons) return;
+    const at = caretAt(e.clientX, e.clientY);
+    if (at) window.getSelection().setBaseAndExtent(anchor[0], anchor[1], at[0], at[1]);
+  };
+  const up = (e) => { if (e.pointerType === 'pen') anchor = null; };
+  el.addEventListener('touchstart', hold, { passive: false, capture: true });
+  el.addEventListener('touchmove', hold, { passive: false, capture: true });
+  el.addEventListener('pointerdown', down, true);
+  el.addEventListener('pointermove', move, true);
+  el.addEventListener('pointerup', up, true);
+  el.addEventListener('pointercancel', up, true);
+  return () => {
+    el.removeEventListener('touchstart', hold, { capture: true });
+    el.removeEventListener('touchmove', hold, { capture: true });
+    el.removeEventListener('pointerdown', down, true);
+    el.removeEventListener('pointermove', move, true);
+    el.removeEventListener('pointerup', up, true);
+    el.removeEventListener('pointercancel', up, true);
+  };
+}

@@ -154,6 +154,7 @@ export function mountTiptapSurface(box, host) {
     imageFromFile: (file) => host.imageFromFile(file),
     // 📋 in der Leiste über einem Bild – nur, wo der Gastgeber Bilder kopieren kann.
     copyImage: window.appImageClipboard ? copyImage : null,
+    penSelects: host.penSelects,
   });
   pm.el = el;
 

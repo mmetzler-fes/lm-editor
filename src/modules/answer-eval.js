@@ -154,6 +154,14 @@ export function collectAnswer(mod, root) {
       });
       result.isCorrect = tfCorrect === tfQs.length;
       result.userAnswer = ua.join(', '); result.correctAnswer = ca.join(', ');
+      // Mehrere Fragen auf einer Seite (Klassenarbeit): je Frage ein Teil – so
+      // zählt jede wie ein eigener Schritt (quiz.js legt die Teile auseinander).
+      if (tfQs.length > 1) {
+        result.parts = tfQs.map((q, i) => ({
+          moduleId: mod.id, moduleTitle: `${mod.title} (${i + 1}/${tfQs.length})`, moduleType: mod.type,
+          isCorrect: q._userAnswer === q.correctAnswer, userAnswer: ua[i], correctAnswer: ca[i], question: q.question || '',
+        }));
+      }
       if (tfQs.length > 0) {
         const pct = Math.round((tfCorrect / tfQs.length) * 100);
         result.score = `Richtig: ${pct}% | Falsch: ${100 - pct}%`;

@@ -301,7 +301,11 @@ export class H5pRenderer {
 
   createTypePreview(type, content, options = {}) {
     const suppressFeedback = !!(options.quizMode && options.examMode);
+    // Klassenarbeit (quiz.js, examRun): Wahr/Falsch auf einer Seite, und nichts
+    // sperrt Weiter – auch mit leerer Lücke oder offener Frage lässt sie sich abgeben.
+    const examRun = !!(options.quizMode && options.examRun);
     const div = document.createElement('div');
+    const lockNext = (locked, hint) => { if (!examRun) this.setNextLock(div, locked, hint); };
 
     const globalNextBtn = this.nextButton();
     if (globalNextBtn) { globalNextBtn.disabled = false; globalNextBtn.title = ''; }
@@ -409,6 +413,32 @@ export class H5pRenderer {
         }
         if (tfQuestions.length === 0) { div.textContent = 'Keine Fragen definiert.'; break; }
 
+        if (examRun && tfQuestions.length > 1) {
+          // Klassenarbeit: alle Fragen untereinander, ohne eigenes Blättern und ohne Rückmeldung.
+          // Ausgewertet wird wie sonst über q._userAnswer (answer-eval.js, je Frage ein Teil).
+          tfQuestions.forEach((q) => { delete q._userAnswer; });
+          div.innerHTML = `
+            <div class="tf-player tf-all">
+              ${this.renderModuleImage(content, { marginBottom: '20px' })}
+              <ol class="tf-list">${tfQuestions.map((q, i) => `
+                <li class="tf-row" data-i="${i}">
+                  <p class="tf-question">${escapeHtml(q.question || '')}</p>
+                  <div class="tf-buttons">
+                    <button type="button" class="btn btn-secondary tf-btn" data-val="true">Wahr</button>
+                    <button type="button" class="btn btn-secondary tf-btn" data-val="false">Falsch</button>
+                  </div>
+                </li>`).join('')}</ol>
+            </div>`;
+          div.querySelectorAll('.tf-row').forEach((row) => {
+            const q = tfQuestions[Number(row.dataset.i)];
+            row.querySelectorAll('.tf-btn').forEach((btn) => btn.addEventListener('click', () => {
+              q._userAnswer = btn.dataset.val;
+              row.querySelectorAll('.tf-btn').forEach((b) => b.classList.toggle('tf-selected', b === btn));
+            }));
+          });
+          break;
+        }
+
         let tfIdx = 0;
         div.innerHTML = `
           <div class="tf-player">
@@ -439,7 +469,7 @@ export class H5pRenderer {
         const tfResults  = tfQuestions.map(() => null);
 
         // Weiter bzw. Prüfen erst, wenn alle Teilfragen beantwortet sind.
-        const updateTfLock = () => this.setNextLock(div, tfResults.some((r) => r === null));
+        const updateTfLock = () => lockNext(tfResults.some((r) => r === null));
         updateTfLock();
 
         const updateTfScore = () => {
@@ -726,8 +756,7 @@ export class H5pRenderer {
         }
         // Alle Lücken stehen auf einer Seite – ein eigenes "Weiter" gibt es
         // nicht. Weiter bzw. Prüfen des Quiz erst, wenn alle Felder gefüllt sind.
-        const updateBlanksLock = () => this.setNextLock(
-          div, answerMap.some(({ inputEl }) => !inputEl.value.trim()), 'Erst alle Felder ausfüllen');
+        const updateBlanksLock = () => lockNext(answerMap.some(({ inputEl }) => !inputEl.value.trim()), 'Erst alle Felder ausfüllen');
         answerMap.forEach(({ inputEl }) => inputEl.addEventListener('input', updateBlanksLock));
         updateBlanksLock();
         break;
@@ -784,7 +813,7 @@ export class H5pRenderer {
             div.querySelector('.formula-feedback').innerHTML = `<span style="font-weight:600;">${right} von ${inputs.length} richtig</span>`;
           });
           div.querySelector('.formula-new')?.addEventListener('click', draw);
-          const lock = () => this.setNextLock(div, inputs.some((inp) => !inp.value.trim()), 'Erst alle Ergebnisse eintragen');
+          const lock = () => lockNext(inputs.some((inp) => !inp.value.trim()), 'Erst alle Ergebnisse eintragen');
           inputs.forEach((inp) => inp.addEventListener('input', lock));
           lock();
         };

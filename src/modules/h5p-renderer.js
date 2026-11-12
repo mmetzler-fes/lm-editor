@@ -452,11 +452,11 @@ export class H5pRenderer {
               </div>
               <div id="tfFeedback" class="tf-feedback"></div>
             </div>
-            <!-- Eine einzelne Frage braucht kein eigenes Blättern – das macht Weiter/Prüfen des Quiz. -->
+            <!-- Kein eigenes Weiter (es stand neben dem Weiter des Quiz): Nach einer Antwort kommt die
+                 nächste offene Frage von selbst; die Nummern springen zu einer Frage zurück. -->
             <div class="tf-nav${tfQuestions.length > 1 ? '' : ' hidden'}">
-              <button class="btn btn-secondary btn-sm" id="tfPrev">← Zurück</button>
+              <span class="tf-dots" role="group" aria-label="Fragen">${tfQuestions.map((_, i) => `<button type="button" class="tf-dot" data-i="${i}" title="Frage ${i + 1}">${i + 1}</button>`).join('')}</span>
               <span id="tfScore" class="tf-score"></span>
-              <button class="btn btn-secondary btn-sm" id="tfNext">Weiter →</button>
             </div>
           </div>`;
 
@@ -478,6 +478,16 @@ export class H5pRenderer {
           const correct  = tfResults.filter((r) => r === true).length;
           tfScore.textContent = answered > 0 ? `${correct}/${answered} richtig` : '';
         };
+        const tfDots = [...div.querySelectorAll('.tf-dot')];
+        const paintDots = () => tfDots.forEach((d, i) => {
+          d.classList.toggle('tf-dot-current', i === tfIdx);
+          d.classList.toggle('tf-dot-done', tfResults[i] !== null);
+          if (!suppressFeedback) {
+            d.classList.toggle('tf-dot-right', tfResults[i] === true);
+            d.classList.toggle('tf-dot-wrong', tfResults[i] === false);
+          }
+        });
+        let tfTimer = null;
 
         const showTfQuestion = () => {
           const q = tfQuestions[tfIdx];
@@ -505,6 +515,7 @@ export class H5pRenderer {
             tfFeedback.innerHTML = ''; tfFeedback.className = 'tf-feedback';
           }
           updateTfScore();
+          paintDots();
         };
 
         const handleTfAnswer = (val) => {
@@ -513,12 +524,20 @@ export class H5pRenderer {
           tfResults[tfIdx] = q.correctAnswer === val;
           updateTfLock();
           showTfQuestion();
+          // Nächste offene Frage von selbst – nach kurzer Rückmeldung; sind alle beantwortet, bleibt sie stehen.
+          clearTimeout(tfTimer);
+          const n = tfQuestions.length;
+          let next = -1;
+          for (let k = 1; k < n && next < 0; k++) if (tfResults[(tfIdx + k) % n] === null) next = (tfIdx + k) % n;
+          if (next >= 0) {
+            const from = tfIdx;
+            tfTimer = setTimeout(() => { if (tfIdx === from && div.isConnected) { tfIdx = next; showTfQuestion(); } }, suppressFeedback ? 300 : 1100);
+          }
         };
 
         tfTrue.addEventListener('click', () => handleTfAnswer('true'));
         tfFalse.addEventListener('click', () => handleTfAnswer('false'));
-        div.querySelector('#tfPrev').addEventListener('click', () => { if (tfIdx > 0) { tfIdx--; showTfQuestion(); } });
-        div.querySelector('#tfNext').addEventListener('click', () => { if (tfIdx < tfQuestions.length - 1) { tfIdx++; showTfQuestion(); } });
+        tfDots.forEach((d) => d.addEventListener('click', () => { clearTimeout(tfTimer); tfIdx = Number(d.dataset.i); showTfQuestion(); }));
         showTfQuestion();
         break;
       }

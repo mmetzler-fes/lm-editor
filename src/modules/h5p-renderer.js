@@ -510,7 +510,7 @@ export class H5pRenderer {
                 <div id="fcQuestion" class="fc-question"></div>
                 <div class="fc-answer-row">
                   <input type="text" id="fcInput" class="fc-input" placeholder="Antwort eingeben…" autocomplete="off" />
-                  <button class="btn btn-primary btn-sm" id="fcCheck">Prüfen</button>
+                  ${suppressFeedback ? '' : '<button class="btn btn-primary btn-sm" id="fcCheck">Prüfen</button>'}
                 </div>
                 <div id="fcFeedback" class="fc-feedback"></div>
               </div>
@@ -552,16 +552,16 @@ export class H5pRenderer {
             fcCounter.textContent = `${idx + 1} / ${cards.length}`;
             if (cardResults[idx] !== null) {
               fcInput.value = card._userAnswer || '';
-              fcInput.disabled = true; fcCheck.disabled = true;
+              fcInput.disabled = true; if (fcCheck) fcCheck.disabled = true;
               showFeedback(cardResults[idx], card[backKey]);
             } else {
-              fcInput.value = ''; fcInput.disabled = false; fcCheck.disabled = false;
+              fcInput.value = ''; fcInput.disabled = false; if (fcCheck) fcCheck.disabled = false;
               fcFeedback.innerHTML = ''; fcFeedback.className = 'fc-feedback';
             }
             updateScore();
           };
 
-          fcCheck.addEventListener('click', () => {
+          if (fcCheck) fcCheck.addEventListener('click', () => {
             const userAnswer = fcInput.value.trim();
             if (!userAnswer) return;
             const correctAnswer = cards[idx][backKey] || '';
@@ -574,7 +574,7 @@ export class H5pRenderer {
             updateScore();
           });
 
-          fcInput.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !fcCheck.disabled) fcCheck.click(); });
+          fcInput.addEventListener('keydown', (e) => { if (e.key === 'Enter' && fcCheck && !fcCheck.disabled) fcCheck.click(); });
           div.querySelector('#fcPrev').addEventListener('click', () => { if (idx > 0) { idx--; showCard(); } });
           div.querySelector('#fcNext').addEventListener('click', () => { if (idx < cards.length - 1) { idx++; showCard(); } });
           showCard();

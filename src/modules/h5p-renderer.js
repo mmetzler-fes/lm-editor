@@ -412,16 +412,23 @@ export class H5pRenderer {
           mcCheckBtn.addEventListener('click', () => {
             const inputs = answersEl.querySelectorAll('input');
             let allCorrect = true;
+            // Nur die eigene Wahl färben; Übersehenes zeigt erst „💡 Lösung anzeigen“ (wenn erlaubt).
             inputs.forEach((inp) => {
               const isCorrect = inp.dataset.correct === 'true';
               if (inp.checked !== isCorrect) allCorrect = false;
-              inp.parentElement.style.color = inp.checked
-                ? (isCorrect ? 'green' : 'red')
-                : (isCorrect ? 'orange' : '');
+              inp.parentElement.style.color = inp.checked ? (isCorrect ? 'green' : 'red') : '';
             });
-            div.querySelector('#mcFeedback').innerHTML = allCorrect
+            const feedback = div.querySelector('#mcFeedback');
+            feedback.innerHTML = allCorrect
               ? '<span style="color:green; font-weight:600;">✓ Richtig!</span>'
               : '<span style="color:red; font-weight:600;">✗ Nicht ganz richtig. Versuchen Sie es nochmal.</span>';
+            if (!allCorrect) offerSolution(feedback, content, () => {
+              inputs.forEach((inp) => {
+                if (inp.dataset.correct === 'true' && !inp.checked) inp.parentElement.style.color = 'orange';
+                inp.disabled = true;
+              });
+              mcCheckBtn.disabled = true;
+            });
           });
         }
         break;
@@ -1153,15 +1160,22 @@ export class H5pRenderer {
           wordsCheckBtn.addEventListener('click', () => {
             const allSpans = wordsArea.querySelectorAll('span');
             let correct = 0; let wrong = 0;
+            // Nur die eigene Markierung färben; Übersehenes zeigt erst „💡 Lösung anzeigen“ (wenn erlaubt).
             allSpans.forEach((s) => {
               const isCorrect = s.dataset.correct === 'true';
               const isSelected = s.classList.contains('selected');
               if (isSelected && isCorrect) { s.style.background = '#dcfce7'; correct++; }
               else if (isSelected && !isCorrect) { s.style.background = '#fef2f2'; wrong++; }
-              else if (!isSelected && isCorrect) { s.style.background = '#fef9c3'; }
+              else s.style.background = '';
               s.style.borderColor = 'transparent';
             });
-            div.querySelector('#wordsFeedback').innerHTML = `<span style="font-weight:600;">${correct} von ${correctWords.length} korrekte Wörter markiert${wrong ? `, ${wrong} falsch` : ''}</span>`;
+            const feedback = div.querySelector('#wordsFeedback');
+            feedback.innerHTML = `<span style="font-weight:600;">${correct} von ${correctWords.length} korrekte Wörter markiert${wrong ? `, ${wrong} falsch` : ''}</span>`;
+            if (correct < correctWords.length || wrong) offerSolution(feedback, content, () => {
+              allSpans.forEach((s) => { if (s.dataset.correct === 'true' && !s.classList.contains('selected')) s.style.background = '#fef9c3'; });
+              wordsArea.style.pointerEvents = 'none';
+              wordsCheckBtn.disabled = true;
+            });
           });
         }
         break;

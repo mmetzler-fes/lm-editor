@@ -372,8 +372,9 @@ export class H5pRenderer {
         const isSingle = content.singleAnswer;
         // Gemischt, außer ausdrücklich aus (randomAnswers: false) – fest je Quiz, damit die Reihenfolge
         // beim Neuladen, im Stift-Editor und beim Wiedereinstieg gleich bleibt. `value` bleibt die Nummer.
+        // `shuffleKey` (Klassenarbeit): je Schüler eine eigene, ebenso feste Reihenfolge.
         const order = content.randomAnswers === false ? answers.map((_, i) => i)
-          : seededOrder(answers.length, `${options.moduleId || ''}|${content.question || ''}`);
+          : seededOrder(answers.length, `${options.shuffleKey || ''}|${options.moduleId || ''}|${content.question || ''}`);
         order.forEach((i) => {
           const a = answers[i];
           const row = document.createElement('div');

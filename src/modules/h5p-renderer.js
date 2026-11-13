@@ -6,6 +6,7 @@ import { generateValues, fillPlaceholders, evaluate, parseUserNumber, isWithinTo
 import { renderSorting, renderMemory, renderCrossword } from './puzzle-views.js';
 import { normalizeShareUrl, sanitizeModuleDescriptionHtml, sanitizeWorksheetHtml, escapeHtml, escapeAttr, hexTint, showContextMenu, attachPointerDrag, effectiveZoom } from '../util/dom.js';
 import { renderDocSpecHtml } from '../doc/docspec.js';
+import { seededOrder } from './seeded-order.js';
 
 /**
  * Nur http(s) einbetten. Ohne diese Schranke landeten `javascript:`- oder
@@ -221,6 +222,7 @@ function setupDndFit(div) {
  * kommt über `host` (docs/HOST.md). Alles darin ist freiwillig; fehlt etwas,
  * entfällt der Knopf bzw. die Abgabe.
  */
+
 export class H5pRenderer {
   constructor({ host = {} } = {}) {
     this.host = host;
@@ -368,7 +370,12 @@ export class H5pRenderer {
           </div>`;
         const answersEl = div.querySelector('.mc-answers');
         const isSingle = content.singleAnswer;
-        answers.forEach((a, i) => {
+        // Gemischt, außer ausdrücklich aus (randomAnswers: false) – fest je Quiz, damit die Reihenfolge
+        // beim Neuladen, im Stift-Editor und beim Wiedereinstieg gleich bleibt. `value` bleibt die Nummer.
+        const order = content.randomAnswers === false ? answers.map((_, i) => i)
+          : seededOrder(answers.length, `${options.moduleId || ''}|${content.question || ''}`);
+        order.forEach((i) => {
+          const a = answers[i];
           const row = document.createElement('div');
           row.style.cssText = 'margin-bottom:8px; display:flex; align-items:center; gap:8px;';
           const input = document.createElement('input');

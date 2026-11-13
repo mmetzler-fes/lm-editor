@@ -124,7 +124,9 @@ export function collectAnswer(mod, root) {
       const inputs = root.querySelectorAll('input[name="mc-answer"]');
       const selected = []; const correctList = [];
       let correctDecisions = 0; let totalDecisions = 0;
-      inputs.forEach((inp, i) => {
+      // `value` ist die Nummer der Antwort im Inhalt – die Anzeige darf gemischt sein.
+      inputs.forEach((inp, pos) => {
+        const i = Number.isInteger(Number(inp.value)) && inp.value !== '' ? Number(inp.value) : pos;
         if (inp.checked) selected.push(i);
         if (inp.dataset.correct === 'true') correctList.push(i);
         if (inp.checked === (inp.dataset.correct === 'true')) correctDecisions++;

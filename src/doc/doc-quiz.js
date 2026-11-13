@@ -23,21 +23,22 @@ export function quizIdsOf(mod) {
  * Schritte eines Durchlaufs. Quizze, die ein Dokument einbettet, laufen dort
  * und nicht noch einmal als eigener Schritt – außer in der Lernbegleitung,
  * die jede Aufgabe einzeln begleitet. `onlyModule`: nur dieses eine Modul
- * (QR-Code eines Quiz im gedruckten Dokument).
+ * (QR-Code eines Quiz im gedruckten Dokument) oder mehrere, mit Komma getrennt.
  */
 export function planRun(modules, { companion = false, onlyModule = null } = {}) {
-  const only = onlyModule && modules.find((m) => m.id === onlyModule);
-  if (companion && !only) return { steps: modules, embedded: new Map() };
   const byId = new Map(modules.map((m) => [m.id, m]));
+  // `onlyModule` darf auch mehrere IDs mit Komma tragen (Quiz-Seite aus OneNote).
+  const only = onlyModule ? String(onlyModule).split(',').map((id) => byId.get(id)).filter(Boolean) : [];
+  if (companion && !only.length) return { steps: modules, embedded: new Map() };
   const embedded = new Map();
   // Ein einzelnes Dokument (Link aus OneNote) bringt seine Quizze mit.
-  for (const doc of (only ? [only] : modules).filter((m) => m.type === 'document')) {
+  for (const doc of (only.length ? only : modules).filter((m) => m.type === 'document')) {
     for (const id of quizIdsOf(doc)) {
       const m = byId.get(id);
       if (m && m.id !== doc.id && m.type !== 'document' && (m._topicId ?? null) === (doc._topicId ?? null)) embedded.set(id, m);
     }
   }
-  return { steps: only ? [only] : modules.filter((m) => !embedded.has(m.id)), embedded };
+  return { steps: (only.length ? only : modules).filter((m) => !embedded.has(m.id)), embedded };
 }
 
 /**

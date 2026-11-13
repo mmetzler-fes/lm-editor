@@ -649,6 +649,9 @@ body {
   -webkit-user-drag: none;
   -webkit-touch-callout: none;
 }
+/* „💡 Lösung anzeigen“: richtige Antwort hinter einer falschen oder leeren Lücke */
+.quiz-solution-hint { color: #15803d; font-weight: 600; margin: 0 6px 0 2px; }
+
 .dtw-drop-zone.dtw-correct {
   border-color: var(--success, #22c55e);
   background: #dcfce7;

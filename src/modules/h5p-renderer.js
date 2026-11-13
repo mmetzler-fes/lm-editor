@@ -223,6 +223,23 @@ function setupDndFit(div) {
  * entfällt der Knopf bzw. die Abgabe.
  */
 
+/**
+ * „💡 Lösung anzeigen“ unter der Rückmeldung von „Überprüfen“, wenn noch nicht alles stimmt – wie in H5P
+ * mit der Einstellung „Lösung anzeigen erlauben“ (`enableSolutionsButton`, Vorgabe an). `show()` zeigt die
+ * Lösung und sperrt die Eingabe, damit sie sich nicht abschreiben lässt.
+ */
+function offerSolution(feedback, content, show) {
+  if (content.enableSolutionsButton === false || !feedback) return;
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'btn btn-secondary btn-sm';
+  btn.style.marginLeft = '12px';
+  btn.textContent = '💡 Lösung anzeigen';
+  btn.title = 'Zeigt die richtigen Antworten – danach lässt sich nichts mehr ändern';
+  btn.addEventListener('click', () => { btn.remove(); show(); });
+  feedback.appendChild(btn);
+}
+
 export class H5pRenderer {
   constructor({ host = {} } = {}) {
     this.host = host;
@@ -778,7 +795,21 @@ export class H5pRenderer {
               inputEl.style.borderColor = match ? 'green' : 'red';
               if (match) correct++;
             });
-            div.querySelector('#blanksFeedback').innerHTML = `<span style="font-weight:600;">${correct} von ${answerMap.length} richtig</span>`;
+            const feedback = div.querySelector('#blanksFeedback');
+            feedback.innerHTML = `<span style="font-weight:600;">${correct} von ${answerMap.length} richtig</span>`;
+            if (correct < answerMap.length) offerSolution(feedback, content, () => {
+              // Richtige Antwort hinter jede falsche oder leere Lücke; danach ist die Eingabe gesperrt.
+              answerMap.forEach(({ answer, inputEl }) => {
+                inputEl.readOnly = true;
+                if (inputEl.style.borderColor === 'green') return;
+                const hint = document.createElement('span');
+                hint.className = 'quiz-solution-hint';
+                hint.textContent = answer.split('/')[0].trim();
+                inputEl.after(hint);
+              });
+              blanksCheckBtn.disabled = true;
+              lockNext(false); // leere Lücken sind jetzt gesperrt – weiter geht es trotzdem
+            });
           });
         }
         // Alle Lücken stehen auf einer Seite – ein eigenes "Weiter" gibt es
@@ -1059,7 +1090,22 @@ export class H5pRenderer {
               else if (current) { z.classList.add('dtw-wrong'); }
               else { z.classList.add('dtw-missing'); }
             });
-            div.querySelector('#dtwFeedback').innerHTML = `<span style="font-weight:600;">${correct} von ${zones.length} richtig</span>`;
+            const feedback = div.querySelector('#dtwFeedback');
+            feedback.innerHTML = `<span style="font-weight:600;">${correct} von ${zones.length} richtig</span>`;
+            if (correct < zones.length) offerSolution(feedback, content, () => {
+              zones.forEach((z) => {
+                if (z.classList.contains('dtw-correct')) return;
+                const hint = document.createElement('span');
+                hint.className = 'quiz-solution-hint';
+                hint.textContent = dtwAlternatives(z.dataset.correctWord)[0] || '';
+                z.after(hint);
+              });
+              // Danach nichts mehr ziehen – die Antwort bleibt, wie sie geprüft wurde.
+              textArea.style.pointerEvents = 'none';
+              wordBank.style.pointerEvents = 'none';
+              dtwCheckBtn.disabled = true;
+              lockNext(false);
+            });
           });
         }
         break;

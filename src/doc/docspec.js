@@ -337,7 +337,8 @@ function checkBlock(block, path, errors, inSolution, parent = '') {
       if (block.border !== undefined) need(typeof block.border === 'boolean', 'border: true oder false.');
       break;
     case 'table':
-      need(Array.isArray(block.rows) && block.rows.length > 0, 'rows: Liste der Zeilen fehlt.');
+      // Nur eine Kopfzeile (z. B. Text neben einem Bild aus dem .odt-Import) ist auch eine Tabelle.
+      need(Array.isArray(block.rows) && (block.rows.length > 0 || (Array.isArray(block.header) && block.header.length > 0)), 'rows: Liste der Zeilen fehlt.');
       if (Array.isArray(block.rows)) need(block.rows.every((r) => Array.isArray(r)), 'rows: Jede Zeile muss eine Liste sein, z. B. ["a", "b"].');
       if (block.header !== undefined) need(Array.isArray(block.header), 'header muss eine Liste sein.');
       if (block.widths !== undefined) need(Array.isArray(block.widths) && block.widths.length <= 40 && block.widths.every(tableLengthOk), 'widths: Liste der Spaltenbreiten, z. B. ["4cm", "", "3cm"] (leer = automatisch).');

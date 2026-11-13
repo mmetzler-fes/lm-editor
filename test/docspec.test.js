@@ -124,6 +124,11 @@ describe('validateDocSpec', () => {
     expect(ds.validateDocSpec(null)).toHaveLength(1);
     expect(ds.validateDocSpec({ titel: 'x' })).toEqual(['content: Die Liste der Blöcke fehlt.']);
   });
+
+  it('Tabelle nur mit Kopfzeile (Text neben Bild) ist gültig, ganz leer nicht', () => {
+    expect(ds.validateDocSpec({ content: [{ type: 'table', header: [{ text: 'Text', blocks: [{ type: 'text', text: 'mehr' }] }, { blocks: [] }], rows: [] }] })).toEqual([]);
+    expect(ds.validateDocSpec({ content: [{ type: 'table', rows: [] }] })[0]).toMatch(/rows: Liste der Zeilen fehlt/);
+  });
 });
 
 describe('renderDocSpecHtml', () => {

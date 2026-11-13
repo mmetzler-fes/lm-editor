@@ -99,8 +99,10 @@ export function taskPointsOf(doc) {
 /**
  * Punkte eines Durchlaufs. `answers`: bewertete Antworten ({ moduleId, points? 0–1, isCorrect });
  * `docs`: Dokumente des Durchlaufs. Quizze in einer Aufgabe mit Punkten teilen sich deren Punkte
- * zu gleichen Teilen (z. B. jede Wahr/Falsch-Aussage), jedes übrige zählt 1.
- * → { score, total, each } (Punkte auf zwei Stellen gerundet); `each[i]`: { earned, max } der Antwort i.
+ * zu gleichen Teilen (z. B. jede Wahr/Falsch-Aussage), jedes übrige zählt 1. Je Aufgabe mit Punkten
+ * wird auf halbe Punkte abgerundet (3,33 → 3).
+ * → { score, total, each } (Punkte auf zwei Stellen gerundet); `each[i]`: { earned, max } der Antwort i –
+ * bei einer Aufgabe mit mehreren Teilen ihr Anteil, ungerundet.
  */
 export function scoreRun(answers, docs = []) {
   const byModule = new Map();
@@ -114,20 +116,29 @@ export function scoreRun(answers, docs = []) {
   let score = 0;
   let total = 0;
   const each = (answers || []).map((a) => {
-    const v = Math.min(1, Math.max(0, a?.points ?? (a?.isCorrect ? 1 : 0)));
+    // „Wörter ziehen“ zählte früher nur ganz richtig (ohne `score`); sein Anteil (`percent`) stand aber schon im Ergebnis.
+    const old = a?.moduleType === 'dragTheWords' && typeof a.percent === 'number' && a.score === undefined;
+    const raw = old ? a.percent / 100 : a?.points ?? (a?.isCorrect ? 1 : 0);
+    const v = Math.min(1, Math.max(0, raw));
     const task = a?.moduleId ? tasks.get(byModule.get(String(a.moduleId))?.key) : null;
     if (task) { task.values.push(v); return { task, v }; }
     score += v;
     total += 1;
     return { earned: round(v), max: 1 };
   });
+  const halfDown = (x) => Math.floor(x * 2 + 1e-9) / 2;
   for (const t of tasks.values()) {
     total += t.points;
-    if (t.values.length) score += t.points * (t.values.reduce((s, v) => s + v, 0) / t.values.length);
+    if (t.values.length) score += halfDown(t.points * (t.values.reduce((s, v) => s + v, 0) / t.values.length));
   }
   return {
     score: round(score),
     total: round(total),
-    each: each.map((e) => (e.task ? { earned: round((e.v * e.task.points) / e.task.values.length), max: round(e.task.points / e.task.values.length) } : e)),
+    each: each.map((e) => {
+      if (!e.task) return e;
+      // Ein Teil allein bekommt die gerundeten Punkte der Aufgabe, mehrere ihren Anteil.
+      const n = e.task.values.length;
+      return { earned: n === 1 ? halfDown(e.v * e.task.points) : round((e.v * e.task.points) / n), max: round(e.task.points / n) };
+    }),
   };
 }

@@ -109,6 +109,13 @@ describe('Punkte der Aufgaben (scoreRun)', () => {
     ]);
   });
 
+  it('je Aufgabe auf halbe Punkte abgerundet; Wörter ziehen zählt anteilig, auch aus älteren Abgaben', () => {
+    const t = doc('t', [{ type: 'task', title: 'L', points: 5, blocks: [{ type: 'quiz', module: 'gap' }] }, { type: 'task', title: 'Z', points: 5, blocks: [{ type: 'quiz', module: 'dtw' }] }]);
+    const run = scoreRun([{ moduleId: 'gap', points: 2 / 3 }, { moduleId: 'dtw', moduleType: 'dragTheWords', points: 0, percent: 40 }], [t]);
+    expect(run).toMatchObject({ score: 3 + 2, total: 10 });
+    expect(run.each).toEqual([{ earned: 3, max: 5 }, { earned: 2, max: 5 }]);
+  });
+
   it('fehlende Antwort: Punkte zählen zur Höchstzahl; ohne Punkte wie bisher je Frage 1', () => {
     expect(scoreRun([{ moduleId: 'q1', isCorrect: true }], [ka])).toMatchObject({ score: 6, total: 11 });
     expect(scoreRun([{ moduleId: 'x', isCorrect: true }, { moduleId: 'y', points: 0.25 }])).toMatchObject({ score: 1.25, total: 2 });

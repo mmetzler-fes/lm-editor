@@ -273,6 +273,11 @@ export function collectAnswer(mod, root) {
       result.userAnswer = ua.join(', '); result.correctAnswer = ca.join(', ');
       result.percent = zones.length > 0 ? Math.round((correct / zones.length) * 100) : 0;
       result.isCorrect = correct === zones.length && zones.length > 0;
+      // Teilpunkte je richtigem Feld – wie beim Lückentext.
+      if (zones.length > 0) {
+        result.points = correct / zones.length;
+        result.score = `Richtig: ${result.percent}% | Falsch: ${100 - result.percent}%`;
+      }
       break;
     }
     case 'dictation': {

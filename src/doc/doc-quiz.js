@@ -100,7 +100,7 @@ export function taskPointsOf(doc) {
  * Punkte eines Durchlaufs. `answers`: bewertete Antworten ({ moduleId, points? 0–1, isCorrect });
  * `docs`: Dokumente des Durchlaufs. Quizze in einer Aufgabe mit Punkten teilen sich deren Punkte
  * zu gleichen Teilen (z. B. jede Wahr/Falsch-Aussage), jedes übrige zählt 1.
- * → { score, total } (Punkte auf zwei Stellen gerundet).
+ * → { score, total, each } (Punkte auf zwei Stellen gerundet); `each[i]`: { earned, max } der Antwort i.
  */
 export function scoreRun(answers, docs = []) {
   const byModule = new Map();
@@ -110,17 +110,24 @@ export function scoreRun(answers, docs = []) {
     t.byModule.forEach((v, k) => byModule.set(k, v));
     t.tasks.forEach((v) => tasks.set(v.key, { ...v, values: [] }));
   }
+  const round = (x) => Math.round(x * 100) / 100;
   let score = 0;
   let total = 0;
-  for (const a of answers || []) {
+  const each = (answers || []).map((a) => {
     const v = Math.min(1, Math.max(0, a?.points ?? (a?.isCorrect ? 1 : 0)));
     const task = a?.moduleId ? tasks.get(byModule.get(String(a.moduleId))?.key) : null;
-    if (task) task.values.push(v);
-    else { score += v; total += 1; }
-  }
+    if (task) { task.values.push(v); return { task, v }; }
+    score += v;
+    total += 1;
+    return { earned: round(v), max: 1 };
+  });
   for (const t of tasks.values()) {
     total += t.points;
     if (t.values.length) score += t.points * (t.values.reduce((s, v) => s + v, 0) / t.values.length);
   }
-  return { score: Math.round(score * 100) / 100, total: Math.round(total * 100) / 100 };
+  return {
+    score: round(score),
+    total: round(total),
+    each: each.map((e) => (e.task ? { earned: round((e.v * e.task.points) / e.task.values.length), max: round(e.task.points / e.task.values.length) } : e)),
+  };
 }

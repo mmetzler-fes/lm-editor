@@ -99,11 +99,18 @@ describe('Punkte der Aufgaben (scoreRun)', () => {
       { moduleId: 'q3', isCorrect: true },
       { moduleId: 'q4', isCorrect: true },
     ];
-    expect(scoreRun(answers, [ka])).toEqual({ score: 3 + 1.5 + 3 + 1, total: 6 + 2 + 3 + 1 });
+    const run = scoreRun(answers, [ka]);
+    expect([run.score, run.total]).toEqual([3 + 1.5 + 3 + 1, 6 + 2 + 3 + 1]);
+    expect(run.each).toEqual([
+      { earned: 3, max: 6 },
+      { earned: 0.5, max: 0.5 }, { earned: 0, max: 0.5 }, { earned: 0.5, max: 0.5 }, { earned: 0.5, max: 0.5 },
+      { earned: 3, max: 3 },
+      { earned: 1, max: 1 },
+    ]);
   });
 
   it('fehlende Antwort: Punkte zählen zur Höchstzahl; ohne Punkte wie bisher je Frage 1', () => {
-    expect(scoreRun([{ moduleId: 'q1', isCorrect: true }], [ka])).toEqual({ score: 6, total: 11 });
-    expect(scoreRun([{ moduleId: 'x', isCorrect: true }, { moduleId: 'y', points: 0.25 }])).toEqual({ score: 1.25, total: 2 });
+    expect(scoreRun([{ moduleId: 'q1', isCorrect: true }], [ka])).toMatchObject({ score: 6, total: 11 });
+    expect(scoreRun([{ moduleId: 'x', isCorrect: true }, { moduleId: 'y', points: 0.25 }])).toMatchObject({ score: 1.25, total: 2 });
   });
 });

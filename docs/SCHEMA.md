@@ -47,7 +47,7 @@ beim Einlesen ausgepackt: Überschrift, Text als Absatz, dann die Bausteine.
 |---|---|---|---|
 | `doc` | Wurzel | `meta` (alles neben `content`: `titel` …) | Blöcke |
 | `paragraph` | `text` | `id`, `joined`, `align`, `indent`, `firstLine`, `spaceBefore`, `spaceAfter`, `lineHeight` | Inline |
-| `heading` | `section`, `task`, `subtask`, `heading` | `id`, `role` (`section`, `task`, `subtask`, `plain`), `level` | Inline |
+| `heading` | `section`, `task`, `subtask`, `heading` | `id`, `role` (`section`, `task`, `subtask`, `plain`), `level`, `points` (Punkte einer Aufgabe) | Inline |
 | `note` | `note` | `id` | Inline |
 | `bulletList`, `orderedList` | `list` | `id`, `marker`, `numbering`, `lineHeight`, `spaceBefore`, `spaceAfter` | `listItem` |
 | `listItem` | Punkt | – | `paragraph`, darunter höchstens eine Liste |

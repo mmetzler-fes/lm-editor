@@ -440,6 +440,7 @@ function headingView({ node }) {
   dom.dataset.pm = 'heading';
   dom.dataset.ds = numbered ? role : 'heading';
   let contentDOM = dom;
+  let pts = null;
   if (numbered) {
     const num = document.createElement('span');
     num.className = 'ds-num';
@@ -447,15 +448,28 @@ function headingView({ node }) {
     dom.appendChild(num);
     contentDOM = document.createElement('span');
     dom.appendChild(contentDOM);
+    // Punkte der Aufgabe (Klassenarbeit) – eingestellt über „¶ Absatz …“ an der Überschrift.
+    pts = document.createElement('span');
+    pts.className = 'ds-points';
+    pts.contentEditable = 'false';
+    dom.appendChild(pts);
   }
+  const paintPoints = (n) => {
+    if (pts) pts.textContent = Number(n.attrs.points) > 0 ? ` (${String(n.attrs.points).replace('.', ',')} P)` : '';
+  };
+  paintPoints(node);
   return {
     dom,
     contentDOM,
     // Andere Art (Nummer da/weg): Tiptap baut die Fläche an der Stelle neu.
-    update: (next) => next.type.name === 'heading' && NUMBERED_ROLES.includes(next.attrs.role || 'plain') === numbered,
+    update: (next) => {
+      if (next.type.name !== 'heading' || NUMBERED_ROLES.includes(next.attrs.role || 'plain') !== numbered) return false;
+      paintPoints(next);
+      return true;
+    },
     // Die Nummer schreibt HeadingNumbers hinein – kein Tippen. Sonst läse ProseMirror das als
     // Bearbeitung, zeichnete die Überschrift neu und die Nummer wäre wieder leer.
-    ignoreMutation: (m) => m.type !== 'selection' && !!dom.querySelector(':scope > .ds-num')?.contains(m.target),
+    ignoreMutation: (m) => m.type !== 'selection' && (!!dom.querySelector(':scope > .ds-num')?.contains(m.target) || !!pts?.contains(m.target)),
   };
 }
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from './expect.js';
-import { nestEmbedded, quizIdsOf, planRun } from '../src/doc/doc-quiz.js';
+import { nestEmbedded, quizIdsOf, planRun, taskPointsOf, scoreRun } from '../src/doc/doc-quiz.js';
 
 const doc = (id, content, topic = 't1') => ({ id, type: 'document', _topicId: topic, content: { spec: { content } } });
 const quiz = (id, topic = 't1') => ({ id, type: 'multipleChoice', _topicId: topic, content: {} });
@@ -70,5 +70,40 @@ describe('Quizze im Baum (nestEmbedded)', () => {
   it('findet Quizze auch in Tabellenzellen', () => {
     const d = doc('d', [{ type: 'table', header: [{ text: 'k', blocks: [{ type: 'quiz', module: 'q1' }] }], rows: [['a', { blocks: [{ type: 'quiz', module: 'q2' }] }]] }]);
     expect(quizIdsOf(d)).toEqual(['q1', 'q2']);
+  });
+});
+
+describe('Punkte der Aufgaben (scoreRun)', () => {
+  const ka = doc('ka', [
+    { type: 'task', title: 'A', points: 6, blocks: [{ type: 'quiz', module: 'q1' }] },
+    { type: 'task', title: 'B', points: 2 },
+    { type: 'quiz', module: 'tf' },
+    { type: 'subtask', title: 'B1', points: 3 },
+    { type: 'quiz', module: 'q3' },
+    { type: 'section', title: 'Ohne' },
+    { type: 'quiz', module: 'q4' },
+  ]);
+
+  it('Aufgabenpunkte, auch nach Überschrift; Teilaufgabe mit eigenen; ohne Aufgabe zählt 1', () => {
+    const { byModule } = taskPointsOf(ka);
+    expect(byModule.get('q1').points).toBe(6);
+    expect(byModule.get('tf').points).toBe(2);
+    expect(byModule.get('q3').points).toBe(3);
+    expect(byModule.has('q4')).toBe(false);
+  });
+
+  it('Teile teilen sich die Punkte, Teilpunkte zählen anteilig', () => {
+    const answers = [
+      { moduleId: 'q1', points: 0.5 },
+      { moduleId: 'tf', isCorrect: true }, { moduleId: 'tf', isCorrect: false }, { moduleId: 'tf', isCorrect: true }, { moduleId: 'tf', isCorrect: true },
+      { moduleId: 'q3', isCorrect: true },
+      { moduleId: 'q4', isCorrect: true },
+    ];
+    expect(scoreRun(answers, [ka])).toEqual({ score: 3 + 1.5 + 3 + 1, total: 6 + 2 + 3 + 1 });
+  });
+
+  it('fehlende Antwort: Punkte zählen zur Höchstzahl; ohne Punkte wie bisher je Frage 1', () => {
+    expect(scoreRun([{ moduleId: 'q1', isCorrect: true }], [ka])).toEqual({ score: 6, total: 11 });
+    expect(scoreRun([{ moduleId: 'x', isCorrect: true }, { moduleId: 'y', points: 0.25 }])).toEqual({ score: 1.25, total: 2 });
   });
 });

@@ -20,7 +20,7 @@ export const PM_NODES = {
   // `joined`: weiterer Absatz desselben Text-Bausteins (gleiche ID, „\n\n“ in der Spec).
   paragraph: { group: 'block', content: 'inline*', attrs: ['id', 'joined', ...PARA] },
   // role: section | task | subtask | plain; `level` nur bei plain.
-  heading: { group: 'block', content: 'inline*', attrs: ['id', 'role', 'level'] },
+  heading: { group: 'block', content: 'inline*', attrs: ['id', 'role', 'level', 'points'] },
   note: { group: 'block', content: 'inline*', attrs: ['id'] },
   bulletList: { group: 'block', content: 'listItem+', attrs: ['id', ...LIST] },
   orderedList: { group: 'block', content: 'listItem+', attrs: ['id', ...LIST] },

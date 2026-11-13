@@ -813,6 +813,7 @@ body {
 .docspec h3.ds-heading { font-size: 1.15em; }
 .docspec h4.ds-heading { font-size: 1em; }
 .docspec .ds-num { color: var(--text-secondary); margin-right: 0.3em; }
+.docspec .ds-points, .ds-pm-surface .ds-points { color: var(--text-secondary); font-weight: normal; white-space: nowrap; }
 .docspec .ds-text { margin: 0 0 0.6em; white-space: pre-wrap; }
 .docspec .ds-note { margin: 0 0 0.6em; color: var(--text-secondary); }
 .docspec .ds-list { margin: 0 0 0.6em; padding-left: 1.4em; }

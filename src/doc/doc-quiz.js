@@ -59,3 +59,68 @@ export function nestEmbedded(modules, idsOf = (m) => m.quizIds || []) {
   }
   return { top: modules.filter((m) => !docsOf.has(m.id)), quizzesOf, docsOf };
 }
+
+const validPoints = (p) => (typeof p === 'number' && Number.isFinite(p) && p > 0 ? p : null);
+
+/**
+ * Punkte der Aufgaben eines Dokuments: `points` an task/subtask gilt für die Quizze der Aufgabe –
+ * darin verschachtelt oder (wie nach dem Editor) als Geschwister bis zur nächsten Überschrift.
+ * Eine Teilaufgabe mit eigenen Punkten hat ihre eigenen, sonst die der Aufgabe.
+ * Ergebnis: `byModule` (Quiz-ID → { key, points }), `tasks` (nur Aufgaben mit Quiz).
+ */
+export function taskPointsOf(doc) {
+  let content = doc?.content || {};
+  if (typeof content === 'string') { try { content = JSON.parse(content); } catch (_) { content = {}; } }
+  const byModule = new Map();
+  const tasks = new Map();
+  let n = 0;
+  const own = (b) => {
+    const points = validPoints(b.points);
+    return points ? { key: `${doc?.id || ''}#${n++}`, points } : null;
+  };
+  const walk = (blocks, inherited, taskCtx) => {
+    let local = inherited;
+    let task = taskCtx;
+    for (const b of Array.isArray(blocks) ? blocks : []) {
+      if (!b || typeof b !== 'object') continue;
+      if (b.type === 'section') { local = inherited; task = taskCtx; } else if (b.type === 'task') { task = own(b) || inherited; local = task; } else if (b.type === 'subtask') local = own(b) || task;
+      if (b.type === 'quiz' && b.module && local) {
+        byModule.set(String(b.module), local);
+        tasks.set(local.key, local);
+      }
+      walk(b.blocks, local, task);
+      if (b.type === 'table') for (const row of [b.header, ...(b.rows || [])]) if (Array.isArray(row)) row.forEach((c) => walk(c?.blocks, local, task));
+    }
+  };
+  walk(content.spec?.content, null, null);
+  return { byModule, tasks: [...tasks.values()] };
+}
+
+/**
+ * Punkte eines Durchlaufs. `answers`: bewertete Antworten ({ moduleId, points? 0–1, isCorrect });
+ * `docs`: Dokumente des Durchlaufs. Quizze in einer Aufgabe mit Punkten teilen sich deren Punkte
+ * zu gleichen Teilen (z. B. jede Wahr/Falsch-Aussage), jedes übrige zählt 1.
+ * → { score, total } (Punkte auf zwei Stellen gerundet).
+ */
+export function scoreRun(answers, docs = []) {
+  const byModule = new Map();
+  const tasks = new Map();
+  for (const d of docs) {
+    const t = taskPointsOf(d);
+    t.byModule.forEach((v, k) => byModule.set(k, v));
+    t.tasks.forEach((v) => tasks.set(v.key, { ...v, values: [] }));
+  }
+  let score = 0;
+  let total = 0;
+  for (const a of answers || []) {
+    const v = Math.min(1, Math.max(0, a?.points ?? (a?.isCorrect ? 1 : 0)));
+    const task = a?.moduleId ? tasks.get(byModule.get(String(a.moduleId))?.key) : null;
+    if (task) task.values.push(v);
+    else { score += v; total += 1; }
+  }
+  for (const t of tasks.values()) {
+    total += t.points;
+    if (t.values.length) score += t.points * (t.values.reduce((s, v) => s + v, 0) / t.values.length);
+  }
+  return { score: Math.round(score * 100) / 100, total: Math.round(total * 100) / 100 };
+}

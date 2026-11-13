@@ -272,6 +272,7 @@ function checkBlock(block, path, errors, inSolution, parent = '') {
     case 'task':
     case 'subtask':
       need(isText(block.title) || isText(block.text), 'title fehlt.');
+      if (block.points !== undefined) need(typeof block.points === 'number' && block.points > 0 && block.points <= 1000, 'points: Punkte der Aufgabe, eine Zahl über 0.');
       break;
     case 'heading':
       need(isText(block.text) || isText(block.title), 'text (Überschrift) fehlt.');
@@ -1154,6 +1155,12 @@ function cellHtml(tag, c, ctx = null) {
   return `<${tag}${span('colspan', c?.colspan)}${span('rowspan', c?.rowspan)}${alignAttr}>${richText(c?.text ?? '')}${images}${inner}</${tag}>`;
 }
 
+/** „ (6 P)“ hinter der Überschrift einer Aufgabe mit Punkten (Klassenarbeit). */
+export function pointsLabel(points) {
+  if (typeof points !== 'number' || !(points > 0)) return '';
+  return ` <span class="ds-points">(${String(points).replace('.', ',')} P)</span>`;
+}
+
 /** Nächste Nummer für `type` (section/task/subtask) – zählt in `c` ([Section, Task, Subtask]) weiter; auch für den Editor (docspec-html.js). */
 export function headingNumber(type, c) {
   if (type === 'section') { c[0]++; c[1] = 0; c[2] = 0; return `${c[0]}.`; }
@@ -1179,7 +1186,7 @@ function renderBlockHtml(block, ctx) {
     case 'subtask': {
       const level = HEADING_TYPES.indexOf(type) + 2; // h2 … h4 (h1 ist der Modultitel)
       const title = block.title !== undefined ? block.title : block.text;
-      let html = `<h${level} class="ds-heading ds-${type}"><span class="ds-num">${headingNumber(type, ctx.counters)}</span> ${richText(title ?? '')}</h${level}>`;
+      let html = `<h${level} class="ds-heading ds-${type}"><span class="ds-num">${headingNumber(type, ctx.counters)}</span> ${richText(title ?? '')}${pointsLabel(block.points)}</h${level}>`;
       if (block.title !== undefined && isText(block.text)) html += paragraphs(block.text);
       return html + renderBlocksHtml(block.blocks, ctx);
     }

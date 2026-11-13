@@ -129,7 +129,7 @@ export function mountTiptapSurface(box, host) {
       <span class="ds-tb-sep"></span>
       <button type="button" class="rt-btn" data-do="link" title="Link">🔗</button>
       <button type="button" class="rt-btn" data-do="clear" title="Formatierung löschen">T̸</button>
-      <button type="button" class="rt-btn" data-do="para" title="Absatz: Abstand vor/nach, Einzug, Zeilenabstand, Ausrichtung">¶ Absatz …</button>
+      <button type="button" class="rt-btn" data-do="para" title="Absatz: Abstand vor/nach, Einzug, Zeilenabstand, Ausrichtung – an einer Aufgabe: ihre Punkte">¶ Absatz …</button>
       <button type="button" class="rt-btn" data-dd="table" title="Zeile, Spalte, Zelle, Tabelle" hidden>▤ Tabelle<span class="ds-dd-caret">▾</span></button>
       <span class="ds-tb-sep"></span>
       <button type="button" class="rt-btn" data-do="undo" title="Rückgängig (Strg+Z)">↶</button>
@@ -258,6 +258,17 @@ export function mountTiptapSurface(box, host) {
 
   /** ¶-Dialog aus dem alten Editor: arbeitet auf einem Element, das danach wieder zu Feldern wird. */
   const paragraphDialog = () => {
+    // An einer Aufgabe bzw. Teilaufgabe: ihre Punkte (Klassenarbeit, Auswertung nach Punkten).
+    const head = pm.enclosing('heading');
+    if (head && ['task', 'subtask'].includes(head.node.attrs.role)) {
+      const cur = head.node.attrs.points;
+      const typed = window.prompt('Punkte dieser Aufgabe (leer: keine). Ihre Quizze teilen sich die Punkte in der Auswertung.', cur ? String(cur).replace('.', ',') : '');
+      if (typed === null) return;
+      const n = Number(typed.trim().replace(',', '.'));
+      if (typed.trim() && !(n > 0 && n <= 1000)) { host.status('Punkte: eine Zahl über 0, z. B. 4 oder 1,5.'); return; }
+      pm.updateAttrsAt(head.pos, { points: typed.trim() ? Math.round(n * 100) / 100 : null });
+      return;
+    }
     const at = pm.paragraphAttrs();
     if (!at) { host.status('¶ gilt für Absätze und Listen.'); return; }
     const isList = at.node.type.name !== 'paragraph';

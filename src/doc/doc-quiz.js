@@ -27,17 +27,17 @@ export function quizIdsOf(mod) {
  */
 export function planRun(modules, { companion = false, onlyModule = null } = {}) {
   const only = onlyModule && modules.find((m) => m.id === onlyModule);
-  if (only) return { steps: [only], embedded: new Map() };
-  if (companion) return { steps: modules, embedded: new Map() };
+  if (companion && !only) return { steps: modules, embedded: new Map() };
   const byId = new Map(modules.map((m) => [m.id, m]));
   const embedded = new Map();
-  for (const doc of modules.filter((m) => m.type === 'document')) {
+  // Ein einzelnes Dokument (Link aus OneNote) bringt seine Quizze mit.
+  for (const doc of (only ? [only] : modules).filter((m) => m.type === 'document')) {
     for (const id of quizIdsOf(doc)) {
       const m = byId.get(id);
       if (m && m.id !== doc.id && m.type !== 'document' && (m._topicId ?? null) === (doc._topicId ?? null)) embedded.set(id, m);
     }
   }
-  return { steps: modules.filter((m) => !embedded.has(m.id)), embedded };
+  return { steps: only ? [only] : modules.filter((m) => !embedded.has(m.id)), embedded };
 }
 
 /**

@@ -130,6 +130,10 @@ const pickImageFile = () => new Promise((resolve) => {
 const stored = (key) => { try { return localStorage.getItem(key); } catch (_) { return null; } };
 const store1 = (key, value) => { try { localStorage.setItem(key, value); } catch (_) { /* privater Modus */ } };
 const PALM_MS = 500;          // so lange nach dem Absetzen des Stifts zählt kein Finger (Handballen)
+const PALM_SIZE = 40;         // größere Auflage (CSS-Pixel) ist ein Handballen, kein Finger
+const PEN_NEAR_MS = 400;      // so lange nach einer Bewegung des Stifts (auch schwebend) zählt kein Finger
+const FINGER_STEP = 40;       // Stift-Gerät: der Finger scrollt höchstens so viel je Bewegung – keine Sprünge
+const PEN_DEVICE_KEY = 'ink:penDevice'; // hier wurde schon mit dem Stift geschrieben
 const PRESS_MS = 550;         // so lange drücken (Finger/Stift), dann das Menü der Auswahl
 const PX_PT = 0.75;         // 1 CSS-Pixel = 0,75 pt (96 dpi gegen 72 dpi)
 const KARO_MAX = 60;        // Zeilen à 0,5 cm, wie in docspec
@@ -361,6 +365,24 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
   };
   const selecting = () => state.tool === 'select' || state.tool === 'area';
   const freeFingers = new Set(); // Finger, die dem Browser gehören (scrollen, Quiz).
+  // Stift-Gerät (iPad mit Pencil, Windows mit Stift): Wurde hier schon mit dem Stift geschrieben, scrollt der
+  // Finger nicht mehr über den Browser (mit Schwung), sondern über den Editor – in kleinen Schritten und erst,
+  // wenn er sich wirklich bewegt. Ein aufgelegter Handballen kann das Blatt so nicht wegschieben.
+  let penDevice = stored(PEN_DEVICE_KEY) === '1';
+  let penNearAt = 0;
+  overlay.classList.toggle('ink-pen-device', penDevice);
+  const penSeen = (e) => {
+    if (e.pointerType !== 'pen') return;
+    penNearAt = Date.now();
+    if (penDevice) return;
+    penDevice = true;
+    store1(PEN_DEVICE_KEY, '1');
+    overlay.classList.add('ink-pen-device');
+  };
+  document.addEventListener('pointerdown', penSeen, true);
+  document.addEventListener('pointermove', penSeen, true);
+  /** Handballen: große Auflage, oder der Stift ist gerade da (schreibt, schwebt, eben abgesetzt). */
+  const palmLike = (e) => penDevice && (Math.max(e.width || 0, e.height || 0) > PALM_SIZE || Date.now() - penNearAt < PEN_NEAR_MS);
   const pagesEl = $('.ink-pages');
   // Nur das Zeichen (💾, ⚠️, …) – der Text steht im Tooltip. Längerer Text machte die Leiste breiter, die Knöpfe rutschten.
   const status = (text) => {
@@ -2840,7 +2862,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
       if (e.target.closest?.('.ink-shape-text-edit')) return; // Schreiben in einer Form
       // Handballen: Solange der Stift schreibt und kurz danach zählt kein Finger.
       if (state.editing) return;
-      if (e.pointerType === 'touch' && (penDown || Date.now() - penLiftAt < PALM_MS)) return;
+      if (e.pointerType === 'touch' && (penDown || Date.now() - penLiftAt < PALM_MS || palmLike(e))) return;
       if (e.target.closest?.('.ink-rich-edit')) return;
       // Griff ⠿: Der Baustein ist gewählt und hängt sofort am Stift oder Finger.
       // Nur beim Pfeil: Der Bereich zieht sein Rechteck auch am linken Rand auf.
@@ -2879,13 +2901,15 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
         const [fx, fy] = toPage(e);
         const onRuler = doc.ruler?.visible && doc.ruler.page === p.i && inRuler(doc.ruler, fx, fy);
         if (!onRuler && !selectionAt(p.i, fx, fy)) {
-          freeFingers.add(e.pointerId);
+          // Stift-Gerät: Der Editor scrollt selbst (move: gesture.pan), der Browser nicht.
+          if (!penDevice) freeFingers.add(e.pointerId);
           touches.set(e.pointerId, [e.clientX, e.clientY]);
           offerFingerWriting();
           gesture = tapWithMenu(e, fx, fy, () => {
             if (state.tool === 'text') placeText(p, fx, fy);
             else if (selecting()) selectAt(fx, fy);
           });
+          if (penDevice) gesture.pan = { last: [e.clientX, e.clientY] };
           p.busy = true;
           return;
         }
@@ -3116,9 +3140,17 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
         dropLine(gesture.drop.y);
         if (!fromEdge) edgeScroll(gesture, e);
       } else if (gesture.kind === 'tap') {
+        // Wird aus dem Finger ein Handballen (größer) oder kommt der Stift, scrollt er nicht weiter.
+        if (gesture.pan && (palmLike(e) || penDown)) { cancelGesture(); return; }
         if (gesture.from && Math.hypot(e.clientX - gesture.from[0], e.clientY - gesture.from[1]) > HOLD_SLACK) {
+          if (!gesture.moved && gesture.pan) gesture.pan.last = [e.clientX, e.clientY]; // ab hier, ohne Sprung
           gesture.moved = true;
           clearTimeout(gesture.press);
+        }
+        if (gesture.pan && gesture.moved) {
+          const step = (v) => Math.max(-FINGER_STEP, Math.min(FINGER_STEP, v));
+          scroller.scrollBy(step(gesture.pan.last[0] - e.clientX), step(gesture.pan.last[1] - e.clientY));
+          gesture.pan.last = [e.clientX, e.clientY];
         }
       } else if (gesture.kind === 'rect') {
         // Bis der Stift wirklich zieht, kann es noch langes Drücken werden.
@@ -3713,6 +3745,8 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     window.removeEventListener('scroll', pinPage);
     document.removeEventListener('touchstart', holdStylus, true);
     document.removeEventListener('touchmove', holdStylus, true);
+    document.removeEventListener('pointerdown', penSeen, true);
+    document.removeEventListener('pointermove', penSeen, true);
     document.removeEventListener('pointerup', penFocus, true);
     document.removeEventListener('focusout', pinSoon);
     window.visualViewport?.removeEventListener('resize', pinSoon);

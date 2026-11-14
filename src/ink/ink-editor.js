@@ -130,8 +130,8 @@ const pickImageFile = () => new Promise((resolve) => {
 const stored = (key) => { try { return localStorage.getItem(key); } catch (_) { return null; } };
 const store1 = (key, value) => { try { localStorage.setItem(key, value); } catch (_) { /* privater Modus */ } };
 const PALM_MS = 500;          // so lange nach dem Absetzen des Stifts zählt kein Finger (Handballen)
-const PALM_SIZE = 40;         // größere Auflage (CSS-Pixel) ist ein Handballen, kein Finger
-const PEN_NEAR_MS = 400;      // so lange nach einer Bewegung des Stifts (auch schwebend) zählt kein Finger
+const PALM_SIZE = 90;         // größere Auflage (CSS-Pixel) ist ein Handballen – ein Finger meldet auf dem iPad oft 40–60
+const PEN_NEAR_MS = 400;      // so lange nach einer Bewegung des Stifts auf dem Blatt zählt kein Finger
 const FINGER_STEP = 40;       // Stift-Gerät: der Finger scrollt höchstens so viel je Bewegung – keine Sprünge
 const PEN_DEVICE_KEY = 'ink:penDevice'; // hier wurde schon mit dem Stift geschrieben
 const PRESS_MS = 550;         // so lange drücken (Finger/Stift), dann das Menü der Auswahl
@@ -373,7 +373,9 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
   overlay.classList.toggle('ink-pen-device', penDevice);
   const penSeen = (e) => {
     if (e.pointerType !== 'pen') return;
-    penNearAt = Date.now();
+    // Nur der aufgesetzte Stift: Schwebt er (iPad Pro), während die Hand mit dem Finger scrollt,
+    // galt sonst jeder Finger als Handballen – und nichts scrollte mehr.
+    if (e.type === 'pointerdown' || e.buttons || e.pressure > 0) penNearAt = Date.now();
     if (penDevice) return;
     penDevice = true;
     store1(PEN_DEVICE_KEY, '1');

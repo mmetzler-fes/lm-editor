@@ -3640,6 +3640,8 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
   // sobald nicht mehr geschrieben wird – sonst bliebe die Leiste verschwunden.
   function pinPage() {
     if (state.editing) return;
+    // Von Safari gezoomt: Zurückschieben kämpfte gegen den Zoom – der Inhalt vibrierte.
+    if (Math.abs((window.visualViewport?.scale || 1) - 1) > 0.01) return;
     const a = document.activeElement;
     if (a && (a.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName))) return;
     if (window.scrollY || document.documentElement.scrollTop || document.body.scrollTop) {
@@ -3648,6 +3650,30 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
       document.body.scrollTop = 0;
     }
   }
+  // Zoom der ganzen Seite (Safari: war vor dem Öffnen schon hineingezoomt, oder er rutscht doch durch):
+  // Beim Öffnen auf 100 % zurück (maximum-scale setzt ihn in Safari zurück). Bleibt er, liegt der Editor
+  // genau über dem sichtbaren Ausschnitt in normaler Größe – die Leiste passt immer auf den Bildschirm.
+  const viewportMeta = document.querySelector('meta[name="viewport"]');
+  const viewportBefore = viewportMeta?.getAttribute('content') ?? null;
+  if (viewportMeta && !/maximum-scale/.test(viewportBefore || '')) {
+    viewportMeta.setAttribute('content', `${viewportBefore}, maximum-scale=1`);
+  }
+  const fitViewport = () => {
+    const vv = window.visualViewport;
+    if (!vv || Math.abs(vv.scale - 1) <= 0.01) {
+      overlay.style.transform = overlay.style.transformOrigin = overlay.style.width = overlay.style.height = overlay.style.inset = '';
+      return;
+    }
+    overlay.style.inset = 'auto';
+    overlay.style.left = overlay.style.top = '0px';
+    overlay.style.transformOrigin = '0 0';
+    overlay.style.width = `${vv.width * vv.scale}px`;
+    overlay.style.height = `${vv.height * vv.scale}px`;
+    overlay.style.transform = `translate(${vv.offsetLeft}px, ${vv.offsetTop}px) scale(${1 / vv.scale})`;
+  };
+  window.visualViewport?.addEventListener('resize', fitViewport);
+  window.visualViewport?.addEventListener('scroll', fitViewport);
+  fitViewport();
   const pinSoon = () => setTimeout(pinPage, 150);
   window.addEventListener('scroll', pinPage, { passive: true });
   document.addEventListener('focusout', pinSoon);
@@ -3752,6 +3778,9 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     document.removeEventListener('pointerup', penFocus, true);
     document.removeEventListener('focusout', pinSoon);
     window.visualViewport?.removeEventListener('resize', pinSoon);
+    window.visualViewport?.removeEventListener('resize', fitViewport);
+    window.visualViewport?.removeEventListener('scroll', fitViewport);
+    if (viewportMeta && viewportBefore !== null) viewportMeta.setAttribute('content', viewportBefore);
     document.removeEventListener('visibilitychange', onHide);
     document.removeEventListener('gesturestart', noZoom);
     document.removeEventListener('gesturechange', noZoom);

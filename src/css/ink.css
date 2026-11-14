@@ -269,6 +269,8 @@ body.ink-open { overflow: hidden; }
 
 /* ⊕ zum Einfügen zwischen den Bausteinen: groß genug für den Finger, sichtbar nur ein kleiner Punkt. */
 .ink-paper-host .lm-paper { position: relative; }
+/* Was breiter ist als das Blatt (Leiste einer HTML-App, vergrößertes Quiz), schiebt das Blatt nicht seitlich hin und her. */
+.ink-paper-host .lm-paper { overflow-x: clip; }
 /* Beschriftung der Lehrkraft unter der eigenen (Schüler, nur zum Ansehen) hängt an ihrem Baustein. */
 .ink-paper-host .ds-b { position: relative; }
 .ink-teacher-layer { pointer-events: none; }

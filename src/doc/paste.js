@@ -174,11 +174,27 @@ export function pasteToSpec({ text, html }) {
     const source = pasteSource({ text, html });
     if (!source.html) return null;
     ({ spec, warnings } = htmlToDocSpec(cleanPastedHtml(source.html)));
+    spec = unrenderedBold(spec);
   }
   if (!spec.content.length) return null;
   // Was das Format nicht kennt, kommt als reiner Text – lieber schlicht als gar nicht.
   const usable = validateDocSpec(spec).length ? htmlToDocSpec(plainToHtml(text || '')).spec : spec;
   return usable.content.length ? { spec: usable, warnings } : null;
+}
+
+// **fett** als wörtlicher Text im HTML: Der Chat hat sein eigenes Markdown nicht umgesetzt (oft bei
+// „**1.Schritt:**“). Im Dokument stünde sonst \*\*…\*\* – gemeint war Fettschrift.
+const LITERAL_BOLD = /\\\*\\\*(?=[^\s\\])((?:(?!\\\*\\\*)[^\n])+?)(?<=\S)\\\*\\\*/g;
+const VERBATIM_KEYS = new Set(['code', 'latex', 'src', 'file', 'id', 'url', 'href', 'module']);
+
+/** Wörtliches `**…**` in Texten der Bausteine → Fettschrift. */
+export function unrenderedBold(value, key = '') {
+  if (typeof value === 'string') return VERBATIM_KEYS.has(key) ? value : value.replace(LITERAL_BOLD, '**$1**');
+  if (Array.isArray(value)) return value.map((v) => unrenderedBold(v, key));
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, unrenderedBold(v, k)]));
+  }
+  return value;
 }
 
 /**

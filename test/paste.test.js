@@ -1,6 +1,6 @@
 // Einfügen aus der Zwischenablage: Quelle wählen, Markdown und reiner Text (ohne DOM).
 import { describe, it, expect } from './expect.js';
-import { looksLikeDocMarkdown, looksLikeMarkdown, markdownToHtml, plainToHtml, pasteSource, pasteToEditorHtml } from '../src/doc/paste.js';
+import { looksLikeDocMarkdown, looksLikeMarkdown, markdownToHtml, plainToHtml, pasteSource, pasteToEditorHtml, unrenderedBold } from '../src/doc/paste.js';
 
 describe('Einfügen: eigene Schreibweise (docs/MARKDOWN.md)', () => {
   it('Behälter, Spans, Attribute, x^2^, CO~2~ werden erkannt', () => {
@@ -69,5 +69,20 @@ describe('Einfügen ins Markdown-Fenster', () => {
     const { pasteAsMarkdown } = await import('../src/doc/paste.js');
     expect(pasteAsMarkdown({ text: '**fett**', html: '' })).toBe(null);
     expect(pasteAsMarkdown({ text: 'nur Text', html: '<span>nur Text</span>' })).toBe(null);
+  });
+});
+
+describe('Einfügen: **fett**, das der Chat nicht umgesetzt hat', () => {
+  it('wird Fettschrift; einzelne Sterne, Code und „a ** b“ bleiben', () => {
+    const spec = { content: [
+      { type: 'list', items: ['\\*\\*1.Hardware-Verbindung herstellen:\\*\\* Switch nutzen.', '5 \\* 3 = 15'] },
+      { type: 'code', code: '\\*\\*x\\*\\*' },
+      { type: 'text', text: 'a \\*\\* b \\*\\* c' },
+    ] };
+    const out = unrenderedBold(spec);
+    expect(out.content[0].items[0]).toBe('**1.Hardware-Verbindung herstellen:** Switch nutzen.');
+    expect(out.content[0].items[1]).toBe('5 \\* 3 = 15');
+    expect(out.content[1].code).toBe('\\*\\*x\\*\\*');
+    expect(out.content[2].text).toBe('a \\*\\* b \\*\\* c');
   });
 });

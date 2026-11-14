@@ -586,6 +586,10 @@ const esc = (v) => String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replac
 
 /** Baustein, der im Editor nicht als Text bearbeitet wird (Doppelklick öffnet ihn). */
 export function widgetHtml(block) {
+  // Seitenumbruch: nur eine gestrichelte Linie mit kleiner Beschriftung (die Seitennummer setzt page-breaks.js).
+  if (block?.type === 'pagebreak') {
+    return `<div class="ds-widget ds-widget-pagebreak" contenteditable="false" data-block="${encodeURIComponent(JSON.stringify(block))}" title="Seitenumbruch"><span class="ds-widget-label">Seitenumbruch</span></div>`;
+  }
   const preview = renderDocSpecHtml({ content: [block] }, { showSolutions: true, showPageBreaks: true });
   const field = { linien: 'Linien', leer: 'Feld', frei: 'Platz (unsichtbar)' }[block?.pattern];
   const label = { image: 'Bild', rawBlock: 'Baustein', karo: field || 'Karo', solution: 'Lösung', formula: 'Formel', code: 'Code', spacer: 'Platz', pagebreak: 'Seitenumbruch', quiz: 'Quiz', group: 'Zeichenrahmen' }[block?.type] || block?.type || 'Baustein';

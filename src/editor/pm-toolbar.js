@@ -44,23 +44,26 @@ export function openImageDialog(block, { apply, remove, storeImage = (file) => w
   overlay.className = 'confirm-overlay';
   const place = block.float ? `float:${block.float}` : block.align ? `align:${block.align}` : '';
   const cm = /^(\d+(?:\.\d+)?)cm$/.exec(String(block.width ?? ''))?.[1] ?? '';
-  overlay.innerHTML = `<form class="import-modules-card ds-para-dialog" role="dialog" aria-modal="true">
+  // Werkzeuge am Bild unter der Vorschau, unten nur Entfernen | Abbrechen OK – sonst ragt die Knopfreihe aus dem Fenster.
+  overlay.innerHTML = `<form class="import-modules-card ds-para-dialog ds-image-dialog" role="dialog" aria-modal="true">
       <h3>🖼 Bild</h3>
       <div class="ds-pm-image-preview"></div>
+      <div class="ds-image-tools">
+        ${window.appImageClipboard ? `<button type="button" class="btn btn-secondary btn-sm" data-a="copy" title="Für LibreOffice Draw, Word, OneNote">📋 Kopieren</button>
+        <button type="button" class="btn btn-secondary btn-sm" data-a="save" title="Als Datei speichern">⬇ Speichern</button>` : ''}
+        <button type="button" class="btn btn-secondary btn-sm" data-a="replace" title="Anderes Bild wählen – Breite und Lage bleiben">🔁 Ersetzen</button>
+      </div>
       <div class="ds-para-grid">
         <label>Breite<span class="ds-para-in"><input name="width" inputmode="decimal" value="${String(cm).replace('.', ',')}" placeholder="${escapeAttr(cm ? '' : String(block.width ?? 'wie das Bild'))}"> cm</span></label>
         <label>Lage<select name="place">${IMAGE_PLACES.map(([v, l]) => `<option value="${v}" ${v === place ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
-        <label class="ws-image-check"><input type="checkbox" name="border" ${block.border ? 'checked' : ''}> Rahmen</label>
-        <label>Unterschrift<input name="caption" value="${escapeAttr(block.caption ?? '')}"></label>
-        <label>Beschreibung (Screenreader)<input name="alt" maxlength="200" value="${escapeAttr(block.alt ?? '')}"></label>
+        <label>Unterschrift<input name="caption" value="${escapeAttr(block.caption ?? '')}" placeholder="unter dem Bild"></label>
+        <label class="ds-image-border"><input type="checkbox" name="border" ${block.border ? 'checked' : ''}> Rahmen</label>
+        <label class="ds-image-wide">Beschreibung (Screenreader)<input name="alt" maxlength="200" value="${escapeAttr(block.alt ?? '')}" placeholder="Was zeigt das Bild?"></label>
       </div>
       <p class="hint">16,5 cm heißt „ganze Breite“: Im Querformat füllt das Bild die Zeile.</p>
       <p class="hint ds-para-error" hidden>Breite bitte als Zahl in cm, 0,5 bis 25,5.</p>
       <div class="confirm-actions">
-        ${window.appImageClipboard ? `<button type="button" class="btn btn-secondary" data-a="copy" title="Für LibreOffice Draw, Word, OneNote">📋 Kopieren</button>
-        <button type="button" class="btn btn-secondary" data-a="save">⬇ Speichern</button>` : ''}
-        <button type="button" class="btn btn-secondary" data-a="replace">🔁 Ersetzen</button>
-        <button type="button" class="btn btn-danger" data-a="del">Entfernen</button>
+        <button type="button" class="btn btn-danger ds-image-del" data-a="del">🗑 Entfernen</button>
         <button type="button" class="btn btn-secondary" data-a="cancel">Abbrechen</button>
         <button type="submit" class="btn btn-primary">OK</button>
       </div></form>`;

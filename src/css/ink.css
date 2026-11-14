@@ -231,7 +231,9 @@ body.ink-open { overflow: hidden; }
 .ink-tool-select .ink-karo-w, .ink-tool-select .ink-karo-c, .ink-tool-select .ink-karo-tools { display: flex; }
 .ink-action { color: var(--accent); white-space: nowrap; flex: 0 0 auto; font-size: 18px; }
 .ink-action.ink-labeled { font-size: inherit; margin-right: 4px; }
-.ink-title { flex: 0 1 auto; min-width: 6ch; }
+/* Titel klein am rechten Rand neben 💡 – er nimmt keinen Platz in der Mitte der Leiste ein. */
+.ink-title { flex: 0 1 auto; min-width: 6ch; max-width: 28ch; font-weight: 500; font-size: 0.85em; color: var(--text-secondary); }
+.ink-title + .ink-solution-group { margin-left: 4px; }
 
 /* ===== Drucken (printPaper): nur die Kopie des Blatts, Ränder über @page ===== */
 .ink-print-sheet { display: none; }

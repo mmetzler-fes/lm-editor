@@ -134,6 +134,7 @@ const PALM_SIZE = 90;         // größere Auflage (CSS-Pixel) ist ein Handballe
 const PEN_NEAR_MS = 400;      // so lange nach einer Bewegung des Stifts auf dem Blatt zählt kein Finger
 const FINGER_STEP = 40;       // Stift-Gerät: der Finger scrollt höchstens so viel je Bewegung – keine Sprünge
 const PEN_DEVICE_KEY = 'ink:penDevice'; // hier wurde schon mit dem Stift geschrieben
+const MAX_ZOOM = 5;          // größter Zoom des Blatts (Auf Breite, Vergrößern, zwei Finger)
 const PRESS_MS = 550;         // so lange drücken (Finger/Stift), dann das Menü der Auswahl
 const PX_PT = 0.75;         // 1 CSS-Pixel = 0,75 pt (96 dpi gegen 72 dpi)
 const KARO_MAX = 60;        // Zeilen à 0,5 cm, wie in docspec
@@ -1508,7 +1509,8 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
 
   function fitZoom(pageW = pages[0]?.w || A4.w) {
     const room = scroller.clientWidth - 24;
-    return Math.max(0.3, Math.min(2.5, room / pageW));
+    // Bis zur Grenze von setZoom: Auf breiten Bildschirmen (oder mit kleinem Browser-Zoom) füllt das Blatt die Breite.
+    return Math.max(0.3, Math.min(MAX_ZOOM, room / pageW));
   }
 
   /**
@@ -1518,7 +1520,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
   function setZoom(z, at = null) {
     const keep = scroller.scrollTop / (scroller.scrollHeight || 1);
     const before = state.zoom;
-    state.zoom = Math.max(0.3, Math.min(4, z));
+    state.zoom = Math.max(0.3, Math.min(MAX_ZOOM, z));
     state.zoomSet = true;
     const r = scroller.getBoundingClientRect();
     const ax = at ? at.x - r.left : 0;
@@ -3744,7 +3746,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
   };
   const pinchChange = (e) => {
     if (!pinch) return;
-    const z = Math.max(0.3, Math.min(4, pinch.z0 * e.scale));
+    const z = Math.max(0.3, Math.min(MAX_ZOOM, pinch.z0 * e.scale));
     pinch.s = z / pinch.z0;
     pagesEl.style.transform = `scale(${pinch.s})`;
   };

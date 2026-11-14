@@ -3675,6 +3675,14 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
   window.visualViewport?.addEventListener('scroll', fitViewport);
   fitViewport();
   const pinSoon = () => setTimeout(pinPage, 150);
+  // Eine HTML-App kam aus „⛶ Groß“ zurück ins Blatt: Leiste und Fläche wieder herstellen.
+  const afterApp = () => setTimeout(() => {
+    overlay.scrollTop = 0;
+    pinPage();
+    fitViewport();
+    paintBar();
+  }, 120);
+  window.addEventListener('lm-app-restored', afterApp);
   window.addEventListener('scroll', pinPage, { passive: true });
   document.addEventListener('focusout', pinSoon);
   window.visualViewport?.addEventListener('resize', pinSoon);
@@ -3779,6 +3787,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     document.removeEventListener('focusout', pinSoon);
     window.visualViewport?.removeEventListener('resize', pinSoon);
     window.visualViewport?.removeEventListener('resize', fitViewport);
+    window.removeEventListener('lm-app-restored', afterApp);
     window.visualViewport?.removeEventListener('scroll', fitViewport);
     if (viewportMeta && viewportBefore !== null) viewportMeta.setAttribute('content', viewportBefore);
     document.removeEventListener('visibilitychange', onHide);

@@ -181,6 +181,10 @@ function atomView(host) {
       const w = t.firstElementChild;
       dom.className = w.className;
       if (bar) dom.classList.add('ds-widget-selected');
+      // Bild „neben dem Text“ (z. B. QR-Code eines Kurzlinks): auch beim Bearbeiten neben den Absätzen danach.
+      const float = current.type.name === 'image' ? blockOfNode(current).float : null;
+      const side = ['left', 'right'].includes(float) ? float : null;
+      if (side) dom.classList.add(`ds-widget-float-${side}`);
       dom.title = w.title;
       dom.contentEditable = 'false';
       dom.dataset.pmAtom = current.type.name;

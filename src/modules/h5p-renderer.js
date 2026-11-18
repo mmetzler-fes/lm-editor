@@ -52,7 +52,7 @@ const WIDE_TYPES = new Set(['dragAndDrop', 'imageHotspots', 'video', 'worksheet'
 // (`spec.quizScale`, `*` für die übrigen). Was jemand selbst einstellt,
 // merkt sich das Gerät.
 
-const QUIZ_SCALES = [0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1, 1.1, 1.25, 1.5];
+const QUIZ_SCALES = [0.2, 0.25, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1, 1.1, 1.25, 1.5];
 const quizScaleKey = (id) => `lm_quiz_scale:${id}`;
 
 /** Vorgabe für ein Quiz: am Baustein, sonst je Typ aus dem Dokument, sonst 100 %. */

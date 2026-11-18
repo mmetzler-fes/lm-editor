@@ -384,7 +384,7 @@ function checkBlock(block, path, errors, inSolution, parent = '') {
       need(isText(block.module) && String(block.module).trim() !== '', 'module (Modul des Lernthemas) fehlt.');
       need(!inSolution, 'Ein Quiz in einer Lösung ist nicht möglich.');
       if (block.title !== undefined) need(isText(block.title), 'title muss ein Text sein.');
-      if (block.scale !== undefined) need(typeof block.scale === 'number' && block.scale >= 0.5 && block.scale <= 1.5, 'scale: Größe von 0.5 bis 1.5, z. B. 0.8 für 80 %.');
+      if (block.scale !== undefined) need(typeof block.scale === 'number' && block.scale >= 0.2 && block.scale <= 1.5, 'scale: Größe von 0.2 bis 1.5, z. B. 0.8 für 80 %.');
       break;
     case 'karo':
       if (block.width !== undefined) need(KARO_WIDTH_RE.test(String(block.width).trim()), 'width: Breite in cm, z. B. "8cm".');

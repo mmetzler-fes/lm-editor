@@ -8,7 +8,7 @@ import { escapeAttr, escapeHtml } from '../util/dom.js';
 import { mathmlToLatex, mathmlForEditing, looksLikeMathml } from '../doc/mathml-latex.js';
 
 const TITLES = { karo: 'Schreibfeld', formula: 'Formel', quiz: 'Quiz', group: 'Zeichenrahmen', spacer: 'Platz' };
-const SCALES = [0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1, 1.1, 1.25, 1.5];
+const SCALES = [0.2, 0.25, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1, 1.1, 1.25, 1.5];
 const PATTERNS = [['karo', '▦ Karo'], ['linien', '☰ Linien'], ['leer', '▢ Leer (Rahmen)'], ['frei', '◌ Unsichtbar (nur Platz)']];
 
 /** Felder aus dem Formular in den Baustein übernehmen – ohne Formular, damit es sich prüfen lässt. */

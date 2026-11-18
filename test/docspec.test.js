@@ -304,11 +304,13 @@ describe('Tabelle ohne Linien (Abbildungen nebeneinander)', () => {
 });
 
 describe('Quiz im Dokument: Größe', () => {
-  it('scale 0.5–1.5 als Vorgabe (data-scale)', () => {
+  it('scale 0.2–1.5 als Vorgabe (data-scale)', () => {
     const block = { type: 'quiz', module: 'm1', scale: 0.8 };
     expect(ds.validateDocSpec({ content: [block] })).toEqual([]);
     expect(ds.renderDocSpecHtml({ content: [block] })).toContain('data-scale="0.8"');
-    expect(ds.validateDocSpec({ content: [{ ...block, scale: 3 }] }).join(' ')).toContain('scale: Größe von 0.5 bis 1.5');
+    expect(ds.validateDocSpec({ content: [{ ...block, scale: 3 }] }).join(' ')).toContain('scale: Größe von 0.2 bis 1.5');
+    expect(ds.validateDocSpec({ content: [{ ...block, scale: 0.2 }] })).toEqual([]);
+    expect(ds.validateDocSpec({ content: [{ ...block, scale: 0.1 }] }).join(' ')).toContain('scale: Größe von 0.2 bis 1.5');
   });
 });
 

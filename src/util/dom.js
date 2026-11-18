@@ -265,7 +265,10 @@ export function showContextMenu(x, y, items) {
  *  - canLongPress()         ob der lange Druck gerade etwas ausloesen soll
  *  - canDrag()              ob das Element gerade ziehbar ist (z. B. nur eine
  *                           gefuellte Luecke)
- *  - scrollContainer        wird am oberen/unteren Rand mitgescrollt
+ *  - scrollContainer        wird am oberen/unteren Rand mitgescrollt –
+ *                           zusätzlich zu den scrollenden Vorfahren des
+ *                           Elements und dem Fenster, die das Ziehen selbst
+ *                           findet (siehe edgeScrollStep)
  *
  * Ein Tippen ohne Bewegung bleibt ein normaler click.
  */
@@ -302,6 +305,97 @@ export function effectiveZoom(el) {
   return z;
 }
 
+// ---- Beim Ziehen am Rand mitscrollen ----
+//
+// Auf dem iPad endet die Fläche oft knapp unter der Ablage: Ein Element von
+// unten muss nach oben zu einer Zone, die schon aus dem Bild gescrollt ist.
+// Nahe am Rand scrollt deshalb, was dort scrollen kann – je näher am Rand
+// (oder darüber hinaus), desto schneller. Gesucht wird selbst: die scrollenden
+// Vorfahren unter dem Zeiger und des gezogenen Elements, zuletzt das Fenster.
+// Gemessen wird am sichtbaren Teil (visualViewport – auch bei Pinch-Zoom).
+
+/** Breite des Randstreifens in Bildschirm-Pixeln, je Zeigerart. */
+const EDGE_SCROLL_PX = { touch: 90, pen: 70, mouse: 50 };
+/** Höchstens so viele Pixel je Bild (ca. 60 je Sekunde). */
+const EDGE_SCROLL_MAX = 24;
+
+function scrollingAncestors(start) {
+  const out = [];
+  for (let n = start; n && n.nodeType === 1; n = n.parentElement) {
+    if (n === document.body || n === document.documentElement) break;
+    const o = getComputedStyle(n).overflowY;
+    if ((o === 'auto' || o === 'scroll') && n.scrollHeight > n.clientHeight + 1) out.push(n);
+  }
+  return out;
+}
+
+/** Sichtbarer senkrechter Bereich [oben, unten] von `n` (null: das Fenster). */
+function visibleBand(n) {
+  const vv = window.visualViewport;
+  let top = vv ? vv.offsetTop : 0;
+  let bottom = top + (vv ? vv.height : window.innerHeight);
+  if (n) {
+    const r = n.getBoundingClientRect();
+    top = Math.max(top, r.top);
+    bottom = Math.min(bottom, r.bottom);
+  }
+  return [top, bottom];
+}
+
+/** -1 … 1: wie tief der Punkt im oberen (−) bzw. unteren (+) Randstreifen liegt; darüber hinaus ±1. */
+function edgeDepth(y, [top, bottom], px) {
+  const edge = Math.min(px, (bottom - top) / 4);
+  if (edge < 8) return 0;
+  if (y < top + edge) return -Math.min(1, (top + edge - y) / edge);
+  if (y > bottom - edge) return Math.min(1, (y - (bottom - edge)) / edge);
+  return 0;
+}
+
+function canScroll(n, dir) {
+  if (!n) {
+    const se = document.scrollingElement || document.documentElement;
+    return dir < 0 ? window.scrollY > 0 : window.scrollY + window.innerHeight < se.scrollHeight - 1;
+  }
+  return dir < 0 ? n.scrollTop > 0 : n.scrollTop + n.clientHeight < n.scrollHeight - 1;
+}
+
+/**
+ * Ein Schritt Randscrollen für den Zeiger bei (x, y). Innere Flächen (etwa
+ * eine scrollende Ablage) zählen nur, solange der Zeiger in ihnen liegt;
+ * die äußerste scrollende Fläche und das Fenster auch, wenn er darüber
+ * hinaus gezogen wird (Kopfzeile, Bildschirmrand). Gibt zurück, ob gescrollt wurde.
+ */
+export function edgeScrollStep(x, y, el, pointerType, extra) {
+  const px = EDGE_SCROLL_PX[pointerType] ?? 60;
+  const under = document.elementFromPoint(x, y);
+  const list = [];
+  for (const n of [...scrollingAncestors(under), ...scrollingAncestors(el), extra]) {
+    if (n && !list.includes(n) && n.isConnected) list.push(n);
+  }
+  const by = (n, d) => {
+    const step = Math.sign(d) * Math.max(2, Math.round(Math.abs(d) * EDGE_SCROLL_MAX));
+    if (n) n.scrollTop += step; else window.scrollBy(0, step);
+    return true;
+  };
+  for (const n of list) {
+    const r = n.getBoundingClientRect();
+    if (x < r.left || x > r.right) continue;
+    const band = visibleBand(n);
+    if (y < band[0] || y > band[1]) continue;
+    const d = edgeDepth(y, band, px);
+    if (d && canScroll(n, d)) return by(n, d);
+  }
+  // Am Rand des Bildschirms (oder darüber hinaus, etwa über der Kopfzeile):
+  // das Fenster, sonst die größte scrollende Fläche – die Seite, nicht eine Ablage.
+  const win = edgeDepth(y, visibleBand(null), px);
+  if (!win) return false;
+  if (canScroll(null, win)) return by(null, win);
+  const height = (n) => { const [t, b] = visibleBand(n); return b - t; };
+  const outer = list.filter((n) => canScroll(n, win)).sort((a, b) => height(b) - height(a))[0];
+  if (outer) return by(outer, win);
+  return false;
+}
+
 export function attachPointerDrag(el, { onHover, onDrop, onLongPress, canLongPress, canDrag, scrollContainer } = {}) {
   el.draggable = false;
   // Liegt das Element in markiertem Text, zöge der Browser sonst die
@@ -319,7 +413,6 @@ export function attachPointerDrag(el, { onHover, onDrop, onLongPress, canLongPre
     const id = e.pointerId;
     const x0 = e.clientX, y0 = e.clientY;
     let ghost = null, offX = 0, offY = 0, zoom = 1;
-    let scrollSpeed = 0, scrollTimer = null;
     let pressTimer = null;
 
     if (onLongPress && e.pointerType !== 'mouse' && (!canLongPress || canLongPress())) {
@@ -337,15 +430,16 @@ export function attachPointerDrag(el, { onHover, onDrop, onLongPress, canLongPre
       rect: ghost ? ghost.getBoundingClientRect() : null,
     });
 
-    const autoScroll = (ev) => {
-      if (!scrollContainer) return;
-      const r = scrollContainer.getBoundingClientRect();
-      scrollSpeed = ev.clientY - r.top < 60 ? -15 : r.bottom - ev.clientY < 60 ? 15 : 0;
-      if (scrollSpeed && !scrollTimer) {
-        scrollTimer = setInterval(() => { scrollContainer.scrollTop += scrollSpeed; }, 20);
-      } else if (!scrollSpeed && scrollTimer) {
-        clearInterval(scrollTimer); scrollTimer = null;
+    // Am Rand mitscrollen: solange der Zeiger nahe am oberen/unteren Rand
+    // ruht, läuft die Fläche weiter – auch ohne neue Bewegung.
+    let lastX = x0, lastY = y0, scrollFrame = 0;
+    const scrollLoop = () => {
+      scrollFrame = 0;
+      if (!ghost) return;
+      if (edgeScrollStep(lastX, lastY, el, e.pointerType, scrollContainer)) {
+        if (onHover) onHover(document.elementFromPoint(lastX, lastY), info({ clientX: lastX, clientY: lastY }));
       }
+      scrollFrame = requestAnimationFrame(scrollLoop);
     };
 
     const move = (ev) => {
@@ -374,8 +468,9 @@ export function attachPointerDrag(el, { onHover, onDrop, onLongPress, canLongPre
       ev.preventDefault();
       ghost.style.left = (ev.clientX - offX) / zoom + 'px';
       ghost.style.top = (ev.clientY - offY) / zoom + 'px';
+      lastX = ev.clientX; lastY = ev.clientY;
       if (onHover) onHover(hit(ev), info(ev));
-      autoScroll(ev);
+      if (!scrollFrame) scrollFrame = requestAnimationFrame(scrollLoop);
     };
 
     const end = (ev) => {
@@ -393,7 +488,7 @@ export function attachPointerDrag(el, { onHover, onDrop, onLongPress, canLongPre
 
     function cleanup() {
       if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; }
-      if (scrollTimer) { clearInterval(scrollTimer); scrollTimer = null; }
+      if (scrollFrame) { cancelAnimationFrame(scrollFrame); scrollFrame = 0; }
       if (ghost) { ghost.remove(); ghost = null; }
       el.classList.remove('dragging');
       if (onHover) onHover(null);

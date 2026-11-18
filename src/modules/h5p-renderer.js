@@ -52,7 +52,7 @@ const WIDE_TYPES = new Set(['dragAndDrop', 'imageHotspots', 'video', 'worksheet'
 // (`spec.quizScale`, `*` für die übrigen). Was jemand selbst einstellt,
 // merkt sich das Gerät.
 
-const QUIZ_SCALES = [0.5, 0.6, 0.7, 0.8, 0.9, 1, 1.1, 1.25, 1.5];
+const QUIZ_SCALES = [0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1, 1.1, 1.25, 1.5];
 const quizScaleKey = (id) => `lm_quiz_scale:${id}`;
 
 /** Vorgabe für ein Quiz: am Baustein, sonst je Typ aus dem Dokument, sonst 100 %. */
@@ -106,6 +106,13 @@ function quizSizeControl(box, slot, moduleId, preset = 1) {
 // Prozent des Bildes und wandern mit.
 
 const DND_VIEW_KEY = 'lm_dnd_view';
+/**
+ * Eigene Größe für die Ablage, unabhängig vom Bild: Auf dem iPad nahm eine
+ * Ablage mit vielen Elementen sonst den halben Bildschirm ein, und das Bild
+ * wurde beim Einpassen winzig. Merkt sich das Gerät für alle Aufgaben.
+ */
+const DND_BANK_KEY = 'lm_dnd_bank_scale';
+const DND_BANK_SCALES = [0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1, 1.15, 1.3];
 /** Schmaler als so viele Bildschirm-Pixel wird das Bild nicht – sonst wird die Beschriftung unlesbar. */
 const DND_MIN_WIDTH = 320;
 /**
@@ -142,6 +149,18 @@ function setupDndFit(div) {
   const buttons = player.querySelectorAll('.dnd-view-toggle button');
   let mode = 'fit';
   try { if (localStorage.getItem(DND_VIEW_KEY) === 'big') mode = 'big'; } catch (_) {}
+  let bankScale = 1;
+  try { bankScale = Number(localStorage.getItem(DND_BANK_KEY)) || 1; } catch (_) {}
+  if (!DND_BANK_SCALES.includes(bankScale)) bankScale = 1;
+  const bankBar = player.querySelector('.dnd-bank-size');
+  const applyBank = () => {
+    bank.style.zoom = bankScale === 1 ? '' : String(bankScale);
+    if (!bankBar) return;
+    bankBar.querySelector('.dnd-bank-size-value').textContent = `${Math.round(bankScale * 100)} %`;
+    bankBar.querySelector('[data-bank="-1"]').disabled = bankScale <= DND_BANK_SCALES[0];
+    bankBar.querySelector('[data-bank="1"]').disabled = bankScale >= DND_BANK_SCALES[DND_BANK_SCALES.length - 1];
+  };
+  applyBank();
 
   const layout = () => {
     buttons.forEach((b) => b.classList.toggle('active', b.dataset.view === mode));
@@ -178,9 +197,24 @@ function setupDndFit(div) {
       // passt es trotzdem nicht, scrollt nur die Ablage.
       const bankW = Math.max(DND_SIDE_BANK, Math.min(DND_SIDE_BANK_MAX, width - Math.floor(w) - 16));
       board.style.gridTemplateColumns = `${Math.floor(bankW)}px ${Math.floor(w)}px`;
-      bank.style.maxHeight = `${Math.floor(Math.max(200, avail))}px`;
+      // max-height gilt im Zoom der Ablage – auf Bildschirmhöhe umrechnen.
+      bank.style.maxHeight = `${Math.floor(Math.max(200, avail) / bankScale)}px`;
     }
   };
+
+  bankBar?.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-bank]');
+    if (!b) return;
+    e.preventDefault();
+    const i = DND_BANK_SCALES.indexOf(bankScale) + Number(b.dataset.bank);
+    bankScale = DND_BANK_SCALES[Math.max(0, Math.min(DND_BANK_SCALES.length - 1, i))];
+    try {
+      if (bankScale === 1) localStorage.removeItem(DND_BANK_KEY);
+      else localStorage.setItem(DND_BANK_KEY, String(bankScale));
+    } catch (_) {}
+    applyBank();
+    layout();
+  });
 
   buttons.forEach((b) => b.addEventListener('click', () => {
     mode = b.dataset.view === 'big' ? 'big' : 'fit';
@@ -1422,6 +1456,12 @@ export class H5pRenderer {
           <div class="dnd-player${hasImage ? '' : ' dnd-player-list'}${pairs ? ' dnd-player-pairs' : ''}">
             ${content.taskDescription ? `<div class="dnd-player-desc" style="margin-bottom:16px;">${sanitizeModuleDescriptionHtml(content.taskDescription)}</div>` : ''}
             ${hasImage ? `<div class="dnd-view-bar">
+              <div class="dnd-bank-size" role="group" aria-label="Größe der Ablage">
+                <span class="dnd-bank-size-label">Ablage</span>
+                <button type="button" data-bank="-1" title="Elemente der Ablage kleiner" aria-label="Ablage verkleinern">−</button>
+                <span class="dnd-bank-size-value"></span>
+                <button type="button" data-bank="1" title="Elemente der Ablage größer" aria-label="Ablage vergrößern">+</button>
+              </div>
               <div class="dnd-view-toggle" role="group" aria-label="Größe der Aufgabe">
                 <button type="button" data-view="fit" title="Ganze Aufgabe auf einen Bildschirm">⤢ Einpassen</button>
                 <button type="button" data-view="big" title="Bild in voller Breite – größer, dafür scrollen">🔍 Vergrößern</button>

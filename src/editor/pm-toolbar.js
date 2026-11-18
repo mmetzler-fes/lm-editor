@@ -9,6 +9,7 @@ import { groupRow, ungroup } from '../doc/image-group.js';
 import { htmlToDocSpec, specToEditorHtml } from '../doc/docspec-html.js';
 import { escapeAttr, showContextMenu } from '../util/dom.js';
 import { openParagraphDialog } from './paragraph-dialog.js';
+import { openSpecialCharDialog } from './special-chars.js';
 
 const COLOR_NAMES = { blau: '🟦 Blau', gruen: '🟩 Grün', orange: '🟧 Orange', lila: '🟪 Lila', grau: '⬜ Grau' };
 const HL_NAMES = { gelb: '🟨 Gelb', gruen: '🟩 Grün', blau: '🟦 Blau', rosa: '🩷 Rosa' };
@@ -131,6 +132,7 @@ export function mountTiptapSurface(box, host) {
       <button type="button" class="rt-btn" data-do="indent" title="Einzug vergrößern">|⇥</button>
       <span class="ds-tb-sep"></span>
       <button type="button" class="rt-btn" data-do="link" title="Link">🔗</button>
+      <button type="button" class="rt-btn" data-do="chars" title="Sonderzeichen: Ω µ ± → α … (wie in LibreOffice)">Ω</button>
       <button type="button" class="rt-btn" data-do="clear" title="Formatierung löschen">T̸</button>
       <button type="button" class="rt-btn" data-do="para" title="Absatz: Abstand vor/nach, Einzug, Zeilenabstand, Ausrichtung – an einer Aufgabe: ihre Punkte">¶ Absatz …</button>
       <button type="button" class="rt-btn" data-dd="table" title="Zeile, Spalte, Zelle, Tabelle" hidden>▤ Tabelle<span class="ds-dd-caret">▾</span></button>
@@ -292,6 +294,11 @@ export function mountTiptapSurface(box, host) {
     watch.observe(target, { attributes: true });
     openParagraphDialog(target);
   };
+  /** Sonderzeichen-Dialog: fügt an der Schreibmarke ein, solange er offen ist. */
+  const specialChars = () => openSpecialCharDialog({
+    insert: (ch) => { if (!pm.insertText(ch)) host.status('Ω: Erst in den Text klicken – dort kommt das Zeichen hin.'); },
+    onClose: () => pm.focus(),
+  });
   const actions = {
     undo: () => pm.undo(),
     redo: () => pm.redo(),
@@ -299,6 +306,7 @@ export function mountTiptapSurface(box, host) {
     indent: () => pm.indent(1),
     outdent: () => pm.indent(-1),
     para: paragraphDialog,
+    chars: () => specialChars(),
     link: () => {
       const href = window.prompt('Adresse des Links (leer: Link entfernen)', pm.linkHref() || 'https://');
       if (href !== null) pm.setLink(href.trim() && href.trim() !== 'https://' ? href.trim() : null);
@@ -362,6 +370,7 @@ export function mountTiptapSurface(box, host) {
       ...(pm.inTable() ? [...tableMenu(), '-'] : []),
       ...fields, ...(fields.length ? ['-'] : []),
       ...(pm.paragraphAttrs() ? [{ label: '¶ Absatz …', onClick: paragraphDialog }] : []),
+      ...(pm.editor.state.selection.$from.parent.isTextblock ? [{ label: 'Ω Sonderzeichen …', onClick: specialChars }] : []),
       { label: '↑ Nach oben', onClick: () => pm.move(-1) },
       { label: '↓ Nach unten', onClick: () => pm.move(1) },
       { label: '⧉ Verdoppeln', onClick: () => pm.duplicate() },

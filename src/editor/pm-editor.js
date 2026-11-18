@@ -679,6 +679,17 @@ export function createPmEditor(element, spec, host = {}) {
     },
     destroy: () => { unpen(); editor.destroy(); },
     focus: () => editor.view.focus(),
+    /**
+     * Text an der Schreibmarke (ersetzt eine Markierung), mit den Formatierungen davor – ohne den
+     * Fokus zu holen (Sonderzeichen-Dialog bleibt bedienbar). false, wenn keine Schreibmarke im
+     * Text steht (z. B. ein Bild gewählt) – ein Baustein würde sonst ersetzt.
+     */
+    insertText(text) {
+      const { selection } = editor.state;
+      if (selection.node || !selection.$from.parent.isTextblock) return false;
+      editor.view.dispatch(editor.state.tr.insertText(text).scrollIntoView());
+      return true;
+    },
     /** Absatzart an der Auswahl: p, note, section, task, subtask, heading1–3, ul, ol. */
     blockKind() {
       const { $from } = editor.state.selection;

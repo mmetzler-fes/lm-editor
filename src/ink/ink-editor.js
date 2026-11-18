@@ -759,8 +759,12 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
   document.addEventListener('visibilitychange', onHide);
   $('.ink-head')?.addEventListener('click', async () => {
     headOn = !headOn;
-    if (paper.head) void paper.head.set(headOn);
-    else try { localStorage.setItem('lm_ink_head', headOn ? '1' : '0'); } catch (_) { /* egal */ }
+    // Am Konto speichern; klappt das nicht, gilt es nur bis zum Schließen – sagen.
+    if (paper.head) {
+      void Promise.resolve(paper.head.set(headOn)).then((ok) => {
+        if (ok === false) status('⚠️ Kopfzeile: Einstellung ließ sich nicht am Konto speichern – gilt nur jetzt.');
+      });
+    } else try { localStorage.setItem('lm_ink_head', headOn ? '1' : '0'); } catch (_) { /* egal */ }
     $('.ink-head').classList.toggle('active', headOn);
     if (doc.bg === 'paper') await layoutPaper();
   });

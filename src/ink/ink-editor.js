@@ -13,7 +13,7 @@ import {
   FILL_COLORS, DASHES, SHAPE_WIDTHS, usesPoints, shapeCorners, rotateHandle, resizedShape, rotatedShape,
   normalizedAngle, toPolygon, shapeFromDrag, shapeCenter, shapeBox, isClosed, SHAPE_TEXT_SIZE, rotatePoint,
 } from './ink-shapes.js';
-import { showContextMenu } from '../util/dom.js';
+import { showContextMenu, solutionSwitch } from '../util/dom.js';
 import { FONT_SIZES } from '../doc/docspec.js';
 
 // ==================== STIFT-EDITOR ====================
@@ -311,7 +311,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
       </span>
       <span class="ink-status" aria-live="polite"></span>
       <span class="ink-title">${esc(title)}</span>
-      ${solutions && (loadPdf || paper) ? `<span class="ink-group ink-solution-group">${btn('ink-solution', 'bulb', 'Lösungen ein- und ausblenden')}</span>` : ''}
+      ${solutions && (loadPdf || paper) ? `<span class="ink-group ink-solution-group"><span class="ink-solution"></span></span>` : ''}
     </div>
     <div class="ink-stage">
       <div class="ink-subbar" role="toolbar" aria-label="Einstellungen des Werkzeugs">
@@ -396,6 +396,14 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     el.setAttribute('aria-label', text || '');
   };
 
+  // Fassung: Arbeitsblatt oder Lösung – derselbe Umschalter wie in der Dokument-Ansicht.
+  const solSwitch = solutionSwitch({
+    compact: true,
+    showing: state.variant === 'loesung',
+    onChange: (on) => { state.variant = on ? 'loesung' : 'blatt'; paintToolbar(); void layout(); },
+  });
+  $('.ink-solution')?.append(solSwitch.el);
+
   // ---------- Werkzeugleiste ----------
   const hasSelection = () => !!state.selection?.ids.size || state.blocks.size > 0;
   const selectedHint = () => {
@@ -479,7 +487,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     // Bei einem Dokument ist es der Hintergrund – Karo- und Linienfelder kommen über ⊕ hinein. Die Auswahl
     // bleibt nur, solange eine ältere Beschriftung auf anderen Seiten steht (sonst kämen sie nicht zurück).
     $('.ink-bg-select').hidden = !!paper && doc.bg === 'paper';
-    $('.ink-solution')?.classList.toggle('active', state.variant === 'loesung');
+    solSwitch.set(state.variant === 'loesung');
     if ($('.ink-solution')) $('.ink-solution').hidden = !(doc.bg === 'pdf' && loadPdf) && doc.bg !== 'paper';
     $('.ink-add-page').hidden = !['karo', 'linien', 'leer'].includes(doc.bg);
     if ($('.ink-print')) $('.ink-print').hidden = doc.bg !== 'paper';
@@ -717,11 +725,6 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     doc.pages.push({ items: [] });
     changed();
     void layout().then(() => pages[pages.length - 1]?.el.scrollIntoView({ behavior: 'smooth', block: 'start' }));
-  });
-  $('.ink-solution')?.addEventListener('click', () => {
-    state.variant = state.variant === 'blatt' ? 'loesung' : 'blatt';
-    paintToolbar();
-    void layout();
   });
   $('.ink-bg-select').addEventListener('change', async (e) => {
     const value = e.target.value;

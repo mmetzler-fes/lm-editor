@@ -4,7 +4,7 @@ import { dtwAlternatives, dtwMatches, dndExpectedMappings, dndIsPairs } from './
 import { audioSourceOf, scoreDictation, dictationOptions } from './dictation.js';
 import { generateValues, fillPlaceholders, evaluate, parseUserNumber, isWithinTolerance, formatNumber, checkFormulaTask } from './formula.js';
 import { renderSorting, renderMemory, renderCrossword } from './puzzle-views.js';
-import { normalizeShareUrl, sanitizeModuleDescriptionHtml, sanitizeWorksheetHtml, escapeHtml, escapeAttr, hexTint, showContextMenu, attachPointerDrag, effectiveZoom } from '../util/dom.js';
+import { normalizeShareUrl, sanitizeModuleDescriptionHtml, sanitizeWorksheetHtml, escapeHtml, escapeAttr, hexTint, showContextMenu, attachPointerDrag, effectiveZoom, solutionSwitch } from '../util/dom.js';
 import { renderDocSpecHtml } from '../doc/docspec.js';
 import { seededOrder } from './seeded-order.js';
 
@@ -1807,15 +1807,12 @@ export class H5pRenderer {
         // Lösungen zum Aufdecken: Schüler bekommen sie vom Server nur, wenn sie sie sehen dürfen.
         // Der Stift-Editor hat dafür einen eigenen Knopf.
         if (!options.noSolutionToggle && div.querySelector('.ds-solution')) {
-          const btn = document.createElement('button');
-          btn.type = 'button';
-          btn.className = 'btn btn-secondary btn-sm ds-solutions-toggle';
-          btn.textContent = '💡 Lösungen zeigen';
-          btn.addEventListener('click', () => {
-            const hidden = div.querySelector('.docspec').classList.toggle('ds-hide-solutions');
-            btn.textContent = hidden ? '💡 Lösungen zeigen' : '🙈 Lösungen verbergen';
+          const sw = solutionSwitch({
+            showing: !div.querySelector('.docspec').classList.contains('ds-hide-solutions'),
+            onChange: (on) => div.querySelector('.docspec').classList.toggle('ds-hide-solutions', !on),
           });
-          div.prepend(btn);
+          sw.el.classList.add('ds-solutions-toggle');
+          div.prepend(sw.el);
         }
         break;
       }

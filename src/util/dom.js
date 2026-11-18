@@ -588,3 +588,34 @@ export function penSelects(el) {
     el.removeEventListener('pointercancel', up, true);
   };
 }
+
+/**
+ * Umschalter „📄 Arbeitsblatt | 💡 Lösung“ – überall gleich (Dokument-Ansicht,
+ * Vorschau im Modul-Editor, Stift-Editor). Statt „Lösungen zeigen/verbergen“
+ * sieht man, welche Fassung gerade zu sehen ist; „Lösung“ ist rot hinterlegt.
+ * `onChange(showing)` bei jedem Wechsel. Gibt `{ el, set(showing) }` zurück.
+ */
+export function solutionSwitch({ showing = false, onChange, compact = false } = {}) {
+  const el = document.createElement('span');
+  el.className = 'sol-switch';
+  el.setAttribute('role', 'group');
+  el.setAttribute('aria-label', 'Fassung');
+  el.innerHTML = `<button type="button" data-sol="0" title="So sieht es die Klasse – ohne Lösungen">📄 ${compact ? 'Blatt' : 'Arbeitsblatt'}</button>`
+    + '<button type="button" data-sol="1" title="Mit den Lösungen (rot)">💡 Lösung</button>';
+  const set = (on) => {
+    showing = !!on;
+    el.querySelectorAll('[data-sol]').forEach((b) => {
+      const active = (b.dataset.sol === '1') === showing;
+      b.classList.toggle('active', active);
+      b.setAttribute('aria-pressed', String(active));
+    });
+  };
+  el.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-sol]');
+    if (!b || (b.dataset.sol === '1') === showing) return;
+    set(b.dataset.sol === '1');
+    onChange?.(showing);
+  });
+  set(showing);
+  return { el, set };
+}

@@ -27,6 +27,7 @@ const CORE = [
   'src/doc/symbol-font.js',
   'src/editor/block-dialog.js',
   'src/editor/paragraph-dialog.js',
+  'src/editor/special-chars.js',
   'src/editor/pm-editor.js',
   'src/editor/pm-ids.js',
   'src/editor/pm-toolbar.js',

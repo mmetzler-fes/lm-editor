@@ -1,7 +1,7 @@
 // Jupyter-Notebook → Dokument: Markdown wird Text, Code wird ausführbares Python.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ipynbToSpec, imageKey } from '../src/doc/ipynb.js';
+import { ipynbToSpec, imageKey, specToIpynb, jupyterMarkdown } from '../src/doc/ipynb.js';
 import { validateDocSpec } from '../src/doc/docspec.js';
 
 const PNG = 'data:image/png;base64,iVBORw0KGgo=';
@@ -43,4 +43,36 @@ test('Bild über den Dateinamen, ohne Ordner', () => {
 
 test('kein Notebook', () => {
   assert.throws(() => ipynbToSpec({}), /nbformat/);
+});
+
+test('Dokument → Notebook: Python wird Code-Zelle, Bilder Anhänge, Markdown ohne unsere Zusätze', () => {
+  const spec = { content: [
+    { type: 'heading', level: 1, text: 'Ohm', id: 'h1' },
+    { type: 'text', text: 'Mit $U = R I$.', align: 'center', id: 'p1' },
+    { type: 'image', src: PNG, width: '80%', alt: 'Schaltbild' },
+    { type: 'code', run: true, code: 'x = 6\nprint(x)' },
+    { type: 'box', title: 'Merke', blocks: [{ type: 'text', text: 'wichtig' }] },
+  ] };
+  const nb = specToIpynb(spec, { title: 'Ohm' });
+  assert.equal(nb.nbformat, 4);
+  assert.deepEqual(nb.cells.map((c) => c.cell_type), ['markdown', 'code', 'markdown']);
+  const md = nb.cells[0].source.join('');
+  assert.ok(md.startsWith('# Ohm\n'), 'kein zweiter Titel, keine {…}');
+  assert.ok(!/[{}]#|\{\./.test(md), md);
+  assert.ok(md.includes('<img src="attachment:bild1.png" alt="Schaltbild" width="80%">'));
+  assert.deepEqual(nb.cells[0].attachments, { 'bild1.png': { 'image/png': 'iVBORw0KGgo=' } });
+  assert.deepEqual(nb.cells[1].source, ['x = 6\n', 'print(x)']);
+  assert.ok(nb.cells[2].source.join('').startsWith('> **Merke**'));
+});
+
+test('Hin und zurück: Überschriften, Formeln, Bilder und Code bleiben', () => {
+  const { spec } = ipynbToSpec(nb, { images: new Map([['aufgabe4.png', PNG]]) });
+  const back = ipynbToSpec(specToIpynb(spec), {}).spec;
+  // Leerzeichen am Rand eines Absatzes (neben einem herausgelösten Bild) zählen nicht.
+  const strip = (s) => JSON.stringify(s.content.map(({ id, ...b }) => (typeof b.text === 'string' ? { ...b, text: b.text.trim() } : b)));
+  assert.equal(strip(back), strip(spec));
+});
+
+test('Zusätze unseres Markdowns verschwinden', () => {
+  assert.equal(jupyterMarkdown('# Titel {.plain #h1}\n\n[]{#p1 align=center}Text [rot]{.rot}'), '# Titel\n\nText rot');
 });

@@ -4,10 +4,12 @@
 // ausführbare Python-Blöcke (Code-Block mit run: true – im Blatt mit ▶, alle teilen sich ihre Variablen
 // wie im Notebook). Ausgaben bleiben weg: ▶ erzeugt sie neu. Bilder aus dem Ordner neben dem Notebook
 // (<img src="images/…">, ![…](images/…)) und Anhänge der Zellen kommen als data:-Adresse ins Dokument.
+// Zurück (specToIpynb): ausführbares Python wird Code-Zelle, alles andere Markdown, wie Jupyter es
+// versteht – ohne die Zusätze unseres Markdowns ({.plain}, ::: box …). Bilder werden Anhänge der Zelle.
 // Reine Funktionen ohne DOM.
 
-import { markdownToPm } from './pm-markdown.js';
-import { pmToSpec } from './pm-convert.js';
+import { markdownToPm, pmToMarkdown } from './pm-markdown.js';
+import { pmToSpec, specToPm } from './pm-convert.js';
 
 const text = (src) => (Array.isArray(src) ? src.join('') : String(src ?? ''));
 const IMG_TAG = /<img\b[^>]*>/gi;
@@ -114,4 +116,101 @@ export function ipynbToSpec(nb, { images = new Map() } = {}) {
   }
   if (outputs) warnings.push('Gespeicherte Ausgaben sind nicht übernommen – ▶ im Blatt erzeugt sie neu.');
   return { spec: { content }, title, warnings };
+}
+
+// ---------- Dokument → Notebook ----------
+
+/** Felder, die nur das Aussehen im Blatt bestimmen – in Jupyter ohne Bedeutung. */
+const LAYOUT = ['id', 'align', 'indent', 'firstLine', 'spaceBefore', 'spaceAfter', 'lineHeight', 'joined', 'size', 'points', 'marker', 'numbering'];
+const strip = (b) => Object.fromEntries(Object.entries(b).filter(([k]) => !LAYOUT.includes(k)));
+
+/** Unser Markdown → Markdown, wie Jupyter es zeigt: {…}-Zusätze und leere Spans weg, [Text]{.farbe} → Text. */
+export function jupyterMarkdown(md) {
+  return String(md)
+    .replace(/\[\]\{[^}]*\}/g, '')
+    .replace(/(^|[^\\])\[([^\]\n]*)\]\{[^}\n]*\}/g, '$1$2')
+    .replace(/^(#{1,6} .*?)[ \t]*\{[^}\n]*\}[ \t]*$/gm, '$1')
+    .replace(/^(\$\$[\s\S]*?\$\$)\{[^}\n]*\}/gm, '$1')
+    .replace(/^```\s*\{[^}\n]*\}/gm, '```')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+const mdOf = (blocks) => jupyterMarkdown(pmToMarkdown(specToPm({ content: blocks.map(strip) }), { ids: false }));
+const quote = (md) => md.split('\n').map((l) => (l ? `> ${l}` : '>')).join('\n');
+const cellId = (() => { let n = 0; return () => `lm${(++n).toString(16).padStart(6, '0')}`; })();
+const lines = (src) => {
+  const parts = String(src).split('\n');
+  return parts.map((l, i) => (i < parts.length - 1 ? `${l}\n` : l)).filter((l, i, a) => l !== '' || i < a.length - 1);
+};
+
+/**
+ * Dokument → Notebook (nbformat 4.5). `title`: kommt als Überschrift davor, wenn das Dokument nicht
+ * selbst mit einer beginnt. Bilder mit data:-Adresse werden Anhänge, https:// bleibt Adresse; andere
+ * (z. B. /api/…) vorher als data:-Adresse einsetzen. Ergebnis: das Notebook als Objekt.
+ */
+export function specToIpynb(spec, { title = '' } = {}) {
+  const cells = [];
+  let md = [];
+  let attachments = {};
+  let imageNo = 0;
+  const flush = () => {
+    const source = md.filter(Boolean).join('\n\n').trim();
+    if (source) {
+      cells.push({ cell_type: 'markdown', id: cellId(), metadata: {}, source: lines(source), ...(Object.keys(attachments).length ? { attachments } : {}) });
+    }
+    md = [];
+    attachments = {};
+  };
+  const image = (b) => {
+    const src = String(b.src || '');
+    const alt = String(b.alt || b.caption || '').replace(/"/g, '&quot;');
+    const width = b.width ? ` width="${String(b.width).replace(/"/g, '')}"` : '';
+    const m = /^data:(image\/[\w.+-]+);base64,(.*)$/s.exec(src);
+    let url = src;
+    if (m) {
+      const ext = { 'image/jpeg': 'jpg', 'image/svg+xml': 'svg' }[m[1]] || m[1].split('/')[1];
+      const name = `bild${++imageNo}.${ext}`;
+      attachments[name] = { [m[1]]: m[2] };
+      url = `attachment:${name}`;
+    } else if (!/^https:\/\//i.test(src)) {
+      return `*[Bild: ${alt || 'ohne Adresse'}]*`;
+    }
+    const tag = width ? `<img src="${url}" alt="${alt}"${width}>` : `![${alt}](${url})`;
+    return b.caption ? `${tag}\n\n*${b.caption}*` : tag;
+  };
+  const block = (b) => {
+    if (!b || typeof b !== 'object') return '';
+    switch (b.type) {
+      case 'image': return image(b);
+      case 'box': return quote([b.title ? `**${b.title}**` : '', ...(b.text ? [mdOf([{ type: 'text', text: b.text }])] : []), ...(b.blocks || []).map(block)].filter(Boolean).join('\n\n'));
+      case 'solution': return quote(['**💡 Lösung**', ...(b.text ? [mdOf([{ type: 'text', text: b.text }])] : []), ...(b.blocks || []).map(block)].filter(Boolean).join('\n\n'));
+      case 'columns': return (b.blocks || []).flatMap((c) => (c.blocks || []).map(block)).filter(Boolean).join('\n\n');
+      case 'quiz': return `> 🧩 Quiz „${b.title || 'Quiz'}“ – läuft in LearningModules`;
+      case 'karo': return b.pattern === 'frei' ? '' : '*(Platz zum Schreiben)*';
+      case 'pagebreak': case 'spacer': case 'pdf': case 'group': return '';
+      default: return mdOf([b]);
+    }
+  };
+  const content = Array.isArray(spec?.content) ? spec.content : [];
+  const first = content.find((b) => b && b.type !== 'pagebreak');
+  if (title && !['heading', 'section'].includes(first?.type)) md.push(`# ${title}`);
+  for (const b of content) {
+    if (b?.type === 'code' && b.run === true) {
+      flush();
+      cells.push({ cell_type: 'code', id: cellId(), metadata: {}, execution_count: null, outputs: [], source: lines(String(b.code ?? '')) });
+    } else {
+      md.push(block(b));
+    }
+  }
+  flush();
+  return {
+    cells,
+    metadata: {
+      kernelspec: { display_name: 'Python 3 (ipykernel)', language: 'python', name: 'python3' },
+      language_info: { name: 'python' },
+    },
+    nbformat: 4,
+    nbformat_minor: 5,
+  };
 }

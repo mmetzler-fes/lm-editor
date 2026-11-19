@@ -150,7 +150,7 @@ const DOC_LIKE = new Set(['document', 'worksheet', 'attachment']);
  * vermischt: Dokumente, Quizze darin, weitere Quizze. `modules`: oberste Ebene (Untermodule an
  * `subModules` oder per `parentId` bleiben außen vor).
  */
-export function contentCounts(modules, idsOf = quizIdsOf) {
+export function contentCounts(modules, idsOf = (m) => m.quizIds || quizIdsOf(m)) {
   const roots = (modules || []).filter((m) => m && !m.parentId);
   const docs = roots.filter((m) => DOC_LIKE.has(m.type));
   const inDocs = new Set(docs.flatMap((d) => [d, ...(d.subModules || [])]).filter((m) => m.type === 'document').flatMap((d) => idsOf(d)));

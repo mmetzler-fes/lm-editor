@@ -142,3 +142,35 @@ export function scoreRun(answers, docs = []) {
     }),
   };
 }
+
+const DOC_LIKE = new Set(['document', 'worksheet', 'attachment']);
+
+/**
+ * Was ein Link bzw. Lernthema enthält – statt einer Zahl „Aufgaben“, die Dokumente und Quizze
+ * vermischt: Dokumente, Quizze darin, weitere Quizze. `modules`: oberste Ebene (Untermodule an
+ * `subModules` oder per `parentId` bleiben außen vor).
+ */
+export function contentCounts(modules, idsOf = quizIdsOf) {
+  const roots = (modules || []).filter((m) => m && !m.parentId);
+  const docs = roots.filter((m) => DOC_LIKE.has(m.type));
+  const inDocs = new Set(docs.flatMap((d) => [d, ...(d.subModules || [])]).filter((m) => m.type === 'document').flatMap((d) => idsOf(d)));
+  const quizzes = roots.filter((m) => !DOC_LIKE.has(m.type));
+  const embedded = quizzes.filter((m) => inDocs.has(m.id) || m.embeddedOnly).length;
+  return { documents: docs.length, embeddedQuizzes: embedded, quizzes: quizzes.length - embedded };
+}
+
+/** „1 Dokument mit 2 Quizzen · 1 weiteres Quiz“ bzw. „3 Quizze“. */
+export function contentText(counts) {
+  const { documents = 0, embeddedQuizzes = 0, quizzes = 0 } = counts || {};
+  const parts = [];
+  if (documents) {
+    parts.push(`${documents} ${documents === 1 ? 'Dokument' : 'Dokumente'}`
+      + (embeddedQuizzes ? ` mit ${embeddedQuizzes} ${embeddedQuizzes === 1 ? 'Quiz' : 'Quizzen'}` : ''));
+  }
+  if (quizzes) {
+    parts.push(documents
+      ? `${quizzes} ${quizzes === 1 ? 'weiteres Quiz' : 'weitere Quizze'}`
+      : `${quizzes} ${quizzes === 1 ? 'Quiz' : 'Quizze'}`);
+  }
+  return parts.join(' · ');
+}

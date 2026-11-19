@@ -638,7 +638,9 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
   // Die Regel für den Stift im ganzen Editor: Er tippt an und zeichnet mit dem Werkzeug – nie Handschrift.
   const held = typeof Touch !== 'undefined' && 'touchType' in Touch.prototype; // nur Safari kennt den Stift hier
   const STYLUS_CONTROL = 'button, a, select, summary, label, [role="button"], [role="menuitem"], input[type="checkbox"], input[type="radio"], input[type="file"], input[type="range"], input[type="color"], .ink-touchbar';
-  const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-rich-edit';
+  /** Bausteine, die im Blatt bedienbar bleiben: eingebettete Quizze und ausführbares Python (Gastgeber). */
+const LIVE_BLOCK = '.ds-quiz-live, .py-block';
+const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-rich-edit';
   const isEditable = (t) => !!t?.closest?.('input, textarea, [contenteditable="true"]') && !t.closest('input[type="checkbox"], input[type="radio"], input[type="file"], input[type="range"], input[type="color"]');
   const holdStylus = (e) => {
     const t = e.target;
@@ -650,7 +652,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
         if (state.editing) { e.preventDefault(); return; }
         // Eigene Knöpfe auf dem Blatt klickt er an; der Pfeil bedient Quizze samt ihrer Eingabefelder.
         if (t.closest?.(INK_CONTROL)) return;
-        if (state.tool === 'select' && t.closest?.('.ds-quiz-live')) return;
+        if (state.tool === 'select' && t.closest?.(LIVE_BLOCK)) return;
         e.preventDefault();
         return;
       }
@@ -669,7 +671,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
   // Angehaltener Stift in einem Textfeld: Antippen setzt die Schreibmarke, getippt wird mit der Tastatur.
   const penFocus = (e) => {
     if (!held || e.pointerType !== 'pen' || state.editing || !isEditable(e.target)) return;
-    if (e.target.closest('.ds-quiz-live') && state.tool === 'select') return;
+    if (e.target.closest(LIVE_BLOCK) && state.tool === 'select') return;
     const field = e.target.closest('input, textarea, [contenteditable="true"]');
     field.focus({ preventScroll: true });
     if (!field.isContentEditable) return;
@@ -2819,7 +2821,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     const blockForSelect = (x, y) => {
       if (!p.paper || !paper.blockOps) return null;
       const b = [...topBlocks()].reverse().find((q) => y >= q.top && y <= q.bottom);
-      if (!b || b.el.dataset.inserted || b.el.querySelector('.ds-quiz-live') || b.el.closest('.ds-quiz-live')) return null;
+      if (!b || b.el.dataset.inserted || b.el.querySelector(LIVE_BLOCK) || b.el.closest(LIVE_BLOCK)) return null;
       return inBlock(blockBox(b.bid), x, y) ? b.bid : null;
     };
     /** Stelle, an der gezogene Bausteine landen würden: `{ after, y }`. */
@@ -2888,7 +2890,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
         return;
       }
       { const [lx, ly] = toPage(e); state.lastAt = { page: p.i, x: lx, y: ly }; }
-      const onQuiz = p.paper && !!e.target.closest?.('.ds-quiz-live');
+      const onQuiz = p.paper && !!e.target.closest?.(LIVE_BLOCK);
       // Ein Finger auf einem Quiz bedient es immer – zeichnen geht dort mit Stift oder Maus.
       if (onQuiz && e.pointerType === 'touch' && !touches.size) {
         // Kommt ein zweiter Finger dazu, wird daraus Scrollen.
@@ -3376,7 +3378,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     p.el.addEventListener('contextmenu', (e) => {
       if (state.editing) return;
       // In einem Quiz oder Textfeld bleibt das Menü des Browsers (Kopieren, Rechtschreibung).
-      if (e.target.closest?.('.ds-quiz-live input, .ds-quiz-live textarea, .ink-text[contenteditable="true"]:focus')) return;
+      if (e.target.closest?.('.ds-quiz-live input, .ds-quiz-live textarea, .py-block textarea, .py-block input, .ink-text[contenteditable="true"]:focus')) return;
       e.preventDefault();
       // Die Löschtaste des Stifts hat radiert – kein Menü und kein Wechsel zu „Auswählen“.
       if (Date.now() - penEraseAt < 1000) return;

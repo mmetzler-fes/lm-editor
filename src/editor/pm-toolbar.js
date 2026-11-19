@@ -253,7 +253,9 @@ export function mountTiptapSurface(box, host) {
     return [
       ...(box ? [{ label: '▢ Titel des Kastens …', onClick: ask(box, 'title', 'Titel des Kastens') },
         { label: box.node.attrs.shaded ? '▢ Kasten ohne Hintergrund' : '▢ Kasten mit Hintergrund', onClick: () => pm.updateAttrsAt(box.pos, { shaded: box.node.attrs.shaded ? null : true }) }] : []),
-      ...(code ? [{ label: '⌨ Beschriftung des Codes …', onClick: ask(code, 'caption', 'Beschriftung, z. B. datei.ino') },
+      ...(code ? [{ label: code.node.attrs.run ? '🐍 Nicht mehr ausführbar (nur Code)' : '🐍 Als Python ausführbar (▶ im Blatt)',
+        onClick: () => pm.updateAttrsAt(code.pos, { run: code.node.attrs.run ? null : true }) },
+        { label: '⌨ Beschriftung des Codes …', onClick: ask(code, 'caption', 'Beschriftung, z. B. datei.ino') },
         { label: '⌨ Schriftgröße des Codes', onClick: () => {
           const value = Number(window.prompt(`Schriftgröße in pt (${CODE_SIZES.join(', ')}; leer: Standard)`, code.node.attrs.size ?? ''));
           pm.updateAttrsAt(code.pos, { size: CODE_SIZES.includes(value) ? value : null });

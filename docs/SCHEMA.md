@@ -51,7 +51,7 @@ beim Einlesen ausgepackt: Überschrift, Text als Absatz, dann die Bausteine.
 | `note` | `note` | `id` | Inline |
 | `bulletList`, `orderedList` | `list` | `id`, `marker`, `numbering`, `lineHeight`, `spaceBefore`, `spaceAfter` | `listItem` |
 | `listItem` | Punkt | – | `paragraph`, darunter höchstens eine Liste |
-| `codeBlock` | `code` | `id`, `caption`, `size`, `file` | Text ohne Auszeichnung |
+| `codeBlock` | `code` | `id`, `caption`, `size`, `file`, `run` (Python ausführbar) | Text ohne Auszeichnung |
 | `box` | `box` | `id`, `title`, `shaded` | Blöcke |
 | `solution` | `solution` | `id`, `title` | Blöcke |
 | `columns`, `column` | `columns`, `column` | `id`; `width` bei `column` | `column` bzw. Blöcke |

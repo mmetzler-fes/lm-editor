@@ -388,6 +388,7 @@
             "id": {},
             "role": {},
             "level": {},
+            "points": {},
             "extra": {}
           }
         },
@@ -523,6 +524,7 @@
             "caption": {},
             "size": {},
             "file": {},
+            "run": {},
             "extra": {}
           }
         },
@@ -671,6 +673,7 @@
             "align": {},
             "valign": {},
             "border": {},
+            "headerColumn": {},
             "extra": {}
           }
         },

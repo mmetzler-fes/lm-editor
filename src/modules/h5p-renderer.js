@@ -1780,6 +1780,8 @@ export class H5pRenderer {
             quizSizeControl(box, slot, emb.id, quizPreset(box, spec, emb.type));
           });
         }
+        // Ausführbares Python (Code-Block mit run): Eingabe, ▶ und Ausgabe liefert der Gastgeber.
+        if (div.querySelector('pre.ds-code-run') && this.host.pythonBlocks) this.host.pythonBlocks({ el: div, moduleId: options.moduleId, title: options.title });
         // Knöpfe des Dokuments (✍️, ⬇ PDF) in einer eigenen Leiste über dem
         // Blatt – das Quiz hängt sie in seine feste Titelleiste (quiz.js).
         const actionsBar = () => {

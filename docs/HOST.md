@@ -53,6 +53,15 @@ htmlApp: ({ el, moduleId, title, content, options }) => void
 Module `htmlApp`, `htmlAppUnit` und die Schritte `htmlAppTask`, `htmlAppInfo`: Der Gastgeber baut die App in `el` ein, mit eigener Adresse und
 Sandkasten. Ohne diesen Haken erscheint nur ein Hinweis, das Modul läuft nur in LearningModules.
 
+## pythonBlocks(ctx)
+
+```js
+pythonBlocks: ({ el, moduleId, title }) => void
+```
+
+Dokument mit Code-Blöcken `run: true` (`pre.ds-code-run`): Der Gastgeber macht daraus Eingabe, ▶ Ausführen und Ausgabe
+(LearningModules: Pyodide, alle Blöcke eines Dokuments teilen sich ihre Variablen). Ohne diesen Haken bleibt es Code zum Lesen.
+
 ## recording(ctx)
 
 ```js

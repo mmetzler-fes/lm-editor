@@ -135,7 +135,9 @@ const store1 = (key, value) => { try { localStorage.setItem(key, value); } catch
 const PALM_MS = 500;          // so lange nach dem Absetzen des Stifts zählt kein Finger (Handballen)
 const PALM_SIZE = 90;         // größere Auflage (CSS-Pixel) ist ein Handballen – ein Finger meldet auf dem iPad oft 40–60
 const PEN_NEAR_MS = 400;      // so lange nach einer Bewegung des Stifts auf dem Blatt zählt kein Finger
-const FINGER_STEP = 40;       // Stift-Gerät: der Finger scrollt höchstens so viel je Bewegung – keine Sprünge
+const FINGER_STEP = 400;      // Stift-Gerät: Schutz vor Sprüngen (verpasste Ereignisse) – sonst folgt das Blatt dem Finger genau
+const GLIDE_DECAY = 0.95;     // Nachgleiten nach dem Loslassen: Geschwindigkeit je 16 ms
+const GLIDE_MIN = 0.05;       // darunter (px/ms) gleitet nichts nach
 const PEN_DEVICE_KEY = 'ink:penDevice'; // hier wurde schon mit dem Stift geschrieben
 const MAX_ZOOM = 5;          // größter Zoom des Blatts (Auf Breite, Vergrößern, zwei Finger)
 const PRESS_MS = 550;         // so lange drücken (Finger/Stift), dann das Menü der Auswahl
@@ -683,6 +685,8 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
   const STYLUS_CONTROL = 'button, a, select, summary, label, [role="button"], [role="menuitem"], input[type="checkbox"], input[type="radio"], input[type="file"], input[type="range"], input[type="color"], .ink-touchbar';
   /** Bausteine, die im Blatt bedienbar bleiben: eingebettete Quizze und ausführbares Python (Gastgeber). */
 const LIVE_BLOCK = '.ds-quiz-live, .py-block';
+// Was der Stift auf einem Quiz greift, statt zu scrollen.
+const QUIZ_GRAB = 'input, textarea, select, button, a, label, [contenteditable="true"], canvas, .dnd-player-drag, .dnd-player-draggables, [draggable="true"]';
 const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-rich-edit';
   const isEditable = (t) => !!t?.closest?.('input, textarea, [contenteditable="true"]') && !t.closest('input[type="checkbox"], input[type="radio"], input[type="file"], input[type="range"], input[type="color"]');
   const holdStylus = (e) => {
@@ -2916,7 +2920,26 @@ const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-r
       }, PRESS_MS);
     };
 
+    // Nachgleiten nach schnellem Wischen (wie beim Scrollen des Browsers); jede Berührung hält es an.
+    let glide = 0;
+    const stopGlide = () => { if (glide) cancelAnimationFrame(glide); glide = 0; };
+    const startGlide = (v) => {
+      stopGlide();
+      if (!v || Math.hypot(v[0], v[1]) < GLIDE_MIN) return;
+      let [vx, vy] = v;
+      let last = performance.now();
+      const tick = (now) => {
+        const dt = Math.min(48, now - last);
+        last = now;
+        scroller.scrollBy(vx * dt, vy * dt);
+        const f = GLIDE_DECAY ** (dt / 16);
+        vx *= f; vy *= f;
+        glide = Math.hypot(vx, vy) < GLIDE_MIN / 2 ? 0 : requestAnimationFrame(tick);
+      };
+      glide = requestAnimationFrame(tick);
+    };
     p.el.addEventListener('pointerdown', (e) => {
+      stopGlide();
       if (e.target.closest?.('.ink-shape-text-edit')) return; // Schreiben in einer Form
       // Handballen: Solange der Stift schreibt und kurz danach zählt kein Finger.
       if (state.editing) return;
@@ -2946,7 +2969,15 @@ const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-r
       // Der Pfeil bedient ein Quiz – außer auf einem Strich oder Textfeld darüber, die wählt er aus.
       if (onQuiz && e.pointerType !== 'touch' && state.tool === 'select') {
         const [qx, qy] = toPage(e);
-        if (!handleAt(p.i, qx, qy) && !itemAt(doc.pages[p.i].items, qx, qy, 6 / state.zoom)) { clearSelection(); return; }
+        if (!handleAt(p.i, qx, qy) && !itemAt(doc.pages[p.i].items, qx, qy, 6 / state.zoom)) {
+          clearSelection();
+          // Stift auf dem Quiz: Antippen bedient es; Ziehen scrollt – außer er greift ein Feld,
+          // einen Knopf oder etwas Ziehbares (das Quiz verhindert dann das Standardverhalten).
+          if (e.pointerType === 'pen' && !e.target.closest?.(QUIZ_GRAB)) {
+            gesture = { kind: 'tap', id: e.pointerId, from: [e.clientX, e.clientY], run: () => {}, pan: { last: [e.clientX, e.clientY] }, quiz: e };
+          }
+          return;
+        }
       }
       // Im Dokument: Karo-Anfasser und Textfelder (mit dem Text-Werkzeug) gehen
       // an das Blatt; alles andere fängt der Editor vorher ab.
@@ -3092,6 +3123,8 @@ const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-r
         } else {
           clearSelection(); // schon beim Aufsetzen, auch wenn danach gezogen wird
           gesture = tapWithMenu(e, x, y, () => selectAt(x, y));
+          // Pfeil mit dem Stift: Ziehen scrollt das Blatt (wie der Finger) – Antippen wählt weiterhin.
+          if (e.pointerType === 'pen' && tool === 'select') gesture.pan = { last: [e.clientX, e.clientY] };
         }
       } else if (tool === 'field') {
         clearSelection();
@@ -3199,7 +3232,9 @@ const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-r
         if (!fromEdge) edgeScroll(gesture, e);
       } else if (gesture.kind === 'tap') {
         // Wird aus dem Finger ein Handballen (größer) oder kommt der Stift, scrollt er nicht weiter.
-        if (gesture.pan && (palmLike(e) || penDown)) { cancelGesture(); return; }
+        if (gesture.pan && e.pointerType === 'touch' && (palmLike(e) || penDown)) { cancelGesture(); return; }
+        // Auf dem Quiz: Hat es den Stift selbst übernommen (Ziehen eines Worts), scrollt nichts.
+        if (gesture.quiz?.defaultPrevented) { gesture = null; p.busy = false; return; }
         if (gesture.from && Math.hypot(e.clientX - gesture.from[0], e.clientY - gesture.from[1]) > HOLD_SLACK) {
           if (!gesture.moved && gesture.pan) gesture.pan.last = [e.clientX, e.clientY]; // ab hier, ohne Sprung
           gesture.moved = true;
@@ -3207,7 +3242,15 @@ const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-r
         }
         if (gesture.pan && gesture.moved) {
           const step = (v) => Math.max(-FINGER_STEP, Math.min(FINGER_STEP, v));
-          scroller.scrollBy(step(gesture.pan.last[0] - e.clientX), step(gesture.pan.last[1] - e.clientY));
+          const dx = step(gesture.pan.last[0] - e.clientX);
+          const dy = step(gesture.pan.last[1] - e.clientY);
+          scroller.scrollBy(dx, dy);
+          // Geschwindigkeit fürs Nachgleiten (geglättet, px/ms).
+          const now = performance.now();
+          const dt = Math.max(1, now - (gesture.pan.at || now - 16));
+          const v = gesture.pan.v || [0, 0];
+          gesture.pan.v = [v[0] * 0.3 + (dx / dt) * 0.7, v[1] * 0.3 + (dy / dt) * 0.7];
+          gesture.pan.at = now;
           gesture.pan.last = [e.clientX, e.clientY];
         }
       } else if (gesture.kind === 'rect') {
@@ -3336,6 +3379,10 @@ const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-r
         }
       } else if (g.kind === 'tap') {
         if (e.type === 'pointerup' && !g.moved) g.run();
+        // Gewischt: nachgleiten – nur, wenn der Finger bis zuletzt in Bewegung war.
+        else if (g.pan && g.moved && performance.now() - (g.pan.at || 0) < 80) startGlide(g.pan.v);
+        // Auf einem Quiz gescrollt: Der folgende Klick bedient es nicht.
+        if (g.quiz && g.moved) swallowClick(p.el);
       } else if (g.kind === 'laser') {
         laserEnd(g.trail); // verblasst von selbst (laserTick)
       } else if (g.kind === 'shape') {

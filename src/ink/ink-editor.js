@@ -76,6 +76,10 @@ const ICON_PATHS = {
   print: 'M7 9V3h10v6M7 17H4v-7h16v7h-3M7 14h10v7H7z',
   share: 'M12 3v12M7.5 7.5L12 3l4.5 4.5M5 11v9h14v-9',
   pages: 'M4 4h16v16H4zM9.5 4v16M5.8 8h2M5.8 11.5h2M5.8 15h2',
+  camera: 'M4 8h3l1.5-2h7L17 8h3v11H4zM12 10.5a3 3 0 100 6 3 3 0 000-6z',
+  chat: 'M4 5h16v11H10l-5 4v-4H4zM8 9.5h8M8 12.5h5',
+  cut: 'M6 6a2.5 2.5 0 100 .01M6 18a2.5 2.5 0 100 .01M8 7.5L19 18M8 16.5L19 6',
+  copy: 'M8 8h11v11H8zM5 16V5h11',
   more: 'M5 12h.01M12 12h.01M19 12h.01',
   head: 'M4 3h16v6H4zM7 6h4M4 13h16M4 17h12M4 21h14',
   save: 'M5 4h11l3 3v13H5zM8 4v5h7V4M8 20v-6h8v6',
@@ -335,6 +339,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
       <span class="ink-status" aria-live="polite"></span>
       <span class="ink-title">${esc(title)}</span>
       ${solutions && (loadPdf || paper) ? `<span class="ink-group ink-solution-group"><span class="ink-solution"></span></span>` : ''}
+      ${typeof window.lmOpenFeedback === 'function' && !document.body.classList.contains('ws-on') ? btn('ink-feedback', 'chat', 'Feedback: Fehler oder Wunsch melden – mit Bildschirmfoto') : ''}
       ${btn('ink-bar-more', 'more', 'Weitere Knöpfe', ' hidden')}
     </div>
     <div class="ink-stage">
@@ -525,6 +530,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     document.addEventListener('pointerdown', off, true);
     swatchPop = { el, off, anchor };
   };
+  let area = null;         // Bereich mit Leiste (📷 …): { p, rect: { x, y, w, h } in Punkten der Seite, bar }
   let fitLater = null;     // Werkzeugleiste einpassen (fitToolbar, weiter unten)
   let fitSubLater = null;  // Einstellungsleiste einpassen (fitSubbar)
   const paintToolbar = () => {
@@ -592,8 +598,9 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     }[state.tool] || '';
     $('.ink-undo').disabled = !state.undo.length;
     $('.ink-redo').disabled = !state.redo.length;
-    $('.ink-delete').hidden = !hasSelection();
-    $('.ink-more').hidden = !hasSelection() && !(selecting() && clipboard);
+    // Steht die Leiste über dem Bereich (📷 …), sind Löschen und ⋯ dort.
+    $('.ink-delete').hidden = !hasSelection() || !!area;
+    $('.ink-more').hidden = !!area || (!hasSelection() && !(selecting() && clipboard));
     overlay.classList.toggle('ink-tool-text', state.tool === 'text');
     overlay.classList.toggle('ink-tool-lock', LOCK_TOOLS.includes(state.tool));
     overlay.classList.toggle('ink-finger-writes', state.fingerWrites);
@@ -619,6 +626,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
   overlay.querySelector('.ink-tools').addEventListener('click', (e) => {
     const b = e.target.closest('[data-tool]');
     if (!b) return;
+    clearArea();
     state.tool = b.dataset.tool;
     if (!selecting()) clearSelection();
     paintToolbar();
@@ -785,7 +793,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
 const LIVE_BLOCK = '.ds-quiz-live, .py-block';
 // Was der Stift auf einem Quiz greift, statt zu scrollen.
 const QUIZ_GRAB = 'input, textarea, select, button, a, label, [contenteditable="true"], canvas, .dnd-player-drag, .dnd-player-draggables, [draggable="true"]';
-const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-rich-edit';
+const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-rich-edit, .ink-area-bar';
   const isEditable = (t) => !!t?.closest?.('input, textarea, [contenteditable="true"]') && !t.closest('input[type="checkbox"], input[type="radio"], input[type="file"], input[type="range"], input[type="color"]');
   const holdStylus = (e) => {
     const t = e.target;
@@ -893,6 +901,7 @@ const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-r
     void layout();
   });
   $('.ink-close').addEventListener('click', () => close());
+  $('.ink-feedback')?.addEventListener('click', () => window.lmOpenFeedback?.());
 
   // ---------- Seitenleiste: zu einer Seite springen ----------
   //
@@ -967,7 +976,7 @@ const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-r
   // ---------- Werkzeugleiste: passt immer, was nicht passt, steht im ⋯-Menü ----------
   //
   // Reihenfolge: was zuerst ins Menü wandert. Werkzeuge, Rückgängig und Schließen bleiben am längsten.
-  const OVERFLOW_ORDER = ['.ink-title', '.ink-zoom', '.ink-head', '.ink-add-page', '.ink-bg-select', '.ink-print', '.ink-save',
+  const OVERFLOW_ORDER = ['.ink-title', '.ink-feedback', '.ink-zoom', '.ink-head', '.ink-add-page', '.ink-bg-select', '.ink-print', '.ink-save',
     '[data-tool="laser"]', '.ink-ruler-toggle', '[data-tool="shape"]', '[data-tool="field"]', '[data-tool="area"]', '.ink-share',
     '[data-tool="text"]', '.ink-redo', '.ink-pages-toggle'];
   const toolbarEl = $('.ink-toolbar');
@@ -2760,6 +2769,114 @@ const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-r
   }
 
   /** Menü der Auswahl – nur, was gerade geht. */
+  // ---------- Bereich: 📷 Bildschirmfoto, Ausschneiden, Kopieren … (wie GoodNotes) ----------
+
+  function clearArea() {
+    if (!area) return;
+    area.bar.remove();
+    showSvg(area.p.svg.querySelector('.ink-sel-rect'), false);
+    area = null;
+    paintToolbar();
+  }
+  function showArea(pg, rect) {
+    clearArea();
+    const z = state.zoom;
+    const has = hasSelection();
+    const bar = document.createElement('div');
+    bar.className = 'ink-area-bar';
+    const b = (act, ico, label, extra = '') => `<button type="button" class="ink-btn" data-area="${act}" title="${label}" aria-label="${label}"${extra}>${icon(ico)}</button>`;
+    bar.innerHTML = b('shot', 'camera', 'Bildschirmfoto des Bereichs – kopieren, teilen, speichern')
+      + (has ? `<span class="ink-sep"></span>${b('cut', 'cut', 'Ausschneiden')}${b('copy', 'copy', 'Kopieren')}${b('delete', 'trash', 'Löschen', ' style="color:#dc2626"')}${b('more', 'more', 'Mehr')}` : '');
+    pg.el.appendChild(bar);
+    // Über dem Bereich, sonst darunter; nie über den Rand.
+    const top = rect.y * z - bar.offsetHeight - 10;
+    bar.style.top = `${top >= 4 ? top : (rect.y + rect.h) * z + 10}px`;
+    bar.style.left = `${Math.max(4, Math.min((rect.x + rect.w / 2) * z - bar.offsetWidth / 2, pg.el.offsetWidth - bar.offsetWidth - 4))}px`;
+    bar.addEventListener('pointerdown', (e) => e.stopPropagation());
+    bar.addEventListener('click', (e) => {
+      const act = e.target.closest('[data-area]')?.dataset.area;
+      if (!act) return;
+      if (act === 'shot') { takeShot(pg, rect); return; }
+      if (act === 'more') { const r = e.target.closest('button').getBoundingClientRect(); selectionMenu(r.left, r.bottom + 4); return; }
+      clearArea();
+      if (act === 'cut') cutSelection();
+      else if (act === 'copy') copySelection();
+      else if (act === 'delete') deleteSelection();
+    });
+    area = { p: pg, rect, bar };
+    paintToolbar();
+  }
+  /** Bild des Bereichs (PNG) – was auf dem Blatt zu sehen ist: Dokument, Quizze, Beschriftung. */
+  async function shotBlob(pg, rect) {
+    const { domToBlob } = await import('../vendor/modern-screenshot/index.mjs');
+    const z = state.zoom;
+    return domToBlob(pg.el, {
+      width: Math.max(1, Math.round(rect.w * z)), height: Math.max(1, Math.round(rect.h * z)),
+      scale: Math.min(2, window.devicePixelRatio || 1), backgroundColor: '#ffffff', type: 'image/png',
+      style: { transform: `translate(${-rect.x * z}px, ${-rect.y * z}px)`, transformOrigin: 'top left', margin: '0' },
+      filter: (n) => !(n.classList && SHOT_SKIP.some((c) => n.classList.contains(c))),
+    });
+  }
+  // Bedienelemente gehören nicht ins Bild: Leiste, Rahmen, Anfasser, ⊕, Griffe.
+  const SHOT_SKIP = ['ink-area-bar', 'ink-sel-rect', 'ink-sel-box', 'ink-top', 'ink-karo-handle', 'ink-karo-tools', 'ink-insert-mark', 'ink-block-grip', 'ink-sel-grabs'];
+  async function takeShot(pg, rect) {
+    status('📷 Bild wird erstellt …');
+    // Gewählte Bausteine ohne ihren blauen Rahmen – danach wieder wie vorher.
+    const marked = [...pg.el.querySelectorAll('.ink-block-sel')];
+    marked.forEach((el) => el.classList.remove('ink-block-sel'));
+    const pending = shotBlob(pg, rect).finally(() => marked.forEach((el) => el.isConnected && el.classList.add('ink-block-sel')));
+    // Gleich in die Zwischenablage – solange das Antippen noch gilt (Safari verlangt das).
+    let copied = false;
+    const toClipboard = (async () => {
+      try {
+        if (navigator.clipboard?.write && window.ClipboardItem) {
+          await navigator.clipboard.write([new ClipboardItem({ 'image/png': pending })]);
+          copied = true;
+        }
+      } catch (_) { /* dann über den Knopf im Dialog */ }
+    })();
+    let blob;
+    try { blob = await pending; } catch (err) { status(`📷 Bild nicht erstellt: ${err.message || err}`); return; }
+    await toClipboard;
+    status(copied ? '📷 Bild in der Zwischenablage' : '');
+    window.dispatchEvent(new CustomEvent('lm-screenshot', { detail: { blob } }));
+    shotDialog(blob, copied);
+  }
+  function shotDialog(blob, copied) {
+    const url = URL.createObjectURL(blob);
+    const name = `${String(title || 'Bildschirmfoto').replace(/[\\/:*?"<>|]+/g, ' ').trim() || 'Bildschirmfoto'}.png`;
+    const file = new File([blob], name, { type: 'image/png' });
+    const canShare = (() => { try { return !!navigator.canShare?.({ files: [file] }); } catch (_) { return false; } })();
+    const box = document.createElement('div');
+    box.className = 'ink-shot-dialog';
+    box.innerHTML = `<div class="ink-shot-card">
+        <img src="${url}" alt="Bildschirmfoto">
+        <p class="ink-shot-note">${copied ? '✅ In der Zwischenablage – zum Einfügen woanders.' : ''}</p>
+        <div class="ink-shot-actions">
+          <button type="button" data-shot="copy">📋 Kopieren</button>
+          ${canShare ? '<button type="button" data-shot="share">📤 Teilen</button>' : ''}
+          <a href="${url}" download="${esc(name)}" data-shot="save">⬇ Speichern</a>
+          ${typeof window.lmOpenFeedback === 'function' ? '<button type="button" data-shot="feedback">💬 Als Feedback senden</button>' : ''}
+          <button type="button" data-shot="close">Schließen</button>
+        </div></div>`;
+    overlay.appendChild(box);
+    const note = box.querySelector('.ink-shot-note');
+    const close = () => { box.remove(); setTimeout(() => URL.revokeObjectURL(url), 60_000); };
+    box.addEventListener('click', async (e) => {
+      if (e.target === box) { close(); return; }
+      const act = e.target.closest('[data-shot]')?.dataset.shot;
+      if (act === 'close') close();
+      else if (act === 'copy') {
+        try { await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]); note.textContent = '✅ In der Zwischenablage.'; } catch (err) { note.textContent = `Kopieren geht hier nicht (${err.message || err}) – „Speichern“ oder „Teilen“ nehmen.`; }
+      } else if (act === 'share') {
+        try { await navigator.share({ files: [file], title: name }); } catch (_) { /* abgebrochen */ }
+      } else if (act === 'feedback') {
+        close();
+        window.lmOpenFeedback(blob);
+      }
+    });
+  }
+
   function selectionMenu(x, y) {
     const items = selectedItems();
     const key = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Strg+';
@@ -3221,6 +3338,8 @@ const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-r
     };
     p.el.addEventListener('pointerdown', (e) => {
       stopGlide();
+      if (e.target.closest?.('.ink-area-bar')) return; // Leiste über dem Bereich bedient sich selbst
+      clearArea();
       if (e.target.closest?.('.ink-shape-text-edit')) return; // Schreiben in einer Form
       // Handballen: Solange der Stift schreibt und kurz danach zählt kein Finger.
       if (state.editing) return;
@@ -3717,7 +3836,8 @@ const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-r
           drawItems(p.i);
         }
       } else if (g.kind === 'rect') {
-        showSvg(p.svg.querySelector('.ink-sel-rect'), false);
+        const keep = state.tool === 'area' && g.to && Math.abs(g.to[0] - g.from[0]) >= 6 && Math.abs(g.to[1] - g.from[1]) >= 6;
+        if (!keep) showSvg(p.svg.querySelector('.ink-sel-rect'), false);
         if (g.to) {
           const rect = { x: g.from[0], y: g.from[1], w: g.to[0] - g.from[0], h: g.to[1] - g.from[1] };
           const ids = withGroups(p.i, new Set(doc.pages[p.i].items.filter((it) => inSelection(it, rect)).map((it) => it.id)));
@@ -3731,6 +3851,8 @@ const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-r
           }
           paintSelection();
           paintToolbar();
+          // Bereich bleibt stehen: darüber 📷 Bildschirmfoto – und, wenn etwas gewählt ist, Ausschneiden, Kopieren …
+          if (keep) showArea(p, { x: Math.min(g.from[0], g.to[0]), y: Math.min(g.from[1], g.to[1]), w: Math.abs(g.to[0] - g.from[0]), h: Math.abs(g.to[1] - g.from[1]) });
         } else if (e.type === 'pointerup') {
           selectAt(g.from[0], g.from[1]); // nur angetippt
         }
@@ -4204,6 +4326,7 @@ const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-r
     barObserver.disconnect();
     for (const v of Object.values(pdfs)) Promise.resolve(v).then((d) => d?.destroy?.()).catch(() => {});
     toolbarObserver.disconnect();
+    clearArea();
     closeSubPop();
     closeSwatches();
     overlay.remove();

@@ -394,3 +394,22 @@ body.ink-open { overflow: hidden; }
 }
 .ink-side-open .ink-scroll { margin-left: 230px; }
 @media (max-width: 700px) { .ink-side { width: 170px; } .ink-side-open .ink-scroll { margin-left: 170px; } }
+
+/* Bereich (▭ mit Strichlinie): Leiste darüber – 📷 und, mit Auswahl, Ausschneiden, Kopieren, Löschen, ⋯. */
+.ink-area-bar {
+  position: absolute; z-index: 30; display: flex; align-items: center; gap: 2px; padding: 4px 8px;
+  border-radius: 999px; background: var(--bg-secondary); border: 1px solid var(--border);
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.18); touch-action: manipulation;
+}
+.ink-area-bar .ink-btn { min-width: 44px; height: 44px; }
+.ink-area-bar .ink-icon { width: 26px; height: 26px; }
+.ink-shot-dialog { position: absolute; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center; background: rgba(15, 23, 42, 0.45); padding: 16px; }
+.ink-shot-card { max-width: min(720px, 100%); max-height: 100%; overflow: auto; background: var(--bg-secondary); border-radius: 16px; padding: 14px; box-shadow: 0 12px 32px rgba(15, 23, 42, 0.3); }
+.ink-shot-card img { display: block; max-width: 100%; max-height: 55vh; margin: 0 auto; border: 1px solid var(--border); border-radius: 8px; background: #fff; }
+.ink-shot-note { min-height: 1.2em; margin: 8px 0 4px; font-size: 0.9rem; color: var(--text-secondary); text-align: center; }
+.ink-shot-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+.ink-shot-actions > * {
+  min-height: 44px; padding: 0 16px; border-radius: 10px; border: 1px solid var(--border);
+  background: var(--bg-primary); color: var(--text-primary); font: inherit; cursor: pointer;
+  display: inline-flex; align-items: center; text-decoration: none;
+}

@@ -314,6 +314,30 @@ export function subscriptFormulaSymbols(root) {
   }
 }
 
+/**
+ * Auch später gezeichneten Text tiefstellen: Fragenfolgen zeigen die nächste Frage erst beim
+ * Weiterblättern, Rückmeldungen und Lösungen kommen nach dem Prüfen dazu.
+ */
+export function watchFormulaSymbols(root) {
+  if (!root || typeof MutationObserver === 'undefined') return;
+  let queued = null;
+  const run = () => {
+    const targets = queued;
+    queued = null;
+    for (const el of targets) if (el.isConnected || root.contains(el)) subscriptFormulaSymbols(el);
+  };
+  new MutationObserver((records) => {
+    for (const r of records) {
+      for (const n of r.addedNodes) {
+        const el = n.nodeType === 1 ? n : n.parentElement;
+        if (!el || !(el.textContent || '').includes('_')) continue;
+        if (!queued) { queued = new Set(); queueMicrotask(run); }
+        queued.add(el);
+      }
+    }
+  }).observe(root, { childList: true, subtree: true });
+}
+
 export class H5pRenderer {
   constructor({ host = {} } = {}) {
     this.host = host;
@@ -2234,8 +2258,11 @@ export class H5pRenderer {
       }
     }
 
-    // Formelzeichen wie U_A, R_{K1} in Quiztexten tiefstellen (Dokumente machen das selbst).
-    if (!NO_SUBSCRIPT_TYPES.has(type)) subscriptFormulaSymbols(div);
+    // Formelzeichen wie U_A, R_{K1} in Quiztexten tiefstellen (Dokumente machen das selbst) – auch was später erscheint.
+    if (!NO_SUBSCRIPT_TYPES.has(type)) {
+      subscriptFormulaSymbols(div);
+      watchFormulaSymbols(div);
+    }
     return div;
   }
 

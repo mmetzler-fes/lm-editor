@@ -245,7 +245,7 @@ export async function closeInkEditor() {
 /** Ist gerade ein Stift-Editor offen? */
 export const inkEditorOpen = () => !!currentClose;
 
-export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = null, solutions = false, paper = null, store = null, actions = [], onClose = null, laser = solutions }) {
+export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = null, solutions = false, paper = null, store = null, actions = [], onClose = null, laser = solutions, side = null }) {
   const storeKey = `ink:${key}`;
   const saved = store ? await store.load() : await dbGet(storeKey);
   const doc = saved?.v === 1 ? saved : { v: 1, bg: paper ? 'paper' : loadPdf ? 'pdf' : 'karo', pages: [{ items: [] }] };
@@ -338,6 +338,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
       ${btn('ink-bar-more', 'more', 'Weitere Knöpfe', ' hidden')}
     </div>
     <div class="ink-stage">
+      <aside class="ink-side" aria-label="Lernbegleitung" hidden></aside>
       <aside class="ink-pages-panel" aria-label="Seiten" hidden>
         <div class="ink-pages-head"><strong>Seiten</strong><button type="button" class="ink-btn ink-pages-close" title="Seitenleiste schließen" aria-label="Seitenleiste schließen">${icon('close')}</button></div>
         <ol class="ink-pages-list"></ol>
@@ -383,6 +384,12 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     </div>`;
   document.body.appendChild(overlay);
   document.body.classList.add('ink-open');
+  // Seitenleiste des Gastgebers links (z. B. die Lerneule der Lernbegleitung) – er holt sie beim Schließen zurück.
+  if (side) {
+    overlay.querySelector('.ink-side').appendChild(side);
+    overlay.querySelector('.ink-side').hidden = false;
+    overlay.classList.add('ink-side-open');
+  }
   const $ = (sel) => overlay.querySelector(sel);
   const scroller = $('.ink-scroll');
   const fingerScrolls = () => !state.fingerWrites;
@@ -1321,6 +1328,8 @@ const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-r
     if (paperView) { layer = toLayer(); captureForms(); }
     leavePaper();
     status('Wird geladen …');
+    // Gastgeber mit eigenem, lebendem Blatt (Schüler im Durchlauf): erst zurückgeben, dann leeren.
+    try { paper.unmount?.(); } catch (_) { /* dann eben neu */ }
     pagesEl.innerHTML = '';
     const el = document.createElement('div');
     el.className = 'ink-page ink-paper-page';
@@ -4171,6 +4180,7 @@ const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-r
     if (document.activeElement?.classList?.contains('ink-text')) document.activeElement.blur();
     await persist();
     leavePaper();
+    if (paper) { try { paper.unmount?.(); } catch (_) { /* Blatt bleibt im Editor */ } }
     document.removeEventListener('keydown', onKey);
     document.removeEventListener('paste', onPaste);
     window.removeEventListener('scroll', pinPage);

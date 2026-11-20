@@ -61,6 +61,8 @@ pythonBlocks: ({ el, moduleId, title }) => void
 
 Dokument mit Code-Blöcken `run: true` (`pre.ds-code-run`): Der Gastgeber macht daraus Eingabe, ▶ Ausführen und Ausgabe
 (LearningModules: Pyodide, alle Blöcke eines Dokuments teilen sich ihre Variablen). Ohne diesen Haken bleibt es Code zum Lesen.
+Mit `view: "result"` (`pre[data-view="result"]`) ist der Block eine interaktive Darstellung: Code versteckt, läuft beim
+Sichtbarwerden, `regler()`/`auswahl()`/`schalter()` werden Bedienelemente (LearningModules: python-run.js).
 
 ## recording(ctx)
 

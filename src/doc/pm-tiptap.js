@@ -27,7 +27,7 @@ const VIEW = {
   orderedList: (a) => ['ol', { 'data-numbering': a.numbering || null }, 0],
   listItem: () => ['li', {}, 0],
   // Ausführbares Python (run): im Editor mit 🐍-Kennzeichen, damit man es vom bloßen Code unterscheidet.
-  codeBlock: (a) => ['pre', { spellcheck: 'false', class: a.run ? 'ds-code-run' : null, 'data-run': a.run ? 'python' : null }, ['code', {}, 0]],
+  codeBlock: (a) => ['pre', { spellcheck: 'false', class: a.run ? 'ds-code-run' : null, 'data-run': a.run ? 'python' : null, 'data-view': a.run && a.view ? a.view : null }, ['code', {}, 0]],
   box: (a) => ['div', { class: 'ws-box', 'data-title': a.title || null }, 0],
   solution: () => ['div', { class: 'ds-pm-solution' }, 0],
   columns: () => ['div', { class: 'ds-pm-columns' }, 0],

@@ -254,7 +254,9 @@ export function mountTiptapSurface(box, host) {
       ...(box ? [{ label: '▢ Titel des Kastens …', onClick: ask(box, 'title', 'Titel des Kastens') },
         { label: box.node.attrs.shaded ? '▢ Kasten ohne Hintergrund' : '▢ Kasten mit Hintergrund', onClick: () => pm.updateAttrsAt(box.pos, { shaded: box.node.attrs.shaded ? null : true }) }] : []),
       ...(code ? [{ label: code.node.attrs.run ? '🐍 Nicht mehr ausführbar (nur Code)' : '🐍 Als Python ausführbar (▶ im Blatt)',
-        onClick: () => pm.updateAttrsAt(code.pos, { run: code.node.attrs.run ? null : true }) },
+        onClick: () => pm.updateAttrsAt(code.pos, code.node.attrs.run ? { run: null, view: null } : { run: true }) },
+        ...(code.node.attrs.run ? [{ label: code.node.attrs.view === 'result' ? '📊 Code wieder zeigen (normaler Python-Block)' : '📊 Nur Ergebnis zeigen – Code versteckt, mit Reglern',
+          onClick: () => pm.updateAttrsAt(code.pos, { view: code.node.attrs.view === 'result' ? null : 'result' }) }] : []),
         { label: '⌨ Beschriftung des Codes …', onClick: ask(code, 'caption', 'Beschriftung, z. B. datei.ino') },
         { label: '⌨ Schriftgröße des Codes', onClick: () => {
           const value = Number(window.prompt(`Schriftgröße in pt (${CODE_SIZES.join(', ')}; leer: Standard)`, code.node.attrs.size ?? ''));

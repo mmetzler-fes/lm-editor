@@ -317,6 +317,8 @@ function checkBlock(block, path, errors, inSolution, parent = '') {
       need(isText(block.code) || isText(block.file), 'code fehlt.');
       // run: Python, das im Durchlauf läuft (▶ Ausführen, Pyodide). Im Druck nur der Code.
       if (block.run !== undefined) need(typeof block.run === 'boolean', 'run: true (Python ausführbar) oder weglassen.');
+      // view: 'result' – interaktive Darstellung: Code versteckt, nur Ergebnis mit Reglern (regler(), auswahl(), schalter()).
+      if (block.view !== undefined) need(block.view === 'result' && block.run === true, 'view: "result" (nur Ergebnis zeigen) geht nur zusammen mit run: true.');
       if (block.size !== undefined) need(CODE_SIZES.includes(block.size), `size: Schriftgröße in pt, eine von ${CODE_SIZES.join(', ')} (ohne Angabe ${CODE_SIZE_PT}).`);
       break;
     case 'image':
@@ -1235,7 +1237,7 @@ function renderBlockHtml(block, ctx) {
       // Eigene Schriftgröße (size, pt) relativ zur Grundschrift – wie Textgrößen; ohne Angabe 9 pt (CSS).
       const size = CODE_SIZES.includes(block.size) ? ` style="font-size:${Math.round((block.size / BASE_FONT_PT) * 1000) / 1000}em"` : '';
       // Ausführbares Python: im Durchlauf macht der Gastgeber daraus Eingabe, ▶ und Ausgabe (host.pythonBlocks).
-      if (block.run === true) return `${caption}<pre class="ds-code ds-code-run" data-run="python"${size}><code>${code}</code></pre>`;
+      if (block.run === true) return `${caption}<pre class="ds-code ds-code-run" data-run="python"${block.view === 'result' ? ' data-view="result"' : ''}${size}><code>${code}</code></pre>`;
       return `${caption}<pre class="ds-code"${size}><code>${code}</code></pre>`;
     }
     case 'image': {

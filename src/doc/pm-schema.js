@@ -25,7 +25,7 @@ export const PM_NODES = {
   bulletList: { group: 'block', content: 'listItem+', attrs: ['id', ...LIST] },
   orderedList: { group: 'block', content: 'listItem+', attrs: ['id', ...LIST] },
   listItem: { content: 'paragraph (bulletList | orderedList)?' },
-  codeBlock: { group: 'block', content: 'text*', marks: '', code: true, attrs: ['id', 'caption', 'size', 'file', 'run'] },
+  codeBlock: { group: 'block', content: 'text*', marks: '', code: true, attrs: ['id', 'caption', 'size', 'file', 'run', 'view'] },
 
   // Behälter: nur, was sichtbar einen Rand hat.
   box: { group: 'block', content: 'block*', attrs: ['id', 'title', 'shaded'] },

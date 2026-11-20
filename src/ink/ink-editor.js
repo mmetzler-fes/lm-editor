@@ -47,6 +47,8 @@ const TEXT_SIZE = 13;       // Schriftgröße älterer Textfelder ohne Angabe, i
 const NEW_TEXT_SIZE = 12;   // Vorgabe für neue Textfelder – Größen wie im Dokument-Editor (FONT_SIZES)
 
 // Symbole der Werkzeugleiste (selbst gezeichnet, 24 × 24, Linienstil).
+const escapeAttrInk = (v) => String(v ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+
 const ICON_PATHS = {
   close: 'M6 6l12 12M18 6L6 18',
   select: 'M4 7V5a1 1 0 011-1h2M11 4h2M17 4h2a1 1 0 011 1v2M20 11v2M20 17v2a1 1 0 01-1 1h-2M13 20h-2M7 20H5a1 1 0 01-1-1v-2M4 13v-2',
@@ -68,6 +70,7 @@ const ICON_PATHS = {
   shape: 'M3.5 3.5h9v9h-9zM16.5 11a4.5 4.5 0 110 9 4.5 4.5 0 010-9z',
   laser: 'M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1',
   print: 'M7 9V3h10v6M7 17H4v-7h16v7h-3M7 14h10v7H7z',
+  share: 'M12 3v12M7.5 7.5L12 3l4.5 4.5M5 11v9h14v-9',
   head: 'M4 3h16v6H4zM7 6h4M4 13h16M4 17h12M4 21h14',
   save: 'M5 4h11l3 3v13H5zM8 4v5h7V4M8 20v-6h8v6',
 };
@@ -303,6 +306,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
         ${btn('ink-add-page', 'page', 'Seite anfügen')}
         ${paper?.headerPdf ? btn('ink-head', 'head', 'Kopfzeile der Vorlage zeigen (Logo, Titel – wie im Druck)') : ''}
         ${paper ? btn('ink-print', 'print', 'Drucken oder als PDF speichern – Arbeitsblatt oder Lösungsblatt, mit oder ohne Beschriftung') : ''}
+        ${paper?.share && paper?.printPdf ? btn('ink-share', 'share', escapeAttrInk(paper.share.title || 'Als PDF teilen')) : ''}
       </span>
       <span class="ink-group ink-zoom">
         ${btn('ink-zoom-out', 'zoomOut', 'Verkleinern')}
@@ -529,6 +533,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     if ($('.ink-solution')) $('.ink-solution').hidden = !(doc.bg === 'pdf' && loadPdf) && doc.bg !== 'paper';
     $('.ink-add-page').hidden = !['karo', 'linien', 'leer'].includes(doc.bg);
     if ($('.ink-print')) $('.ink-print').hidden = doc.bg !== 'paper';
+    if ($('.ink-share')) $('.ink-share').hidden = doc.bg !== 'paper';
     $('.ink-ruler-toggle').classList.toggle('active', !!doc.ruler?.visible);
   };
 
@@ -811,6 +816,8 @@ const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-r
     $('.ink-head').classList.toggle('active', headOn);
     if (doc.bg === 'paper') await layoutPaper();
   });
+  // Gastgeber mit `paper.share` (Schüler): das Blatt mit Beschriftung als PDF – teilen (GoodNotes) oder anzeigen.
+  $('.ink-share')?.addEventListener('click', () => printViaRenderer({ solutions: false, ink: true }));
   $('.ink-print')?.addEventListener('click', (e) => {
     const r = e.currentTarget.getBoundingClientRect();
     const sheets = [{ solutions: false, name: 'Arbeitsblatt' }, ...(solutions ? [{ solutions: true, name: 'Lösungsblatt' }] : [])];
@@ -3564,7 +3571,8 @@ const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-r
 
   async function printViaRenderer({ solutions: withSolutions, ink }) {
     // Fenster sofort öffnen – nach dem await ließe der Popup-Blocker es nicht mehr zu.
-    const win = window.open('', '_blank');
+    // Ohne Fenster (paper.printWindow === false): Der Gastgeber teilt die Datei selbst (iPad: Teilen-Menü).
+    const win = paper.printWindow === false ? null : window.open('', '_blank');
     status('PDF wird erzeugt …');
     try {
       await persist();

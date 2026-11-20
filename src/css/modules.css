@@ -982,6 +982,10 @@ body {
   line-height: 0;
 }
 .docspec .ds-pagebreak span { background: var(--bg-secondary); color: var(--text-secondary); font-size: 0.75em; padding: 0 8px; }
+/* Seitenumbruch in der Ansicht (Lesen, Quiz): nur eine sehr dünne, blasse Linie mit kleiner Marke am Rand. */
+.docspec .ds-pagebreak-mark { position: relative; height: 0; margin: 1.4em 0; border-top: 1px dashed rgba(148, 163, 184, 0.35); }
+.docspec .ds-pagebreak-mark span { position: absolute; right: 0; top: -0.75em; font-size: 0.6em; line-height: 1.5; color: rgba(100, 116, 139, 0.55); background: #fff; padding: 0 0 0 6px; }
+@media print { .docspec .ds-pagebreak-mark { border: 0; margin: 0; } .docspec .ds-pagebreak-mark span { display: none; } }
 .docspec .ds-missing { color: var(--text-secondary); font-style: italic; }
 .docspec .ds-text code,
 .docspec .ds-list code,

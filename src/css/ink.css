@@ -367,3 +367,21 @@ body.ink-open { overflow: hidden; }
   .ink-btn.ink-color { min-width: 34px; width: 34px; height: 34px; }
 }
 .ink-sub-pop .ink-group { flex-wrap: wrap; justify-content: center; row-gap: 6px; max-width: 100%; }
+
+/* Vierter Farbknopf: gewählte Zusatzfarbe mit ▾ – ohne Zusatzfarbe ein Farbkreis. Darunter klappen die übrigen Farben aus. */
+.ink-btn.ink-swatch-pick { position: relative; }
+.ink-btn.ink-swatch-pick.ink-pick-empty { background: conic-gradient(#dc2626, #ea580c, #ca8a04, #16a34a, #0891b2, #2563eb, #9333ea, #db2777, #dc2626); }
+.ink-btn.ink-swatch-pick.ink-pick-empty:hover { background: conic-gradient(#dc2626, #ea580c, #ca8a04, #16a34a, #0891b2, #2563eb, #9333ea, #db2777, #dc2626); filter: brightness(0.95); }
+.ink-btn.ink-swatch-pick::after {
+  content: '▾'; position: absolute; right: -5px; bottom: -5px; width: 15px; height: 15px; border-radius: 50%;
+  background: var(--bg-secondary); color: var(--text-primary); font-size: 10px; line-height: 15px; text-align: center;
+  box-shadow: 0 0 0 1px var(--border);
+}
+.ink-swatches {
+  position: absolute; z-index: 40; display: grid; grid-template-columns: repeat(4, auto); gap: 8px;
+  padding: 10px; border-radius: 14px; background: var(--bg-secondary); border: 1px solid var(--border);
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.2);
+}
+.ink-swatches .ink-btn.ink-color { margin: 0; }
+.ink-swatches .ink-btn.ink-color { box-shadow: inset 0 0 0 1px rgba(100, 116, 139, 0.55); }
+.ink-swatches .ink-btn.ink-color.active { box-shadow: inset 0 0 0 1px rgba(100, 116, 139, 0.55), 0 0 0 2px var(--bg-secondary), 0 0 0 4px var(--accent); }

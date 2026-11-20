@@ -39,8 +39,12 @@ import { FONT_SIZES } from '../doc/docspec.js';
 // Baustein, in dem er beginnt, mit y relativ zu dessen Oberkante. Wächst ein
 // Karo oder bricht ein Text anders um, rutschen die Striche darunter mit.
 
-const COLORS = ['#1e293b', '#2563eb', '#dc2626', '#16a34a', '#ea580c', '#9333ea'];
-const MARKERS = ['#fde047', '#86efac', '#f9a8d4', '#93c5fd', '#fdba74'];
+// Je Palette: die ersten drei stehen immer in der Leiste, die übrigen unter ▾ (höchstens 4 Farben sichtbar).
+const COLORS = ['#1e293b', '#2563eb', '#dc2626', '#16a34a', '#ea580c', '#9333ea', '#0891b2', '#db2777', '#a16207', '#64748b', '#ffffff'];
+const MARKERS = ['#fde047', '#86efac', '#f9a8d4', '#93c5fd', '#fdba74', '#c4b5fd', '#5eead4', '#d1d5db'];
+// Füllung: Hauptfarben vorn (gelb, blau, grün), dann die übrigen.
+const FILL_MAIN = ['#fef9c3', '#bfdbfe', '#bbf7d0'];
+const MAIN_COLORS = 3;
 const WIDTHS = { pen: [1.1, 1.9, 3.2], marker: [9, 14, 20] };
 const ERASER = 7;           // Radius des Radierers in Punkten
 const TEXT_SIZE = 13;       // Schriftgröße älterer Textfelder ohne Angabe, in Punkten
@@ -352,7 +356,8 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
           ${Object.entries(DASH_LABELS).map(([k, [ico, label]]) => `<button type="button" class="ink-btn ink-dash" data-dash="${k}" title="Linie ${label}" aria-label="Linie ${label}">${ico}</button>`).join('')}
           <span class="ink-sep"></span>
           <button type="button" class="ink-btn ink-fill ink-fill-none" data-fill="" title="Keine Füllung" aria-label="Keine Füllung"></button>
-          ${FILL_COLORS.map((c) => `<button type="button" class="ink-btn ink-fill" data-fill="${c}" style="--c:${c}" title="Füllung" aria-label="Füllung ${c}"></button>`).join('')}
+          ${FILL_MAIN.map((c) => `<button type="button" class="ink-btn ink-fill" data-fill="${c}" style="--c:${c}" title="Füllung" aria-label="Füllung ${c}"></button>`).join('')}
+          <button type="button" class="ink-btn ink-fill ink-swatch-pick ink-fill-pick" title="Weitere Füllfarben" aria-label="Weitere Füllfarben"></button>
           <label class="ink-opacity" title="Deckkraft der Füllung">Deckkraft
             <input type="range" class="ink-op-range" min="0" max="100" step="1" aria-label="Deckkraft">
             <input type="number" class="ink-op-num" min="0" max="100" step="1" aria-label="Deckkraft in Prozent">%</label>
@@ -475,6 +480,44 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     const what = state.blocks.size === n ? (n === 1 ? 'Baustein' : 'Bausteine') : '';
     return `${n} ${what ? `${what} ` : ''}gewählt${groupOfSelection() ? ' (Gruppe)' : ''} – ziehen zum Verschieben, lange drücken: Menü`;
   };
+  /** Vierter Farbknopf: zeigt die gewählte Zusatzfarbe (aktiv) oder nur ▾. */
+  const paintPick = (b, color) => {
+    if (!b) return;
+    b.classList.toggle('active', !!color);
+    b.classList.toggle('ink-pick-empty', !color);
+    if (color) b.style.setProperty('--c', color); else b.style.removeProperty('--c');
+  };
+  /** Ausklappen: die übrigen Farben unter dem Knopf `anchor`; Antippen wählt und schließt. */
+  let swatchPop = null;
+  const closeSwatches = () => {
+    if (!swatchPop) return;
+    swatchPop.el.remove();
+    document.removeEventListener('pointerdown', swatchPop.off, true);
+    swatchPop = null;
+  };
+  const openSwatches = (anchor, colors, current, onPick, cls) => {
+    const again = swatchPop?.anchor === anchor;
+    closeSwatches();
+    if (again) return;
+    const el = document.createElement('div');
+    el.className = 'ink-swatches';
+    el.innerHTML = colors.map((c) => `<button type="button" class="ink-btn ${cls}${c === current ? ' active' : ''}" data-pick="${c}" style="--c:${c}" title="${c}" aria-label="Farbe ${c}"></button>`).join('');
+    overlay.appendChild(el);
+    const r = anchor.getBoundingClientRect();
+    const o = overlay.getBoundingClientRect();
+    el.style.top = `${r.bottom - o.top + 8}px`;
+    el.style.left = `${Math.max(8, Math.min(r.left - o.left + r.width / 2 - el.offsetWidth / 2, o.width - el.offsetWidth - 8))}px`;
+    el.addEventListener('mousedown', (e) => e.preventDefault()); // Textfeld behält den Fokus
+    el.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-pick]');
+      if (!b) return;
+      closeSwatches();
+      onPick(b.dataset.pick);
+    });
+    const off = (e) => { if (!el.contains(e.target) && !anchor.contains(e.target)) closeSwatches(); };
+    document.addEventListener('pointerdown', off, true);
+    swatchPop = { el, off, anchor };
+  };
   let fitLater = null;     // Werkzeugleiste einpassen (fitToolbar, weiter unten)
   let fitSubLater = null;  // Einstellungsleiste einpassen (fitSubbar)
   const paintToolbar = () => {
@@ -490,9 +533,12 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     // wenn zwischen Drücken und Loslassen gespeichert wird (z. B. Textfeld verliert den Fokus).
     if ($('.ink-colors').dataset.list !== list.join()) {
       $('.ink-colors').dataset.list = list.join();
-      $('.ink-colors').innerHTML = list.map((c) => `<button type="button" class="ink-btn ink-color" data-color="${c}" style="--c:${c}" title="Farbe"></button>`).join('');
+      $('.ink-colors').innerHTML = list.slice(0, MAIN_COLORS).map((c) => `<button type="button" class="ink-btn ink-color" data-color="${c}" style="--c:${c}" title="Farbe"></button>`).join('')
+        + '<button type="button" class="ink-btn ink-color ink-swatch-pick ink-color-pick" title="Weitere Farben" aria-label="Weitere Farben"></button>';
     }
     $('.ink-colors').querySelectorAll('[data-color]').forEach((b) => b.classList.toggle('active', b.dataset.color === current));
+    // Vierter Knopf: die gewählte Zusatzfarbe – sonst nur ▾.
+    paintPick($('.ink-color-pick'), list.slice(0, MAIN_COLORS).includes(current) ? null : current);
     const drawing = ['pen', 'marker'].includes(state.tool);
     $('.ink-colors').hidden = !drawing && state.tool !== 'text' && !shaping;
     $('.ink-widths').hidden = !drawing && !shaping;
@@ -503,7 +549,8 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     const look = shapes[0] ? { dash: shapes[0].dash || 'solid', fill: shapes[0].fill || null, opacity: shapes[0].opacity ?? 1 }
       : { dash: state.shapeDash, fill: state.shapeFill, opacity: state.shapeOpacity };
     overlay.querySelectorAll('.ink-dash').forEach((b) => b.classList.toggle('active', b.dataset.dash === look.dash));
-    overlay.querySelectorAll('.ink-fill').forEach((b) => b.classList.toggle('active', (b.dataset.fill || null) === look.fill));
+    overlay.querySelectorAll('.ink-fill[data-fill]').forEach((b) => b.classList.toggle('active', (b.dataset.fill || null) === look.fill));
+    paintPick($('.ink-fill-pick'), look.fill && !FILL_MAIN.includes(look.fill) ? look.fill : null);
     const pct = String(Math.round(look.opacity * 100));
     if (document.activeElement !== $('.ink-op-num')) $('.ink-op-num').value = pct;
     if (document.activeElement !== $('.ink-op-range')) $('.ink-op-range').value = pct;
@@ -609,20 +656,30 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
   });
   // Das Textfeld, in dem gerade geschrieben wird, behält den Fokus und bekommt die Farbe gleich mit.
   $('.ink-colors').addEventListener('mousedown', (e) => e.preventDefault());
-  $('.ink-colors').addEventListener('click', (e) => {
-    const b = e.target.closest('[data-color]');
-    if (!b) return;
-    if (state.tool === 'marker') state.marker = b.dataset.color; else state.color = b.dataset.color;
-    if (applyToShapes({ color: b.dataset.color })) { paintToolbar(); return; }
+  const pickColor = (color) => {
+    if (state.tool === 'marker') state.marker = color; else state.color = color;
+    if (applyToShapes({ color })) { paintToolbar(); return; }
     const box = document.activeElement?.closest?.('.ink-text');
     if (box && overlay.contains(box)) {
-      box.style.color = b.dataset.color;
+      box.style.color = color;
       for (const pg of doc.pages) {
         const it = (pg.items || []).find((x) => x.id === box.dataset.id);
-        if (it) { it.color = b.dataset.color; changed(); }
+        if (it) { it.color = color; changed(); }
       }
     }
     paintToolbar();
+  };
+  $('.ink-colors').addEventListener('click', (e) => {
+    if (e.target.closest('.ink-color-pick')) {
+      const list = state.tool === 'marker' ? MARKERS : COLORS;
+      const shapes = selecting() ? selectedItems().filter((it) => it.type === 'shape') : [];
+      const current = state.tool === 'marker' ? state.marker : shapes.length ? shapes[0].color : state.color;
+      openSwatches(e.target.closest('.ink-color-pick'), list.slice(MAIN_COLORS), current, pickColor, 'ink-color');
+      return;
+    }
+    const b = e.target.closest('[data-color]');
+    if (!b) return;
+    pickColor(b.dataset.color);
   });
   $('.ink-patterns').addEventListener('click', (e) => {
     const b = e.target.closest('[data-pattern]');
@@ -653,6 +710,17 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     paintToolbar();
   });
   $('.ink-shape-style').addEventListener('click', (e) => {
+    const pick = e.target.closest('.ink-fill-pick');
+    if (pick) {
+      const shapes = selecting() ? selectedItems().filter((it) => it.type === 'shape') : [];
+      const current = shapes[0] ? shapes[0].fill || null : state.shapeFill;
+      openSwatches(pick, FILL_COLORS.filter((c) => !FILL_MAIN.includes(c)), current, (c) => {
+        state.shapeFill = c;
+        applyToShapes({ fill: c });
+        paintToolbar();
+      }, 'ink-fill');
+      return;
+    }
     const dash = e.target.closest('[data-dash]');
     const fill = e.target.closest('[data-fill]');
     if (dash) {
@@ -4127,6 +4195,7 @@ const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-r
     for (const v of Object.values(pdfs)) Promise.resolve(v).then((d) => d?.destroy?.()).catch(() => {});
     toolbarObserver.disconnect();
     closeSubPop();
+    closeSwatches();
     overlay.remove();
     document.body.classList.remove('ink-open');
     if (currentClose === close) currentClose = null;

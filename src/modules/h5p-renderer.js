@@ -276,6 +276,44 @@ function offerSolution(feedback, content, show) {
   feedback.appendChild(btn);
 }
 
+const NO_SUBSCRIPT_TYPES = new Set(['document', 'htmlApp', 'htmlAppUnit', 'htmlAppTask', 'htmlAppInfo', 'code']);
+// Ein einzelnes Zeichen als Basis (U, R, I, φ …), davor kein Buchstabe – so bleiben Namen wie my_var unberührt.
+const SUBSCRIPT_RE = /(^|[^\p{L}\p{N}_])([\p{L}])_(\{([^{}]{1,12})\}|([\p{L}\p{N}]{1,4}))(?![\p{L}\p{N}_])/gu;
+
+/**
+ * Tiefstellung in sichtbarem Quiztext: `U_A` → U<sub>A</sub>, `R_{K1}` → R<sub>K1</sub>. Nur Textknoten,
+ * nicht in Eingabefeldern, Code, Skripten oder SVG – die Auswertung vergleicht weiter den Originaltext.
+ */
+export function subscriptFormulaSymbols(root) {
+  if (!root || typeof document === 'undefined') return;
+  const skip = 'input, textarea, select, code, pre, script, style, svg, math, .katex, .ds-formula, sub, sup';
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
+  const hits = [];
+  let node;
+  while ((node = walker.nextNode())) {
+    if (node.nodeValue.includes('_') && !node.parentElement?.closest(skip)) hits.push(node);
+  }
+  for (const t of hits) {
+    const text = t.nodeValue;
+    SUBSCRIPT_RE.lastIndex = 0;
+    if (!SUBSCRIPT_RE.test(text)) continue;
+    SUBSCRIPT_RE.lastIndex = 0;
+    const frag = document.createDocumentFragment();
+    let last = 0;
+    let m;
+    while ((m = SUBSCRIPT_RE.exec(text))) {
+      const start = m.index + m[1].length;
+      frag.append(text.slice(last, start) + m[2]);
+      const sub = document.createElement('sub');
+      sub.textContent = m[4] ?? m[5];
+      frag.append(sub);
+      last = m.index + m[0].length;
+    }
+    frag.append(text.slice(last));
+    t.replaceWith(frag);
+  }
+}
+
 export class H5pRenderer {
   constructor({ host = {} } = {}) {
     this.host = host;
@@ -312,6 +350,7 @@ export class H5pRenderer {
         <p style="color:var(--text-secondary); font-size:0.9rem;">${typeDef.name} — ${typeDef.category || ''}</p>
       </div>
     `;
+    subscriptFormulaSymbols(header);
     wrapper.appendChild(header);
 
     if (mod.description) {
@@ -2195,6 +2234,8 @@ export class H5pRenderer {
       }
     }
 
+    // Formelzeichen wie U_A, R_{K1} in Quiztexten tiefstellen (Dokumente machen das selbst).
+    if (!NO_SUBSCRIPT_TYPES.has(type)) subscriptFormulaSymbols(div);
     return div;
   }
 

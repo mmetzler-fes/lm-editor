@@ -16,6 +16,7 @@ import { pmExtensions } from '../doc/pm-tiptap.js';
 import { pmToSpec, specToPm, textToInline } from '../doc/pm-convert.js';
 import { pmToMarkdown } from '../doc/pm-markdown.js';
 import { missingIds } from './pm-ids.js';
+import { deleteInLine } from './pm-delete.js';
 import { penSelects } from '../util/dom.js';
 
 const ATOMS = ['image', 'group', 'formula', 'karo', 'spacer', 'pagebreak', 'quiz', 'rawBlock'];
@@ -105,8 +106,9 @@ const Basics = Extension.create({
       'Shift-Tab': () => goToNextCell(-1)(this.editor.state, this.editor.view.dispatch) || this.editor.commands.liftListItem('listItem'),
       // Wie in Word: Text unter einer leeren Überschrift rückt in deren Zeile – die Überschrift
       // (z. B. „1.1“ einer Aufgabe) bleibt, statt gelöscht zu werden.
-      Backspace: () => joinIntoEmptyHeading(this.editor, -1),
-      Delete: () => joinIntoEmptyHeading(this.editor, 1),
+      // Eine Auswahl bis ans Zeilenende (auch über „(6 P)“) löscht nur in der Zeile.
+      Backspace: () => deleteInLine(this.editor) || joinIntoEmptyHeading(this.editor, -1),
+      Delete: () => deleteInLine(this.editor) || joinIntoEmptyHeading(this.editor, 1),
       'Alt-ArrowUp': () => moveBlock(this.editor, -1),
       'Alt-ArrowDown': () => moveBlock(this.editor, 1),
     };

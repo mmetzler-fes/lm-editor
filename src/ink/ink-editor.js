@@ -3236,9 +3236,22 @@ const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-r
         // Auf dem Quiz: Hat es den Stift selbst übernommen (Ziehen eines Worts), scrollt nichts.
         if (gesture.quiz?.defaultPrevented) { gesture = null; p.busy = false; return; }
         if (gesture.from && Math.hypot(e.clientX - gesture.from[0], e.clientY - gesture.from[1]) > HOLD_SLACK) {
-          if (!gesture.moved && gesture.pan) gesture.pan.last = [e.clientX, e.clientY]; // ab hier, ohne Sprung
+          if (!gesture.moved && gesture.pan) {
+            gesture.pan.last = [e.clientX, e.clientY]; // ab hier, ohne Sprung
+            // Ab jetzt kommen die Bewegungen über die Seite selbst: Im Blatt (CSS zoom) meldet Safari
+            // umgerechnete Koordinaten – das Blatt liefe dem Finger davon. Erst jetzt, damit Antippen
+            // weiter beim Quiz ankommt.
+            try { p.el.setPointerCapture(e.pointerId); gesture.pan.fresh = true; } catch (_) { /* ohne Umleitung */ }
+          }
           gesture.moved = true;
           clearTimeout(gesture.press);
+        }
+        // Erstes umgeleitetes Ereignis: nur den Bezugspunkt setzen (andere Koordinaten als davor).
+        if (gesture.pan?.fresh && e.target === p.el) {
+          gesture.pan.fresh = false;
+          gesture.pan.last = [e.clientX, e.clientY];
+          gesture.pan.at = performance.now();
+          return;
         }
         if (gesture.pan && gesture.moved) {
           const step = (v) => Math.max(-FINGER_STEP, Math.min(FINGER_STEP, v));

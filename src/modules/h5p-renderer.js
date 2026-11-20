@@ -242,6 +242,8 @@ function setupDndFit(div) {
     layout();
     if (shown || mode !== 'fit' || !player.isConnected) return;
     shown = true;
+    // Im Blatt eingebettet: nicht scrollen – sonst springt das Blatt beim Öffnen zum Quiz statt oben zu beginnen.
+    if (player.closest('.docspec')) return;
     player.scrollIntoView({ block: 'nearest' });
   };
   if (img.complete && img.naturalWidth) requestAnimationFrame(first);

@@ -1138,12 +1138,16 @@ export class H5pRenderer {
             const feedback = div.querySelector('#dtwFeedback');
             feedback.innerHTML = `<span style="font-weight:600;">${correct} von ${zones.length} richtig</span>`;
             if (correct < zones.length) offerSolution(feedback, content, () => {
+              // Richtiges Wort direkt in die Lücke; das gezogene Wort bleibt als Tooltip sichtbar.
               zones.forEach((z) => {
                 if (z.classList.contains('dtw-correct')) return;
-                const hint = document.createElement('span');
-                hint.className = 'quiz-solution-hint';
-                hint.textContent = dtwAlternatives(z.dataset.correctWord)[0] || '';
-                z.after(hint);
+                const own = (z.dataset.currentWord || '').trim();
+                const solution = dtwAlternatives(z.dataset.correctWord)[0] || '';
+                z.textContent = solution;
+                z.classList.remove('dtw-wrong', 'dtw-missing', 'dtw-drop-filled');
+                z.classList.add('quiz-solution-fill');
+                z.title = own ? `Deine Antwort: ${own}` : 'Keine Antwort eingesetzt';
+                z.setAttribute('aria-label', `Lösung: ${solution}${own ? ` (deine Antwort: ${own})` : ''}`);
               });
               // Danach nichts mehr ziehen – die Antwort bleibt, wie sie geprüft wurde.
               textArea.style.pointerEvents = 'none';

@@ -5,7 +5,7 @@
 // wird weiter die Spec (pm-convert.js), bis Phase 9.5 das Format umstellt.
 
 import {
-  Editor, Extension, Fragment, NodeSelection, Plugin, PluginKey, PmNode, Slice, TextSelection, InputRule,
+  Editor, Extension, Fragment, DOMSerializer, NodeSelection, Plugin, PluginKey, PmNode, Slice, TextSelection, InputRule,
   history, undo, redo, gapCursor, dropCursor, tableEditing, goToNextCell, isInTable,
   addRowBefore, addRowAfter, addColumnBefore, addColumnAfter, deleteRow, deleteColumn, deleteTable, mergeCells, splitCell, TableMap, CellSelection,
 } from '../vendor/tiptap/tiptap.mjs';
@@ -319,6 +319,21 @@ function mathView({ node, getPos, editor }) {
 
 const lengthCss = (v) => (typeof v === 'number' ? `${v}cm` : v) || '';
 
+/**
+ * Tabellenzeile wie gewohnt, aber die Zeilenhöhe, die tableView an das <tr> schreibt, ist kein
+ * Tippen. Sonst zeichnete ProseMirror die Zeilen neu, tableView setzte die Höhe wieder … – eine
+ * Tabelle mit festen Zeilenhöhen (heights) ließ die Seite hängen.
+ */
+function tableRowView({ node }) {
+  const { dom, contentDOM } = DOMSerializer.renderSpec(document, node.type.spec.toDOM(node));
+  return {
+    dom,
+    contentDOM,
+    update: (next) => next.type === node.type && JSON.stringify(next.attrs) === JSON.stringify(node.attrs),
+    ignoreMutation: (m) => m.type === 'attributes' && m.target === dom,
+  };
+}
+
 /** Tabelle: Linien, Breite, Lage und Spaltenbreiten aus den Feldern; Spalten und Zeilen am Rand ziehen. */
 function tableView({ node, getPos, editor }) {
   let current = node;
@@ -542,6 +557,7 @@ export function createPmEditor(element, spec, host = {}) {
   const nodeViews = Object.fromEntries(ATOMS.map((t) => [t, atomView(host)]));
   nodeViews.inlineMath = mathView;
   nodeViews.table = tableView;
+  nodeViews.tableRow = tableRowView;
   nodeViews.heading = headingView;
   const toDoc = (s) => {
     const json = specToPm(s);

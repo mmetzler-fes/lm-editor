@@ -365,6 +365,44 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     noticeTimer = setTimeout(() => { el.hidden = true; }, 9000);
   };
   const selecting = () => state.tool === 'select' || state.tool === 'area';
+
+  // 📊 „Aufs Blatt“ aus einem Python-Block (Gastgeber, python-run.js): Das Diagramm wird ein freies Bild
+  // in der eigenen Ebene – im nächsten Schreibfeld darunter, sonst direkt unter dem Block – und ist gleich
+  // gewählt, zum Verschieben, Vergrößern und Beschriften. Das Merkmal sagt dem Block, dass es den Weg gibt.
+  scroller.dataset.inkFigures = '1';
+  scroller.addEventListener('lm-figure-to-sheet', (e) => {
+    if (!e.detail?.file) return;
+    e.preventDefault();
+    e.stopPropagation();
+    void figureToSheet(e.target, e.detail.file);
+  });
+  async function figureToSheet(blockEl, file) {
+    let image;
+    try { image = await imageFromFile(file); } catch (err) { notice(`⚠️ ${err.message}`); return; }
+    const page = pages.find((pg) => pg.el.contains(blockEl)) || pages[targetPage()];
+    if (!page) return;
+    const r = page.el.getBoundingClientRect();
+    const k = page.w / r.width;
+    const b = blockEl.getBoundingClientRect();
+    const field = [...(paperView?.el.querySelectorAll('[data-btype="karo"]') || [])]
+      .filter((el) => el.querySelector('.ds-karo') && el.offsetParent !== null)
+      .map((el) => el.getBoundingClientRect())
+      .filter((fr) => fr.top >= b.bottom - 2 && fr.height > 20 && fr.top < r.bottom)
+      .sort((a, c) => a.top - c.top)[0];
+    const pad = 6;
+    const x = ((field ? field.left : b.left) - r.left) * k + (field ? pad : 0);
+    const y = ((field ? field.top : b.bottom) - r.top) * k + pad;
+    const room = (field ? field.width : b.width) * k - (field ? 2 * pad : 0);
+    // Im Schreibfeld: auch nicht höher als das Feld.
+    const tall = field ? (field.height * k - 2 * pad) * (image.wPx / image.hPx) : Infinity;
+    const w = Math.max(60, Math.min(image.wPx * RICH_PX_PT, 340, room, tall, page.w - x - 4));
+    addFreeItem(page.i, { id: uid(), type: 'image', x, y, w, h: w * (image.hPx / image.wPx), src: image.src });
+    // Hinscrollen, falls es außerhalb des Sichtfelds liegt.
+    const v = scroller.getBoundingClientRect();
+    const top = r.top + y / k;
+    if (top < v.top || top > v.bottom - 80) scroller.scrollBy({ top: top - v.top - v.height / 4, behavior: 'smooth' });
+    notice('📊 Das Bild liegt auf dem Blatt – verschieben, an der Ecke größer ziehen und beschriften.');
+  }
   const freeFingers = new Set(); // Finger, die dem Browser gehören (scrollen, Quiz).
   // Stift-Gerät (iPad mit Pencil, Windows mit Stift): Wurde hier schon mit dem Stift geschrieben, scrollt der
   // Finger nicht mehr über den Browser (mit Schwung), sondern über den Editor – in kleinen Schritten und erst,

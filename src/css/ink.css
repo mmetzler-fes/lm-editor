@@ -1,7 +1,8 @@
 /* ===== Stift-Editor (lm-editor/src/ink/ink-editor.js) ===== */
 body.ink-open { overflow: hidden; }
 .ink-overlay {
-  position: fixed; inset: 0; z-index: 2000;
+  /* Unter der Tab-Leiste der Arbeitsfläche (Gastgeber setzt --lm-ws-top), sonst ganz oben. */
+  position: fixed; inset: 0; top: var(--lm-ws-top, 0px); z-index: 2000;
   display: flex; flex-direction: column;
   background: #e2e8f0;
   /* Kein Zoomen der ganzen Seite – sonst rutscht die Leiste aus dem Bild (iPad). */
@@ -15,7 +16,8 @@ body.ink-open { overflow: hidden; }
 .ink-toolbar {
   display: flex; align-items: center; gap: 4px 10px;
   padding: 6px 10px;
-  overflow-x: auto; scrollbar-width: none;
+  /* Passt immer auf die Breite: Was nicht passt, steht im ⋯-Menü (fitToolbar) – nie seitlich scrollen. */
+  flex-wrap: nowrap; overflow: hidden;
   background: var(--bg-secondary); border-bottom: 1px solid var(--border);
 }
 .ink-toolbar::-webkit-scrollbar { display: none; }
@@ -304,3 +306,45 @@ body.ink-open { overflow: hidden; }
 .ink-view .lm-paper { position: relative; box-shadow: 0 1px 4px rgba(15, 23, 42, 0.18); }
 .ink-view .ds-b { position: relative; }
 .ink-view .ds-karo-frei { outline: 1px dashed rgba(100, 116, 139, 0.35); outline-offset: -1px; }
+
+/* ⋯-Menü: ausgelagerte Knöpfe sind in der Leiste weg, im Menü da. */
+.ink-toolbar .ink-ovf { display: none !important; }
+.ink-more { margin-left: auto; flex: 0 0 auto; }
+.ink-solution-group + .ink-more { margin-left: 0; }
+.ink-title { flex: 0 1 auto; min-width: 0; }
+
+/* Seitenleiste (▤): links neben dem Blatt, Seite antippen springt hin. */
+.ink-pages-panel {
+  position: absolute; left: 0; top: 0; bottom: 0; width: 260px; z-index: 25;
+  display: flex; flex-direction: column;
+  background: var(--bg-secondary); border-right: 1px solid var(--border);
+  box-shadow: 4px 0 14px rgba(15, 23, 42, 0.08);
+}
+.ink-pages-head { display: flex; align-items: center; justify-content: space-between; padding: 8px 8px 8px 16px; border-bottom: 1px solid var(--border); font-size: 1.05rem; }
+.ink-pages-list { list-style: none; margin: 0; padding: 8px; overflow-y: auto; flex: 1; -webkit-overflow-scrolling: touch; }
+.ink-page-entry {
+  display: flex; gap: 10px; align-items: flex-start; width: 100%; min-height: 52px;
+  padding: 10px; margin-bottom: 6px; border: 1px solid var(--border); border-radius: 10px;
+  background: var(--bg-primary); color: var(--text-primary); text-align: left; cursor: pointer; touch-action: manipulation;
+  font: inherit; font-size: 0.9rem;
+}
+.ink-page-entry.active { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-light); }
+.ink-page-no { flex: 0 0 auto; min-width: 1.8em; height: 1.8em; border-radius: 6px; background: var(--accent-light); color: var(--accent); font-weight: 700; display: inline-flex; align-items: center; justify-content: center; }
+.ink-page-titles { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ink-page-titles span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ink-page-titles span:first-child { font-weight: 600; }
+.ink-page-empty { color: var(--text-secondary); font-weight: 400 !important; }
+/* Breiter Bildschirm: Das Blatt rückt zur Seite. Schmal (Hochformat): Die Leiste liegt darüber. */
+@media (min-width: 900px) {
+  .ink-pages-open .ink-scroll { margin-left: 260px; }
+}
+
+/* iPad und andere Touch-Geräte: größere Symbole, kleinere Lücken, Knöpfe in Fingergröße. */
+@media (pointer: coarse) {
+  .ink-toolbar { gap: 2px 4px; padding: 4px 6px; }
+  .ink-toolbar .ink-group { gap: 0; }
+  .ink-toolbar .ink-btn { min-width: 46px; height: 46px; border-radius: 12px; }
+  .ink-toolbar .ink-icon { width: 28px; height: 28px; stroke-width: 1.6; }
+  .ink-toolbar .ink-sep { margin: 0 3px; height: 28px; }
+  .ink-toolbar .ink-bg-select { height: 40px; }
+}

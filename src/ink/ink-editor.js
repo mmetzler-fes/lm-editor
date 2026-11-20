@@ -71,6 +71,8 @@ const ICON_PATHS = {
   laser: 'M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1',
   print: 'M7 9V3h10v6M7 17H4v-7h16v7h-3M7 14h10v7H7z',
   share: 'M12 3v12M7.5 7.5L12 3l4.5 4.5M5 11v9h14v-9',
+  pages: 'M4 4h16v16H4zM9.5 4v16M5.8 8h2M5.8 11.5h2M5.8 15h2',
+  more: 'M5 12h.01M12 12h.01M19 12h.01',
   head: 'M4 3h16v6H4zM7 6h4M4 13h16M4 17h12M4 21h14',
   save: 'M5 4h11l3 3v13H5zM8 4v5h7V4M8 20v-6h8v6',
 };
@@ -135,6 +137,7 @@ const store1 = (key, value) => { try { localStorage.setItem(key, value); } catch
 const PALM_MS = 500;          // so lange nach dem Absetzen des Stifts zählt kein Finger (Handballen)
 const PALM_SIZE = 90;         // größere Auflage (CSS-Pixel) ist ein Handballen – ein Finger meldet auf dem iPad oft 40–60
 const PEN_NEAR_MS = 400;      // so lange nach einer Bewegung des Stifts auf dem Blatt zählt kein Finger
+const PAGES_KEY = 'lm_ink_pages';   // Seitenleiste offen (Gerät)
 const FINGER_STEP = 400;      // Stift-Gerät: Schutz vor Sprüngen (verpasste Ereignisse) – sonst folgt das Blatt dem Finger genau
 const GLIDE_DECAY = 0.95;     // Nachgleiten nach dem Loslassen: Geschwindigkeit je 16 ms
 const GLIDE_MIN = 0.05;       // darunter (px/ms) gleitet nichts nach
@@ -229,6 +232,15 @@ const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<
  * - `onClose`: nach dem Schließen (der Stand ist dann gespeichert).
  * - `laser`: Leuchtstift zum Zeigen am Beamer (Spur verblasst, wird nicht gespeichert) – Vorgabe: wie `solutions` (Lehrkräfte).
  */
+// Der offene Stift-Editor (es gibt immer höchstens einen) – zum Schließen von außen (Tabs der Arbeitsfläche).
+let currentClose = null;
+/** Offenen Stift-Editor speichern und schließen (z. B. beim Wechsel des Tabs). */
+export async function closeInkEditor() {
+  if (currentClose) await currentClose();
+}
+/** Ist gerade ein Stift-Editor offen? */
+export const inkEditorOpen = () => !!currentClose;
+
 export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = null, solutions = false, paper = null, store = null, actions = [], onClose = null, laser = solutions }) {
   const storeKey = `ink:${key}`;
   const saved = store ? await store.load() : await dbGet(storeKey);
@@ -273,6 +285,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
   overlay.innerHTML = `
     <div class="ink-toolbar" role="toolbar">
       ${btn('ink-close', 'close', store ? 'Schließen' : 'Schließen – die Beschriftung bleibt auf diesem Gerät gespeichert')}
+      ${btn('ink-pages-toggle', 'pages', 'Seiten: Seitenleiste ein- und ausblenden – zu einer Seite springen')}
       ${btn('ink-save', 'save', 'Speichern – geschieht auch automatisch kurz nach jeder Änderung')}
       ${actions.map((a, i) => {
     // Nur das Symbol, damit die Werkzeuge ihren Platz behalten; der Name steht im Tooltip.
@@ -318,8 +331,13 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
       <span class="ink-status" aria-live="polite"></span>
       <span class="ink-title">${esc(title)}</span>
       ${solutions && (loadPdf || paper) ? `<span class="ink-group ink-solution-group"><span class="ink-solution"></span></span>` : ''}
+      ${btn('ink-more', 'more', 'Weitere Knöpfe', ' hidden')}
     </div>
     <div class="ink-stage">
+      <aside class="ink-pages-panel" aria-label="Seiten" hidden>
+        <div class="ink-pages-head"><strong>Seiten</strong><button type="button" class="ink-btn ink-pages-close" title="Seitenleiste schließen" aria-label="Seitenleiste schließen">${icon('close')}</button></div>
+        <ol class="ink-pages-list"></ol>
+      </aside>
       <div class="ink-subbar" role="toolbar" aria-label="Einstellungen des Werkzeugs">
         <span class="ink-group ink-widths">
           ${[0, 1, 2].map((i) => `<button type="button" class="ink-btn ink-width" data-width="${i}" title="${['dünn', 'mittel', 'dick'][i]}" aria-label="${['dünn', 'mittel', 'dick'][i]}"><i style="--h:${[1.5, 3, 5][i]}px"></i></button>`).join('')}
@@ -456,6 +474,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     const what = state.blocks.size === n ? (n === 1 ? 'Baustein' : 'Bausteine') : '';
     return `${n} ${what ? `${what} ` : ''}gewählt${groupOfSelection() ? ' (Gruppe)' : ''} – ziehen zum Verschieben, lange drücken: Menü`;
   };
+  let fitLater = null;     // Werkzeugleiste einpassen (fitToolbar, weiter unten)
   const paintToolbar = () => {
     overlay.querySelectorAll('[data-tool]').forEach((b) => b.classList.toggle('active', b.dataset.tool === state.tool));
     if (state.tool !== 'laser') laserDot(-1, null);
@@ -537,6 +556,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     if ($('.ink-print')) $('.ink-print').hidden = doc.bg !== 'paper';
     if ($('.ink-share')) $('.ink-share').hidden = doc.bg !== 'paper';
     $('.ink-ruler-toggle').classList.toggle('active', !!doc.ruler?.visible);
+    fitLater?.(); // was sichtbar ist, hat sich geändert: Leiste neu einpassen
   };
 
   overlay.querySelector('.ink-tools').addEventListener('click', (e) => {
@@ -795,6 +815,130 @@ const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-r
     void layout();
   });
   $('.ink-close').addEventListener('click', () => close());
+
+  // ---------- Seitenleiste: zu einer Seite springen ----------
+  //
+  // Dokument: Seiten wie im Druck (Marken „Seite 2“ … aus page-breaks.js), je Seite ihre
+  // Überschriften. Karo, PDF: die Seiten des Blatts.
+  const pagesPanel = $('.ink-pages-panel');
+  const pageTargets = () => {
+    if (doc.bg === 'paper' && paperView) {
+      const sheet = paperView.el;
+      const marks = [...sheet.querySelectorAll('.ds-autobreak, .ds-pagebreak, .ds-pagebreak-mark')]
+        .filter((m) => m.getClientRects().length)
+        .sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top);
+      const tops = [sheet, ...marks].map((el) => el.getBoundingClientRect().top);
+      const heads = [...sheet.querySelectorAll('h1, h2, h3')].filter((h) => h.getClientRects().length && (h.textContent || '').trim());
+      return [sheet, ...marks].map((el, i) => {
+        const from = tops[i];
+        const to = i + 1 < tops.length ? tops[i + 1] : Infinity;
+        const titles = heads.filter((h) => { const t = h.getBoundingClientRect().top; return t >= from - 2 && t < to - 2; })
+          .map((h) => h.textContent.trim().replace(/\s+/g, ' '));
+        return { el, top: from, titles };
+      });
+    }
+    return pages.map((pg) => ({ el: pg.el, top: pg.el.getBoundingClientRect().top, titles: [] }));
+  };
+  const currentPageIndex = (targets) => {
+    const y = scroller.getBoundingClientRect().top + scroller.clientHeight / 3;
+    let at = 0;
+    targets.forEach((t, i) => { if (t.top <= y) at = i; });
+    return at;
+  };
+  const paintPages = () => {
+    if (pagesPanel.hidden) return;
+    const targets = pageTargets();
+    const at = currentPageIndex(targets);
+    const list = pagesPanel.querySelector('.ink-pages-list');
+    list.innerHTML = targets.map((t, i) => `<li><button type="button" class="ink-page-entry${i === at ? ' active' : ''}" data-page="${i}">
+        <span class="ink-page-no">${i + 1}</span>
+        <span class="ink-page-titles">${t.titles.length ? t.titles.slice(0, 4).map((x) => `<span>${esc(x)}</span>`).join('') : '<span class="ink-page-empty">Seite ' + (i + 1) + '</span>'}</span>
+      </button></li>`).join('');
+    list.querySelectorAll('[data-page]').forEach((b) => b.addEventListener('click', () => {
+      const t = pageTargets()[Number(b.dataset.page)];
+      if (!t) return;
+      const delta = t.el.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
+      scroller.scrollTo({ top: scroller.scrollTop + delta - (Number(b.dataset.page) ? 4 : 12), behavior: 'auto' });
+      // Schmale Bildschirme (Hochformat): Die Leiste macht nach dem Sprung Platz.
+      if (overlay.clientWidth < 900) togglePages(false);
+      else paintPages();
+    }));
+  };
+  const togglePages = (open = pagesPanel.hidden) => {
+    pagesPanel.hidden = !open;
+    overlay.classList.toggle('ink-pages-open', open);
+    $('.ink-pages-toggle').classList.toggle('active', open);
+    store1(PAGES_KEY, open ? '1' : '0');
+    // Breiter Bildschirm: Das Blatt rückt zur Seite – wieder auf die Breite einpassen.
+    if (window.matchMedia('(min-width: 900px)').matches) $('.ink-zoom-fit')?.click();
+    paintPages();
+  };
+  $('.ink-pages-toggle').addEventListener('click', () => togglePages());
+  pagesPanel.querySelector('.ink-pages-close').addEventListener('click', () => togglePages(false));
+  let pagesRaf = 0;
+  scroller.addEventListener('scroll', () => {
+    if (pagesPanel.hidden || pagesRaf) return;
+    pagesRaf = requestAnimationFrame(() => {
+      pagesRaf = 0;
+      const targets = pageTargets();
+      const at = currentPageIndex(targets);
+      pagesPanel.querySelectorAll('.ink-page-entry').forEach((b, i) => b.classList.toggle('active', i === at));
+    });
+  }, { passive: true });
+
+  // ---------- Werkzeugleiste: passt immer, was nicht passt, steht im ⋯-Menü ----------
+  //
+  // Reihenfolge: was zuerst ins Menü wandert. Werkzeuge, Rückgängig und Schließen bleiben am längsten.
+  const OVERFLOW_ORDER = ['.ink-title', '.ink-zoom', '.ink-head', '.ink-add-page', '.ink-bg-select', '.ink-print', '.ink-save',
+    '[data-tool="laser"]', '.ink-ruler-toggle', '[data-tool="shape"]', '[data-tool="field"]', '[data-tool="area"]', '.ink-share',
+    '[data-tool="text"]', '.ink-redo', '.ink-pages-toggle'];
+  const toolbarEl = $('.ink-toolbar');
+  const moreBtn = $('.ink-more');
+  let overflowed = [];
+  let fitting = false;
+  const fitToolbar = () => {
+    if (fitting) return;
+    fitting = true;
+    try {
+      overflowed.forEach((el) => el.classList.remove('ink-ovf'));
+      overflowed = [];
+      moreBtn.hidden = true;
+      const fits = () => toolbarEl.scrollWidth <= toolbarEl.clientWidth + 1;
+      if (fits()) return;
+      moreBtn.hidden = false;
+      for (const sel of OVERFLOW_ORDER) {
+        for (const el of toolbarEl.querySelectorAll(sel)) {
+          if (el.hidden || el.classList.contains('ink-ovf') || !el.getClientRects().length) continue;
+          el.classList.add('ink-ovf');
+          overflowed.push(el);
+          if (fits()) return;
+        }
+      }
+    } finally {
+      fitting = false;
+    }
+  };
+  const shortLabel = (el) => String(el.getAttribute('aria-label') || el.title || el.textContent || '').split(/ – |: /)[0].trim();
+  moreBtn.addEventListener('click', () => {
+    const items = [];
+    for (const el of overflowed) {
+      if (el.classList.contains('ink-title')) continue;
+      if (el.tagName === 'SELECT') {
+        items.push({ label: shortLabel(el), submenu: [...el.options].map((o) => ({ label: `${o.value === el.value ? '✓ ' : ''}${o.textContent}`, onClick: () => { el.value = o.value; el.dispatchEvent(new Event('change', { bubbles: true })); } })) });
+        continue;
+      }
+      const buttons = el.matches('button') ? [el] : [...el.querySelectorAll('button')].filter((b) => !b.hidden);
+      for (const b of buttons) items.push({ label: `${b.classList.contains('active') ? '✓ ' : ''}${shortLabel(b)}`, onClick: () => b.click(), ...(b.disabled ? { hint: '–' } : {}) });
+    }
+    const r = moreBtn.getBoundingClientRect();
+    showContextMenu(r.right - 220, r.bottom + 4, items);
+  });
+  const toolbarObserver = new ResizeObserver(() => { fitToolbar(); paintPages(); });
+  toolbarObserver.observe(toolbarEl);
+  toolbarObserver.observe(pagesEl); // Blatt fertig geladen, Bilder nachgeladen: Seiten neu zählen
+  fitLater = fitToolbar;
+  // Seitenleiste wie zuletzt – auf schmalen Bildschirmen erst auf Wunsch.
+  if (stored(PAGES_KEY) === '1' && window.innerWidth >= 900) togglePages(true);
   $('.ink-save').addEventListener('click', async () => {
     const b = $('.ink-save');
     const tool = state.tool; // Speichern wechselt nie das Werkzeug – der Stift bleibt aktiv.
@@ -3889,7 +4033,13 @@ const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-r
   };
   overlay.addEventListener('wheel', onWheel, { passive: false });
 
-  async function close() {
+  let closing = null;
+  function close() {
+    // Zweimal (Knopf und Tab gleichzeitig): einmal schließen.
+    if (!closing) closing = closeNow();
+    return closing;
+  }
+  async function closeNow() {
     if (document.activeElement?.classList?.contains('ink-text')) document.activeElement.blur();
     await persist();
     leavePaper();
@@ -3915,10 +4065,13 @@ const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-r
     document.removeEventListener('gestureend', pinchEnd);
     barObserver.disconnect();
     for (const v of Object.values(pdfs)) Promise.resolve(v).then((d) => d?.destroy?.()).catch(() => {});
+    toolbarObserver.disconnect();
     overlay.remove();
     document.body.classList.remove('ink-open');
+    if (currentClose === close) currentClose = null;
     onClose?.();
   }
+  currentClose = close;
 
   // Knöpfe des Gastgebers: erst speichern; `close` schließt den Editor (z. B. Weiter im Durchlauf).
   overlay.querySelectorAll('.ink-action').forEach((b) => b.addEventListener('click', async () => {

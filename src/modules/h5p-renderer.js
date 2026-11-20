@@ -839,14 +839,18 @@ export class H5pRenderer {
             const feedback = div.querySelector('#blanksFeedback');
             feedback.innerHTML = `<span style="font-weight:600;">${correct} von ${answerMap.length} richtig</span>`;
             if (correct < answerMap.length) offerSolution(feedback, content, () => {
-              // Richtige Antwort hinter jede falsche oder leere Lücke; danach ist die Eingabe gesperrt.
+              // Richtige Antwort direkt in jede falsche oder leere Lücke (die eigene Eingabe
+              // bleibt als Tooltip sichtbar); danach ist die Eingabe gesperrt.
               answerMap.forEach(({ answer, inputEl }) => {
                 inputEl.readOnly = true;
                 if (inputEl.style.borderColor === 'green') return;
-                const hint = document.createElement('span');
-                hint.className = 'quiz-solution-hint';
-                hint.textContent = answer.split('/')[0].trim();
-                inputEl.after(hint);
+                const own = inputEl.value.trim();
+                const solution = answer.split('/')[0].trim();
+                inputEl.value = solution;
+                inputEl.classList.add('quiz-solution-fill');
+                inputEl.style.width = `${Math.max(120, solution.length * 10 + 24)}px`;
+                inputEl.title = own ? `Deine Antwort: ${own}` : 'Keine Antwort eingegeben';
+                inputEl.setAttribute('aria-label', `Lösung: ${solution}${own ? ` (deine Antwort: ${own})` : ''}`);
               });
               blanksCheckBtn.disabled = true;
               lockNext(false); // leere Lücken sind jetzt gesperrt – weiter geht es trotzdem

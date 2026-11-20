@@ -331,7 +331,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
       <span class="ink-status" aria-live="polite"></span>
       <span class="ink-title">${esc(title)}</span>
       ${solutions && (loadPdf || paper) ? `<span class="ink-group ink-solution-group"><span class="ink-solution"></span></span>` : ''}
-      ${btn('ink-more', 'more', 'Weitere Knöpfe', ' hidden')}
+      ${btn('ink-bar-more', 'more', 'Weitere Knöpfe', ' hidden')}
     </div>
     <div class="ink-stage">
       <aside class="ink-pages-panel" aria-label="Seiten" hidden>
@@ -363,6 +363,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
         <span class="ink-sep ink-sub-sep"></span>
         <span class="ink-group ink-colors"></span>
         <span class="ink-subhint"></span>
+        <button type="button" class="ink-btn ink-sub-more" title="Weitere Einstellungen" aria-label="Weitere Einstellungen" hidden>${icon('more')}</button>
         <button type="button" class="ink-btn ink-more" title="Mehr: Kopieren, Einfügen, Gruppieren … (auch Rechtsklick oder lange drücken)" aria-label="Mehr" hidden>⋯</button>
         <button type="button" class="ink-btn ink-delete ink-labeled" title="Auswahl löschen (Entf)" hidden>${icon('trash')}<span>Löschen</span></button>
       </div>
@@ -475,6 +476,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     return `${n} ${what ? `${what} ` : ''}gewählt${groupOfSelection() ? ' (Gruppe)' : ''} – ziehen zum Verschieben, lange drücken: Menü`;
   };
   let fitLater = null;     // Werkzeugleiste einpassen (fitToolbar, weiter unten)
+  let fitSubLater = null;  // Einstellungsleiste einpassen (fitSubbar)
   const paintToolbar = () => {
     overlay.querySelectorAll('[data-tool]').forEach((b) => b.classList.toggle('active', b.dataset.tool === state.tool));
     if (state.tool !== 'laser') laserDot(-1, null);
@@ -557,6 +559,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     if ($('.ink-share')) $('.ink-share').hidden = doc.bg !== 'paper';
     $('.ink-ruler-toggle').classList.toggle('active', !!doc.ruler?.visible);
     fitLater?.(); // was sichtbar ist, hat sich geändert: Leiste neu einpassen
+    fitSubLater?.();
   };
 
   overlay.querySelector('.ink-tools').addEventListener('click', (e) => {
@@ -893,7 +896,7 @@ const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-r
     '[data-tool="laser"]', '.ink-ruler-toggle', '[data-tool="shape"]', '[data-tool="field"]', '[data-tool="area"]', '.ink-share',
     '[data-tool="text"]', '.ink-redo', '.ink-pages-toggle'];
   const toolbarEl = $('.ink-toolbar');
-  const moreBtn = $('.ink-more');
+  const moreBtn = $('.ink-bar-more');
   let overflowed = [];
   let fitting = false;
   const fitToolbar = () => {
@@ -933,10 +936,67 @@ const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-r
     const r = moreBtn.getBoundingClientRect();
     showContextMenu(r.right - 220, r.bottom + 4, items);
   });
-  const toolbarObserver = new ResizeObserver(() => { fitToolbar(); paintPages(); });
+  const toolbarObserver = new ResizeObserver(() => { fitToolbar(); fitSubLater?.(); paintPages(); });
   toolbarObserver.observe(toolbarEl);
   toolbarObserver.observe(pagesEl); // Blatt fertig geladen, Bilder nachgeladen: Seiten neu zählen
   fitLater = fitToolbar;
+
+  // ---------- Einstellungsleiste (Farben, Stärken, Formen): eine Zeile, Überzähliges unter ⋯ ----------
+  //
+  // Ganze Gruppen wandern in ein Feld unter der Leiste (ihre Klicks hängen an der Gruppe), in dieser
+  // Reihenfolge; Farben und Stärken bleiben am längsten. Leer (nichts einzustellen): Die Leiste ist weg.
+  const SUB_ORDER = ['.ink-shape-style', '.ink-patterns', '.ink-shape-kinds', '.ink-sizes', '.ink-widths', '.ink-colors'];
+  const subbar = $('.ink-subbar');
+  const subMore = $('.ink-sub-more');
+  let subPop = null; // { el, moved: [{ node, mark }] }
+  const closeSubPop = () => {
+    if (!subPop) return;
+    for (const { node, mark } of subPop.moved) { mark.replaceWith(node); }
+    subPop.el.remove();
+    document.removeEventListener('pointerdown', subPop.off, true);
+    subPop = null;
+    subMore.classList.remove('active');
+    fitSubbar();
+  };
+  const fitSubbar = () => {
+    if (subPop) return;
+    subbar.querySelectorAll('.ink-ovf').forEach((el) => el.classList.remove('ink-ovf'));
+    subMore.hidden = true;
+    const shown = [...subbar.children].filter((el) => !el.hidden && el !== subMore && !el.classList.contains('ink-sub-sep') && !el.classList.contains('ink-subhint'));
+    subbar.hidden = !shown.length;
+    if (!shown.length || subbar.scrollWidth <= subbar.clientWidth + 1) return;
+    subMore.hidden = false;
+    for (const sel of SUB_ORDER) {
+      const el = subbar.querySelector(sel);
+      if (!el || el.hidden) continue;
+      el.classList.add('ink-ovf');
+      if (subbar.scrollWidth <= subbar.clientWidth + 1) return;
+    }
+  };
+  subMore.addEventListener('click', () => {
+    if (subPop) { closeSubPop(); return; }
+    const groups = [...subbar.querySelectorAll('.ink-ovf')];
+    if (!groups.length) return;
+    const el = document.createElement('div');
+    el.className = 'ink-sub-pop';
+    const moved = groups.map((node) => {
+      const mark = document.createComment('ink-ovf');
+      node.replaceWith(mark);
+      node.classList.remove('ink-ovf');
+      el.appendChild(node);
+      return { node, mark };
+    });
+    subbar.after(el);
+    const r = subbar.getBoundingClientRect();
+    const stageTop = subbar.parentElement.getBoundingClientRect().top;
+    el.style.top = `${r.bottom - stageTop + 6}px`;
+    const off = (e) => { if (!el.contains(e.target) && !subMore.contains(e.target)) closeSubPop(); };
+    document.addEventListener('pointerdown', off, true);
+    subPop = { el, moved, off };
+    subMore.classList.add('active');
+  });
+  toolbarObserver.observe(subbar.parentElement);
+  fitSubLater = fitSubbar;
   // Seitenleiste wie zuletzt – auf schmalen Bildschirmen erst auf Wunsch.
   if (stored(PAGES_KEY) === '1' && window.innerWidth >= 900) togglePages(true);
   $('.ink-save').addEventListener('click', async () => {
@@ -4066,6 +4126,7 @@ const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-r
     barObserver.disconnect();
     for (const v of Object.values(pdfs)) Promise.resolve(v).then((d) => d?.destroy?.()).catch(() => {});
     toolbarObserver.disconnect();
+    closeSubPop();
     overlay.remove();
     document.body.classList.remove('ink-open');
     if (currentClose === close) currentClose = null;

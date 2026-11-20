@@ -54,7 +54,8 @@ body.ink-open { overflow: hidden; }
 .ink-subbar {
   position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 20;
   display: flex; align-items: center; gap: 4px;
-  max-width: calc(100% - 20px); overflow-x: auto; scrollbar-width: none;
+  /* Eine Zeile, nie scrollen: Überzähliges steht unter ⋯ (fitSubbar). */
+  max-width: calc(100% - 20px); flex-wrap: nowrap; overflow: hidden;
   padding: 4px 10px; border-radius: 999px;
   background: var(--bg-secondary); border: 1px solid var(--border);
   box-shadow: 0 4px 14px rgba(15, 23, 42, 0.15);
@@ -76,8 +77,8 @@ body.ink-open { overflow: hidden; }
 .ink-op-num { width: 4.2em; font: inherit; padding: 1px 3px; }
 .ink-opacity.ink-muted { opacity: 0.5; }
 .ink-labeled { gap: 6px; padding: 0 12px; color: #dc2626; font-weight: 600; }
-.ink-subhint { font-size: 0.85em; color: var(--text-secondary); white-space: nowrap; padding: 0 6px; }
-.ink-subhint:empty { display: none; }
+/* Erklärungen stehen im Tooltip der Werkzeuge und in der Hilfe – nicht in der Leiste. */
+.ink-subhint { display: none !important; }
 .ink-close { color: var(--text-secondary); }
 .ink-scroll { flex: 1; overflow: auto; -webkit-overflow-scrolling: touch; }
 /* Mit der Maus: Scrollleiste immer sichtbar (auch wo das System sie sonst ausblendet, z. B. macOS). */
@@ -309,8 +310,8 @@ body.ink-open { overflow: hidden; }
 
 /* ⋯-Menü: ausgelagerte Knöpfe sind in der Leiste weg, im Menü da. */
 .ink-toolbar .ink-ovf { display: none !important; }
-.ink-more { margin-left: auto; flex: 0 0 auto; }
-.ink-solution-group + .ink-more { margin-left: 0; }
+.ink-bar-more { margin-left: auto; flex: 0 0 auto; }
+.ink-solution-group + .ink-bar-more { margin-left: 0; }
 .ink-title { flex: 0 1 auto; min-width: 0; }
 
 /* Seitenleiste (▤): links neben dem Blatt, Seite antippen springt hin. */
@@ -348,3 +349,21 @@ body.ink-open { overflow: hidden; }
   .ink-toolbar .ink-sep { margin: 0 3px; height: 28px; }
   .ink-toolbar .ink-bg-select { height: 40px; }
 }
+
+/* Einstellungsleiste: ausgelagerte Gruppen; das Feld unter ⋯ zeigt sie (umbrechend, nicht scrollend). */
+.ink-subbar .ink-ovf { display: none !important; }
+.ink-sub-more { flex: 0 0 auto; }
+.ink-sub-pop {
+  position: absolute; left: 50%; transform: translateX(-50%); z-index: 21;
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px 10px;
+  max-width: calc(100% - 20px); padding: 8px 12px; border-radius: 16px;
+  background: var(--bg-secondary); border: 1px solid var(--border);
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.18);
+}
+@media (pointer: coarse) {
+  .ink-subbar { padding: 4px 8px; gap: 2px; }
+  .ink-subbar .ink-btn:not(.ink-color):not(.ink-fill), .ink-sub-pop .ink-btn:not(.ink-color):not(.ink-fill) { min-width: 44px; height: 44px; }
+  .ink-btn.ink-fill { min-width: 30px; width: 30px; height: 30px; }
+  .ink-btn.ink-color { min-width: 34px; width: 34px; height: 34px; }
+}
+.ink-sub-pop .ink-group { flex-wrap: wrap; justify-content: center; row-gap: 6px; max-width: 100%; }

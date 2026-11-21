@@ -90,6 +90,22 @@ const FIELD_PATTERNS = { karo: '▦ Karo', linien: '☰ Linien', leer: '▢ Leer
 // Formen (ink-shapes.js): Art, Strichart.
 const SHAPE_KIND_LABELS = { rect: ['▭', 'Rechteck'], ellipse: ['◯', 'Ellipse'], polygon: ['⬠', 'Vieleck – Punkte setzen, Doppelklick oder Klick auf den ersten Punkt schließt'], line: ['╱', 'Linie'], arrow: ['➝', 'Pfeil'] };
 const DASH_LABELS = { solid: ['—', 'durchgezogen'], dash: ['┄', 'gestrichelt'], dot: ['⋯', 'gepunktet'] };
+// Symbole der Einstellungsleiste gezeichnet statt als Schriftzeichen: groß, kräftig, in Textfarbe – Schriftzeichen
+// wie ⬠ oder ┄ sind auf dem iPad winzig und blass.
+const SUB_ICON_PATHS = {
+  rect: 'M4 6.5h16v11H4z',
+  ellipse: 'M12 5.5c4.7 0 8.5 2.9 8.5 6.5s-3.8 6.5-8.5 6.5S3.5 15.6 3.5 12 7.3 5.5 12 5.5z',
+  polygon: 'M12 3.8l8.3 6-3.2 9.7H6.9L3.7 9.8z',
+  line: 'M5 19L19 5',
+  arrow: 'M4 12h15M14 7l5 5-5 5',
+  solid: 'M3 12h18',
+  dash: 'M3 12h4M10 12h4M17 12h4',
+  dot: 'M4 12h.01M9.3 12h.01M14.7 12h.01M20 12h.01',
+  karo: 'M4 5h16v14H4zM4 9.7h16M4 14.3h16M9.3 5v14M14.7 5v14',
+  linien: 'M4 5h16v14H4zM4 9.7h16M4 14.3h16',
+  leer: 'M4 5h16v14H4z',
+};
+const subIcon = (name) => `<svg class="ink-icon ink-sub-icon ink-sub-${name}" viewBox="0 0 24 24" aria-hidden="true"><path d="${SUB_ICON_PATHS[name]}"/></svg>`;
 const ROT_GAP = 22;         // Abstand des Dreh-Anfassers über der Form, Bildschirm-Pixel
 const LASER_FADE = 1500;    // so lange (ms) leuchtet die Spur des Leuchtstifts nach dem Absetzen nach
 const icon = (name) => `<svg class="ink-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="${ICON_PATHS[name]}"/></svg>`;
@@ -359,10 +375,10 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
           <select class="ink-tsize" title="Schriftgröße (wie im Dokument-Editor)" aria-label="Schriftgröße">${FONT_SIZES.map((pt) => `<option value="${pt}">${pt} pt</option>`).join('')}</select>
         </span>
         <span class="ink-group ink-shape-kinds">
-          ${Object.entries(SHAPE_KIND_LABELS).map(([k, [ico, label]]) => `<button type="button" class="ink-btn ink-shape-kind" data-kind="${k}" title="${label}" aria-label="${label}">${ico}</button>`).join('')}
+          ${Object.entries(SHAPE_KIND_LABELS).map(([k, [ico, label]]) => `<button type="button" class="ink-btn ink-shape-kind" data-kind="${k}" title="${label}" aria-label="${label}">${SUB_ICON_PATHS[k] ? subIcon(k) : ico}</button>`).join('')}
         </span>
         <span class="ink-group ink-shape-style">
-          ${Object.entries(DASH_LABELS).map(([k, [ico, label]]) => `<button type="button" class="ink-btn ink-dash" data-dash="${k}" title="Linie ${label}" aria-label="Linie ${label}">${ico}</button>`).join('')}
+          ${Object.entries(DASH_LABELS).map(([k, [ico, label]]) => `<button type="button" class="ink-btn ink-dash" data-dash="${k}" title="Linie ${label}" aria-label="Linie ${label}">${subIcon(k)}</button>`).join('')}
           <span class="ink-sep"></span>
           <button type="button" class="ink-btn ink-fill ink-fill-none" data-fill="" title="Keine Füllung" aria-label="Keine Füllung"></button>
           ${FILL_MAIN.map((c) => `<button type="button" class="ink-btn ink-fill" data-fill="${c}" style="--c:${c}" title="Füllung" aria-label="Füllung ${c}"></button>`).join('')}
@@ -372,7 +388,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
             <input type="number" class="ink-op-num" min="0" max="100" step="1" aria-label="Deckkraft in Prozent">%</label>
         </span>
         <span class="ink-group ink-patterns">
-          ${Object.entries(FIELD_PATTERNS).map(([p, label]) => `<button type="button" class="ink-btn ink-pattern" data-pattern="${p}" title="Feld aufziehen: ${label.slice(2)}" aria-label="Feld: ${label.slice(2)}">${label.slice(0, 1)}</button>`).join('')}
+          ${Object.entries(FIELD_PATTERNS).map(([p, label]) => `<button type="button" class="ink-btn ink-pattern" data-pattern="${p}" title="Feld aufziehen: ${label.slice(2)}" aria-label="Feld: ${label.slice(2)}">${subIcon(p)}</button>`).join('')}
         </span>
         <span class="ink-group ink-insert-from">
           <span class="ink-from-label">Einfügen aus</span>

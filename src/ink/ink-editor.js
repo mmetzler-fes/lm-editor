@@ -74,6 +74,8 @@ const ICON_PATHS = {
   shape: 'M3.5 3.5h9v9h-9zM16.5 11a4.5 4.5 0 110 9 4.5 4.5 0 010-9z',
   laser: 'M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1',
   print: 'M7 9V3h10v6M7 17H4v-7h16v7h-3M7 14h10v7H7z',
+  pdf: 'M6 3h8l4 4v14H6zM14 3v4h4M9 12h6M9 15.5h6M9 9h2.5',
+  inked: 'M6 3h8l4 4v14H6zM14 3v4h4M8.5 16.5c1.5-2.5 2.5-2.5 3.2-.8s1.8 1.5 3.8-1.7',
   share: 'M12 3v12M7.5 7.5L12 3l4.5 4.5M5 11v9h14v-9',
   pages: 'M4 4h16v16H4zM9.5 4v16M5.8 8h2M5.8 11.5h2M5.8 15h2',
   camera: 'M4 8h3l1.5-2h7L17 8h3v11H4zM12 10.5a3 3 0 100 6 3 3 0 000-6z',
@@ -1214,16 +1216,18 @@ const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-r
     const sheets = [{ solutions: false, name: 'Arbeitsblatt' }, ...(solutions ? [{ solutions: true, name: 'Lösungsblatt' }] : [])];
     const entries = [];
     // Mit Gastgeber (Lehrkraft): als PDF über den Renderer – mit Vorlage (Logo, Kopfzeile, Ränder).
-    if (paperView && paper?.printPdf) {
+    const viaPdf = paperView && paper?.printPdf;
+    if (viaPdf) {
+      entries.push({ heading: 'PDF mit Vorlage' });
       for (const { solutions: sol, name } of sheets) {
-        entries.push({ label: `📄 ${name} mit Beschriftung – PDF mit Vorlage`, onClick: () => printViaRenderer({ solutions: sol, ink: true }) });
-        entries.push({ label: `📄 ${name} – PDF mit Vorlage`, onClick: () => printViaRenderer({ solutions: sol, ink: false }) });
+        entries.push({ icon: icon('inked'), label: `${name} mit Beschriftung`, onClick: () => printViaRenderer({ solutions: sol, ink: true }) });
+        entries.push({ icon: icon('pdf'), label: name, onClick: () => printViaRenderer({ solutions: sol, ink: false }) });
       }
+      entries.push('-', { heading: 'Ansicht drucken' });
     }
     for (const { solutions: sol, name } of sheets) {
-      const view = entries.length ? 'Ansicht drucken: ' : '🖨 ';
-      entries.push({ label: `${view}${name} mit Beschriftung`, onClick: () => printPaper({ solutions: sol, ink: true }) });
-      entries.push({ label: `${view}${name}`, onClick: () => printPaper({ solutions: sol, ink: false }) });
+      entries.push({ icon: icon('inked'), label: `${name} mit Beschriftung`, onClick: () => printPaper({ solutions: sol, ink: true }) });
+      entries.push({ icon: icon('print'), label: name, onClick: () => printPaper({ solutions: sol, ink: false }) });
     }
     showContextMenu(r.left, r.bottom + 4, entries);
   });

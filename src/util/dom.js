@@ -167,7 +167,7 @@ function sanitizeRichHtml(html, worksheet) {
  */
 /**
  * Kontextmenü an (x, y). Einträge: { label, onClick, danger?, hint? },
- * '-' als Trenner, { label, submenu: [...] } öffnet ein Untermenü (▸) beim
+ * `icon` (SVG-Markup) davor, '-' als Trenner, { heading } als Überschrift, { label, submenu: [...] } öffnet ein Untermenü (▸) beim
  * Darüberfahren oder Klicken – auch verschachtelt.
  */
 export function showContextMenu(x, y, items) {
@@ -205,11 +205,21 @@ export function showContextMenu(x, y, items) {
         menu.appendChild(Object.assign(document.createElement('div'), { className: 'ctx-menu-sep' }));
         return;
       }
-      const { label, onClick, danger, submenu, hint } = item;
+      if (item.heading) {
+        menu.appendChild(Object.assign(document.createElement('div'), { className: 'ctx-menu-heading', textContent: item.heading }));
+        return;
+      }
+      const { label, onClick, danger, submenu, hint, icon } = item;
       const btn = document.createElement('button');
       btn.type = 'button';
-      btn.className = 'ctx-menu-item' + (danger ? ' danger' : '') + (submenu ? ' ctx-has-sub' : '');
-      btn.textContent = label;
+      btn.className = 'ctx-menu-item' + (danger ? ' danger' : '') + (submenu ? ' ctx-has-sub' : '') + (icon ? ' ctx-has-icon' : '');
+      if (icon) {
+        // Gezeichnetes Symbol (SVG-Markup aus dem eigenen Code, nie aus Nutzerdaten) vor dem Text.
+        const ico = document.createElement('span');
+        ico.className = 'ctx-menu-icon';
+        ico.innerHTML = icon;
+        btn.append(ico, Object.assign(document.createElement('span'), { className: 'ctx-menu-label', textContent: label }));
+      } else btn.textContent = label;
       if (hint || submenu) {
         const side = document.createElement('span');
         side.className = 'ctx-menu-hint';

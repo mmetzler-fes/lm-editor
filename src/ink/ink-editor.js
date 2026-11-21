@@ -871,6 +871,73 @@ const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-r
   const fingersUp = (e) => { if (!e.touches.length) freeFingers.clear(); };
   scroller.addEventListener('touchend', fingersUp);
   scroller.addEventListener('touchcancel', fingersUp);
+
+  // ---------- Selbst scrollen: Stift-Gerät, Stift auf Quiz und Hintergrund, zwei Finger ----------
+  // Das Blatt folgt genau: Ziel = Stand beim Ansetzen + Weg seit dem Ansetzen. Früher summierten sich
+  // scrollBy-Schritte – dabei gingen Bruchteile von Pixeln verloren, und das Blatt lief langsamer als der Finger.
+  const follow = (x, y) => ({ ox: x, oy: y, sl: scroller.scrollLeft, st: scroller.scrollTop, last: [x, y], at: performance.now(), v: [0, 0] });
+  /** Neuer Bezugspunkt ohne Bewegung (z. B. andere Koordinaten nach setPointerCapture). */
+  const refollow = (f, x, y) => Object.assign(f, { ox: x, oy: y, sl: scroller.scrollLeft, st: scroller.scrollTop, last: [x, y], at: performance.now() });
+  const followTo = (f, x, y) => {
+    const dx = f.last[0] - x;
+    const dy = f.last[1] - y;
+    // Sprung (verpasste Ereignisse): nicht mitspringen, ab hier weiter.
+    if (Math.abs(dx) > FINGER_STEP || Math.abs(dy) > FINGER_STEP) { refollow(f, x, y); return; }
+    const tx = f.sl + f.ox - x;
+    const ty = f.st + f.oy - y;
+    scroller.scrollTo(tx, ty);
+    // Am Rand angeschlagen: Bezug nachziehen, damit die Gegenrichtung sofort greift.
+    if (Math.abs(scroller.scrollLeft - tx) > 1) f.sl = scroller.scrollLeft - (f.ox - x);
+    if (Math.abs(scroller.scrollTop - ty) > 1) f.st = scroller.scrollTop - (f.oy - y);
+    // Geschwindigkeit fürs Nachgleiten (geglättet, px/ms).
+    const now = performance.now();
+    const dt = Math.max(1, now - f.at);
+    f.v = [f.v[0] * 0.3 + (dx / dt) * 0.7, f.v[1] * 0.3 + (dy / dt) * 0.7];
+    f.at = now;
+    f.last = [x, y];
+  };
+  // Nachgleiten nach schnellem Wischen (wie beim Scrollen des Browsers); jede Berührung hält es an.
+  let glide = 0;
+  const stopGlide = () => { if (glide) cancelAnimationFrame(glide); glide = 0; };
+  const startGlide = (v) => {
+    stopGlide();
+    if (!v || Math.hypot(v[0], v[1]) < GLIDE_MIN) return;
+    let [vx, vy] = v;
+    let gx = scroller.scrollLeft;
+    let gy = scroller.scrollTop;
+    let last = performance.now();
+    const tick = (now) => {
+      const dt = Math.min(48, now - last);
+      last = now;
+      gx += vx * dt;
+      gy += vy * dt;
+      scroller.scrollTo(gx, gy);
+      if (Math.abs(scroller.scrollTop - gy) > 1) { gy = scroller.scrollTop; vy = 0; }
+      if (Math.abs(scroller.scrollLeft - gx) > 1) { gx = scroller.scrollLeft; vx = 0; }
+      const f = GLIDE_DECAY ** (dt / 16);
+      vx *= f; vy *= f;
+      glide = Math.hypot(vx, vy) < GLIDE_MIN / 2 ? 0 : requestAnimationFrame(tick);
+    };
+    glide = requestAnimationFrame(tick);
+  };
+  // Stift auf dem Hintergrund neben den Blättern: verschiebt wie der Finger (holdStylus hält den Browser an).
+  let bgPan = null;
+  scroller.addEventListener('pointerdown', (e) => {
+    if (e.pointerType !== 'pen' || e.button > 0 || e.target.closest?.('.ink-page, .ink-touchbar, button, a, input, select, textarea')) return;
+    stopGlide();
+    bgPan = { id: e.pointerId, f: follow(e.clientX, e.clientY) };
+    try { scroller.setPointerCapture(e.pointerId); } catch (_) { /* ohne Umleitung */ }
+  });
+  scroller.addEventListener('pointermove', (e) => {
+    if (bgPan?.id === e.pointerId) followTo(bgPan.f, e.clientX, e.clientY);
+  });
+  const bgPanEnd = (e) => {
+    if (bgPan?.id !== e.pointerId) return;
+    if (e.type === 'pointerup' && performance.now() - bgPan.f.at < 80) startGlide(bgPan.f.v);
+    bgPan = null;
+  };
+  scroller.addEventListener('pointerup', bgPanEnd);
+  scroller.addEventListener('pointercancel', bgPanEnd);
   // Scrollleiste für den Finger: Die des Browsers lässt sich auf dem iPad nicht greifen.
   const bar = $('.ink-touchbar');
   const thumb = $('.ink-touchbar-thumb');
@@ -3350,24 +3417,6 @@ const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-r
       }, PRESS_MS);
     };
 
-    // Nachgleiten nach schnellem Wischen (wie beim Scrollen des Browsers); jede Berührung hält es an.
-    let glide = 0;
-    const stopGlide = () => { if (glide) cancelAnimationFrame(glide); glide = 0; };
-    const startGlide = (v) => {
-      stopGlide();
-      if (!v || Math.hypot(v[0], v[1]) < GLIDE_MIN) return;
-      let [vx, vy] = v;
-      let last = performance.now();
-      const tick = (now) => {
-        const dt = Math.min(48, now - last);
-        last = now;
-        scroller.scrollBy(vx * dt, vy * dt);
-        const f = GLIDE_DECAY ** (dt / 16);
-        vx *= f; vy *= f;
-        glide = Math.hypot(vx, vy) < GLIDE_MIN / 2 ? 0 : requestAnimationFrame(tick);
-      };
-      glide = requestAnimationFrame(tick);
-    };
     p.el.addEventListener('pointerdown', (e) => {
       stopGlide();
       if (e.target.closest?.('.ink-area-bar')) return; // Leiste über dem Bereich bedient sich selbst
@@ -3453,6 +3502,7 @@ const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-r
           cancelGesture();
           freeFingers.clear(); // ab jetzt scrollt nicht mehr der Browser (holdStylus hält ihn an)
           pan = { mid: midOf() };
+          pan.f = follow(...pan.mid);
           e.preventDefault();
           // Lag der erste Finger auf einem Quiz: Es bekommt weder Tippen noch Ziehen.
           if (p.paper) { e.stopPropagation(); swallowClick(p.el); }
@@ -3614,7 +3664,7 @@ const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-r
       if (pan) {
         if (touches.size >= 2) {
           const mid = midOf();
-          scroller.scrollBy(pan.mid[0] - mid[0], pan.mid[1] - mid[1]);
+          followTo(pan.f, ...mid);
           pan.mid = mid;
         }
         return;
@@ -3669,7 +3719,7 @@ const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-r
         if (gesture.quiz?.defaultPrevented) { gesture = null; p.busy = false; return; }
         if (gesture.from && Math.hypot(e.clientX - gesture.from[0], e.clientY - gesture.from[1]) > HOLD_SLACK) {
           if (!gesture.moved && gesture.pan) {
-            gesture.pan.last = [e.clientX, e.clientY]; // ab hier, ohne Sprung
+            Object.assign(gesture.pan, follow(e.clientX, e.clientY)); // ab hier, ohne Sprung
             // Ab jetzt kommen die Bewegungen über die Seite selbst: Im Blatt (CSS zoom) meldet Safari
             // umgerechnete Koordinaten – das Blatt liefe dem Finger davon. Erst jetzt, damit Antippen
             // weiter beim Quiz ankommt.
@@ -3681,22 +3731,11 @@ const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-r
         // Erstes umgeleitetes Ereignis: nur den Bezugspunkt setzen (andere Koordinaten als davor).
         if (gesture.pan?.fresh && e.target === p.el) {
           gesture.pan.fresh = false;
-          gesture.pan.last = [e.clientX, e.clientY];
-          gesture.pan.at = performance.now();
+          refollow(gesture.pan, e.clientX, e.clientY);
           return;
         }
         if (gesture.pan && gesture.moved) {
-          const step = (v) => Math.max(-FINGER_STEP, Math.min(FINGER_STEP, v));
-          const dx = step(gesture.pan.last[0] - e.clientX);
-          const dy = step(gesture.pan.last[1] - e.clientY);
-          scroller.scrollBy(dx, dy);
-          // Geschwindigkeit fürs Nachgleiten (geglättet, px/ms).
-          const now = performance.now();
-          const dt = Math.max(1, now - (gesture.pan.at || now - 16));
-          const v = gesture.pan.v || [0, 0];
-          gesture.pan.v = [v[0] * 0.3 + (dx / dt) * 0.7, v[1] * 0.3 + (dy / dt) * 0.7];
-          gesture.pan.at = now;
-          gesture.pan.last = [e.clientX, e.clientY];
+          followTo(gesture.pan, e.clientX, e.clientY);
         }
       } else if (gesture.kind === 'rect') {
         // Bis der Stift wirklich zieht, kann es noch langes Drücken werden.

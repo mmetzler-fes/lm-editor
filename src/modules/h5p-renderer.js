@@ -424,6 +424,8 @@ export class H5pRenderer {
     // sperrt Weiter – auch mit leerer Lücke oder offener Frage lässt sie sich abgeben.
     const examRun = !!(options.quizMode && options.examRun);
     const div = document.createElement('div');
+    // Inhalt des Quiz: Emojis der Lehrkraft bleiben, wie sie sind (Symbol-Umsetzer der App, iconize.js).
+    div.setAttribute('data-no-iconize', '');
     const lockNext = (locked, hint) => { if (!examRun) this.setNextLock(div, locked, hint); };
 
     const globalNextBtn = this.nextButton();

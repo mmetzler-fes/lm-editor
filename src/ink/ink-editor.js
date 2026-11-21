@@ -83,6 +83,7 @@ const ICON_PATHS = {
   more: 'M5 12h.01M12 12h.01M19 12h.01',
   head: 'M4 3h16v6H4zM7 6h4M4 13h16M4 17h12M4 21h14',
   save: 'M5 4h11l3 3v13H5zM8 4v5h7V4M8 20v-6h8v6',
+  image: 'M4 5h16v14H4zM4 16l5-5 4 4 2.5-2.5L20 17M15.5 7.5a1.5 1.5 0 100 3 1.5 1.5 0 000-3z',
 };
 // Feld (Abdeckung): Raster wie im Dokument – Karo 5 mm, Linien 10 mm.
 const FIELD_PATTERNS = { karo: '▦ Karo', linien: '☰ Linien', leer: '▢ Leer (weiß)' };
@@ -134,8 +135,10 @@ async function imageFromFile(file) {
   ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
   return { src: canvas.toDataURL(png ? 'image/png' : 'image/jpeg', 0.82), wPx: canvas.width, hPx: canvas.height };
 }
-const pickImageFile = () => new Promise((resolve) => {
-  const input = Object.assign(document.createElement('input'), { type: 'file', accept: 'image/png,image/jpeg,image/gif,image/webp' });
+// „Dateien“: nur Endungen – so öffnet das iPad eher gleich die Dateien-App; „Fotos“: image/* bietet Mediathek und Kamera an.
+const IMAGE_ACCEPT = { files: '.png,.jpg,.jpeg,.gif,.webp', photo: 'image/*' };
+const pickImageFile = (from) => new Promise((resolve) => {
+  const input = Object.assign(document.createElement('input'), { type: 'file', accept: IMAGE_ACCEPT[from] || 'image/png,image/jpeg,image/gif,image/webp' });
   input.addEventListener('change', () => resolve(input.files?.[0] || null));
   input.addEventListener('cancel', () => resolve(null));
   input.click();
@@ -307,7 +310,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
         ${tool('marker', 'marker', 'Textmarker')}
         ${tool('eraser', 'eraser', 'Radierer – löscht ganze Striche')}
         ${tool('text', 'text', 'Textfeld: auf die Seite tippen und schreiben')}
-        ${tool('field', 'field', 'Feld: ein Rechteck aufziehen – deckt ab, was darunter liegt, mit Karo, Linien oder weiß')}
+        ${tool('field', 'image', 'Bild einfügen – aus Dateien oder Fotos; oder ein Feld mit Karo, Linien oder Leerbereich aufziehen')}
         ${tool('shape', 'shape', 'Formen: Rechteck, Ellipse, Vieleck, Linie, Pfeil – mit Füllung und Deckkraft, drehbar')}
         ${laser ? tool('laser', 'laser', 'Leuchtstift: zum Zeigen am Beamer – die Spur leuchtet kurz und verblasst, nichts wird gespeichert') : ''}
         <span class="ink-sep"></span>
@@ -369,7 +372,12 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
             <input type="number" class="ink-op-num" min="0" max="100" step="1" aria-label="Deckkraft in Prozent">%</label>
         </span>
         <span class="ink-group ink-patterns">
-          ${Object.entries(FIELD_PATTERNS).map(([p, label]) => `<button type="button" class="ink-btn ink-pattern" data-pattern="${p}" title="${label.slice(2)}" aria-label="${label.slice(2)}">${label.slice(0, 1)}</button>`).join('')}
+          ${Object.entries(FIELD_PATTERNS).map(([p, label]) => `<button type="button" class="ink-btn ink-pattern" data-pattern="${p}" title="Feld aufziehen: ${label.slice(2)}" aria-label="Feld: ${label.slice(2)}">${label.slice(0, 1)}</button>`).join('')}
+        </span>
+        <span class="ink-group ink-insert-from">
+          <span class="ink-from-label">Einfügen aus</span>
+          <button type="button" class="ink-btn ink-from" data-from="files" title="Bild aus Dateien einfügen" aria-label="Bild aus Dateien einfügen">📁 Dateien</button>
+          <button type="button" class="ink-btn ink-from" data-from="photo" title="Bild aus Fotos einfügen (oder mit der Kamera aufnehmen)" aria-label="Bild aus Fotos einfügen">🖼 Fotos</button>
         </span>
         <span class="ink-sep ink-sub-sep"></span>
         <span class="ink-group ink-colors"></span>
@@ -580,6 +588,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     // Muster: fürs neue Feld – oder, beim Auswählen, für die gewählten Felder.
     const fields = selectedItems().filter((it) => it.type === 'field');
     $('.ink-patterns').hidden = state.tool !== 'field' && !(selecting() && fields.length);
+    $('.ink-insert-from').hidden = state.tool !== 'field';
     const pattern = selecting() && fields.length ? (fields.every((f) => f.pattern === fields[0].pattern) ? fields[0].pattern : null) : state.fieldPattern;
     overlay.querySelectorAll('.ink-pattern').forEach((b) => b.classList.toggle('active', b.dataset.pattern === pattern));
     overlay.querySelectorAll('.ink-width').forEach((b) => {
@@ -587,7 +596,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
       b.querySelector('i').style.background = state.tool === 'marker' ? state.marker : state.color;
     });
     $('.ink-subhint').textContent = {
-      field: 'Rechteck aufziehen – das Feld deckt ab, was darunter liegt.',
+      field: 'Bild aus Dateien oder Fotos einfügen – oder ein Rechteck aufziehen: Das Feld (Karo, Linien, leer) deckt ab, was darunter liegt.',
       eraser: 'Über einen Strich oder eine Form wischen – sie wird ganz gelöscht.',
       laser: 'Zeigen: gedrückt ziehen hinterlässt eine Leuchtspur, die nach dem Absetzen verblasst – nichts wird gespeichert.',
       shape: state.shapeKind === 'polygon'
@@ -709,6 +718,13 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
       drawItems(sel.page);
     } else state.fieldPattern = b.dataset.pattern;
     paintToolbar();
+  });
+  // Bild einfügen: an der zuletzt berührten Stelle im sichtbaren Bereich (pastePlace) – auf der
+  // Schreibfläche als freies Bild, sonst (Lehrkraft) als Bild-Baustein.
+  $('.ink-insert-from').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-from]');
+    if (!b) return;
+    void pickImageFile(b.dataset.from).then((file) => { if (file) void pasteImageFile(file); });
   });
   $('.ink-widths').addEventListener('click', (e) => {
     const b = e.target.closest('[data-width]');
@@ -1029,7 +1045,7 @@ const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-r
   //
   // Ganze Gruppen wandern in ein Feld unter der Leiste (ihre Klicks hängen an der Gruppe), in dieser
   // Reihenfolge; Farben und Stärken bleiben am längsten. Leer (nichts einzustellen): Die Leiste ist weg.
-  const SUB_ORDER = ['.ink-shape-style', '.ink-patterns', '.ink-shape-kinds', '.ink-sizes', '.ink-widths', '.ink-colors'];
+  const SUB_ORDER = ['.ink-shape-style', '.ink-insert-from', '.ink-patterns', '.ink-shape-kinds', '.ink-sizes', '.ink-widths', '.ink-colors'];
   const subbar = $('.ink-subbar');
   const subMore = $('.ink-sub-more');
   let subPop = null; // { el, moved: [{ node, mark }] }

@@ -1328,3 +1328,10 @@ body {
 
 /* Bilder in Tabellenzellen eines Dokuments (docspec.js) */
 .ds-cell-image { display: block; max-width: 100%; height: auto; margin: 4px 0; }
+
+/* Gezeichnete Symbole statt Emojis (lm-editor/src/util/icons.js) */
+.lm-ico { width: 1.15em; height: 1.15em; flex: none; vertical-align: -0.2em; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+.lm-ico-ok { color: #16a34a; }
+.lm-ico-bad { color: #dc2626; }
+.lm-ico-warn { color: #d97706; }
+.lm-ico-muted { color: var(--text-secondary, #64748b); }

@@ -34,6 +34,7 @@ const CORE = [
   'src/editor/pm-toolbar.js',
   'src/editor/table-props.js',
   'src/util/dom.js',
+  'src/util/icons.js',
   'src/vendor/fflate/fflate.js',
   'src/vendor/tiptap/tiptap.mjs',
   'src/zlm/zlm.js',

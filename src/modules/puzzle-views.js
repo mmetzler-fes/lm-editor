@@ -1,5 +1,6 @@
 import { sortingItems, shuffleForSorting, scoreSorting, shuffled, memoryPairs, buildCrossword, entryCells, crosswordLetters, scoreCrossword } from './puzzles.js';
 import { sanitizeModuleDescriptionHtml, escapeHtml, escapeAttr, attachPointerDrag } from '../util/dom.js';
+import { icon } from '../util/icons.js';
 
 /**
  * Anzeige von Reihenfolge, Memory und Kreuzworträtsel (aufgerufen aus
@@ -107,7 +108,7 @@ export function renderSorting(div, content, { suppressFeedback = false } = {}) {
     });
     const score = scoreSorting(items.map((it) => it.key), given);
     feedback.innerHTML = score.isCorrect
-      ? '<span class="puzzle-right">✅ Richtig sortiert!</span>'
+      ? `<span class="puzzle-right">${icon('check', 'lm-ico-ok')} Richtig sortiert!</span>`
       : `<span style="font-weight:600;">${score.pairs} von ${score.totalPairs} Paaren stehen richtig hintereinander.</span>`;
   });
 }
@@ -172,8 +173,8 @@ export function renderMemory(div, content) {
         x.classList.add('is-found'); y.classList.add('is-found');
         status();
         if (found === pairs.length) {
-          div.querySelector('.mem-done').innerHTML = `<span class="puzzle-right">🎉 Geschafft in ${moves} Zügen!</span>
-            <button type="button" class="btn btn-secondary btn-sm mem-again">🔁 Nochmal</button>`;
+          div.querySelector('.mem-done').innerHTML = `<span class="puzzle-right">${icon('check', 'lm-ico-ok')} Geschafft in ${moves} Zügen!</span>
+            <button type="button" class="btn btn-secondary btn-sm mem-again">${icon('retry')} Nochmal</button>`;
           div.querySelector('.mem-again').addEventListener('click', start);
         }
         return;
@@ -390,7 +391,7 @@ export function renderCrossword(div, content, { suppressFeedback = false } = {})
     }
     div.querySelectorAll('.cw-clues li').forEach((li) => li.classList.toggle('cw-clue-done', okEntries.has(Number(li.dataset.entry))));
     feedback.innerHTML = score.correct === score.total
-      ? '<span class="puzzle-right">✅ Alles richtig!</span>'
+      ? `<span class="puzzle-right">${icon('check', 'lm-ico-ok')} Alles richtig!</span>`
       : `<span style="font-weight:600;">${score.correct} von ${score.total} Wörtern richtig</span>`;
   });
 }

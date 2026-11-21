@@ -1,3 +1,4 @@
+import { icon } from './icons.js';
 // ==================== HILFSFUNKTIONEN FÜR DIE ANZEIGE ====================
 //
 // Aus utils.js von LearningModules (die App reicht sie von dort weiter):
@@ -610,8 +611,8 @@ export function solutionSwitch({ showing = false, onChange, compact = false } = 
   el.className = 'sol-switch';
   el.setAttribute('role', 'group');
   el.setAttribute('aria-label', 'Fassung');
-  el.innerHTML = `<button type="button" data-sol="0" title="So sieht es die Klasse – ohne Lösungen">📄 ${compact ? 'Blatt' : 'Arbeitsblatt'}</button>`
-    + '<button type="button" data-sol="1" title="Mit den Lösungen (rot)">💡 Lösung</button>';
+  el.innerHTML = `<button type="button" data-sol="0" title="So sieht es die Klasse – ohne Lösungen">${icon('document')} ${compact ? 'Blatt' : 'Arbeitsblatt'}</button>`
+    + `<button type="button" data-sol="1" title="Mit den Lösungen (rot)">${icon('learn')} Lösung</button>`;
   const set = (on) => {
     showing = !!on;
     el.querySelectorAll('[data-sol]').forEach((b) => {

@@ -7,6 +7,7 @@ import { renderSorting, renderMemory, renderCrossword } from './puzzle-views.js'
 import { normalizeShareUrl, sanitizeModuleDescriptionHtml, sanitizeWorksheetHtml, escapeHtml, escapeAttr, hexTint, showContextMenu, attachPointerDrag, effectiveZoom, solutionSwitch } from '../util/dom.js';
 import { renderDocSpecHtml } from '../doc/docspec.js';
 import { seededOrder } from './seeded-order.js';
+import { icon } from '../util/icons.js';
 
 /**
  * Nur http(s) einbetten. Ohne diese Schranke landeten `javascript:`- oder
@@ -270,7 +271,7 @@ function offerSolution(feedback, content, show) {
   btn.type = 'button';
   btn.className = 'btn btn-secondary btn-sm';
   btn.style.marginLeft = '12px';
-  btn.textContent = '💡 Lösung anzeigen';
+  btn.innerHTML = `${icon('learn')} Lösung anzeigen`;
   btn.title = 'Zeigt die richtigen Antworten – danach lässt sich nichts mehr ändern';
   btn.addEventListener('click', () => { btn.remove(); show(); });
   feedback.appendChild(btn);
@@ -720,8 +721,8 @@ export class H5pRenderer {
 
           const showFeedback = (correct, answer) => {
             if (suppressFeedback) { fcFeedback.innerHTML = '<span style="font-weight:600;">Antwort gespeichert.</span>'; fcFeedback.className = 'fc-feedback'; return; }
-            if (correct) { fcFeedback.innerHTML = '<span class="fc-correct">✅ Richtig!</span>'; fcFeedback.className = 'fc-feedback fc-feedback-correct'; }
-            else { fcFeedback.innerHTML = `<span class="fc-wrong">❌ Falsch.</span> Richtige Antwort: <strong>${escapeHtml(answer)}</strong>`; fcFeedback.className = 'fc-feedback fc-feedback-wrong'; }
+            if (correct) { fcFeedback.innerHTML = `<span class="fc-correct">${icon('check', 'lm-ico-ok')} Richtig!</span>`; fcFeedback.className = 'fc-feedback fc-feedback-correct'; }
+            else { fcFeedback.innerHTML = `<span class="fc-wrong">${icon('cross', 'lm-ico-bad')} Falsch.</span> Richtige Antwort: <strong>${escapeHtml(answer)}</strong>`; fcFeedback.className = 'fc-feedback fc-feedback-wrong'; }
           };
 
           const showCard = () => {
@@ -813,12 +814,12 @@ export class H5pRenderer {
                     sourceNode.start(0);
                     playing = true; btn.textContent = '⏹️ Stoppen';
                     sourceNode.onended = () => { playing = false; btn.textContent = '▶️ Audio abspielen'; if (audioCtx) { audioCtx.close(); audioCtx = null; } };
-                  } catch (_) { btn.textContent = '❌ Audio nicht abspielbar'; btn.disabled = true; }
+                  } catch (_) { btn.textContent = 'Audio nicht abspielbar'; btn.disabled = true; }
                 });
                 dcAudio.appendChild(btn);
               }, { once: true });
             } else { dcAudio.innerHTML = ''; dcAudio.style.display = 'none'; }
-            if (card.tip) { dcTip.innerHTML = `<span class="dc-tip-icon" title="${escapeAttr(card.tip)}">💡 Hinweis</span>`; dcTip.style.display = ''; }
+            if (card.tip) { dcTip.innerHTML = `<span class="dc-tip-icon" title="${escapeAttr(card.tip)}">${icon('learn')} Hinweis</span>`; dcTip.style.display = ''; }
             else { dcTip.style.display = 'none'; }
           };
 
@@ -959,7 +960,7 @@ export class H5pRenderer {
               </div>
               <div class="formula-actions">
                 ${suppressFeedback ? '' : '<button type="button" class="btn btn-primary btn-sm formula-check">Überprüfen</button>'}
-                ${showNewValues ? '<button type="button" class="btn btn-secondary btn-sm formula-new">🎲 Neue Werte</button>' : ''}
+                ${showNewValues ? `<button type="button" class="btn btn-secondary btn-sm formula-new">${icon('retry')} Neue Werte</button>` : ''}
                 <span class="hint">Komma oder Punkt, z. B. 0,25 oder 2,5e-3</span>
               </div>
               ${suppressFeedback ? '' : '<div class="formula-feedback"></div>'}
@@ -1362,7 +1363,7 @@ export class H5pRenderer {
             <div class="dict-row-head">
               <span class="dict-num">${i + 1}.</span>
               <button type="button" class="btn btn-secondary btn-sm dict-play" title="Satz anhören">▶ Anhören</button>
-              ${slow ? '<button type="button" class="btn btn-secondary btn-sm dict-slow" title="Langsamer anhören">🐢 Langsam</button>' : ''}
+              ${slow ? '<button type="button" class="btn btn-secondary btn-sm dict-slow" title="Langsamer anhören">Langsam</button>' : ''}
               <button type="button" class="btn btn-secondary btn-sm dict-pause hidden" title="Anhalten / weiter">⏸ Pause</button>
               <button type="button" class="btn btn-secondary btn-sm dict-stop hidden" title="Beenden">⏹ Stopp</button>
               <span class="dict-plays hint"></span>
@@ -1387,7 +1388,7 @@ export class H5pRenderer {
 
           const pauseBtn = row.querySelector('.dict-pause');
           const stopBtn = row.querySelector('.dict-stop');
-          const failMsg = '⚠️ Die Audio-Datei lässt sich nicht abspielen – bitte der Lehrkraft Bescheid geben.';
+          const failMsg = 'Die Audio-Datei lässt sich nicht abspielen – bitte der Lehrkraft Bescheid geben.';
           // Pause und Stopp nur, solange dieser Satz läuft.
           const setPlaying = (on) => {
             pauseBtn.classList.toggle('hidden', !on);
@@ -1443,7 +1444,7 @@ export class H5pRenderer {
               plays++;
               showPlays();
             } else {
-              errorEl.textContent = '⚠️ Dieser Browser kann nichts vorlesen, und es ist keine Audio-Datei hinterlegt.';
+              errorEl.textContent = 'Dieser Browser kann nichts vorlesen, und es ist keine Audio-Datei hinterlegt.';
             }
           };
           row.querySelector('.dict-play').addEventListener('click', () => play(1));
@@ -1499,7 +1500,7 @@ export class H5pRenderer {
             const pct = Math.round(score.points * 100);
             div.querySelector('.dict-feedback').innerHTML =
               `<strong>${score.good} von ${score.total} Wörtern richtig (${pct} %)</strong>` +
-              (score.mistakes ? ` · ${score.mistakes} Fehler` : ' – alles richtig! 🎉');
+              (score.mistakes ? ` · ${score.mistakes} Fehler` : ' – alles richtig!');
             if (content.tryAgain !== false && score.mistakes) {
               checkBtn.textContent = '↻ Noch einmal';
               checkBtn.dataset.mode = 'retry';
@@ -1537,7 +1538,7 @@ export class H5pRenderer {
               </div>
               <div class="dnd-view-toggle" role="group" aria-label="Größe der Aufgabe">
                 <button type="button" data-view="fit" title="Ganze Aufgabe auf einen Bildschirm">⤢ Einpassen</button>
-                <button type="button" data-view="big" title="Bild in voller Breite – größer, dafür scrollen">🔍 Vergrößern</button>
+                <button type="button" data-view="big" title="Bild in voller Breite – größer, dafür scrollen">${icon('expand')} Vergrößern</button>
               </div>
             </div>
             <div class="dnd-board">` : ''}
@@ -1874,7 +1875,7 @@ export class H5pRenderer {
             btn.disabled = true;
             // onClick läuft bis zum ersten await noch im Klick – ein Fenster
             // darf es dort öffnen (Popup-Sperre, iPad).
-            try { await a.onClick(); } catch (err) { btn.textContent = `⚠️ ${err.message}`; }
+            try { await a.onClick(); } catch (err) { btn.textContent = err.message; }
             btn.disabled = false;
           });
           if (a.primary) actionsBar().prepend(btn); else actionsBar().appendChild(btn);
@@ -1919,7 +1920,7 @@ export class H5pRenderer {
         };
         showProgress();
         div.querySelector('.hs-img').addEventListener('error', () => {
-          stage.innerHTML = '<p class="dict-error">⚠️ Das Bild lässt sich nicht laden – bitte der Lehrkraft Bescheid geben.</p>';
+          stage.innerHTML = `<p class="dict-error">${icon('warn', 'lm-ico-warn')} Das Bild lässt sich nicht laden – bitte der Lehrkraft Bescheid geben.</p>`;
         });
 
         const close = () => {
@@ -1980,7 +1981,7 @@ export class H5pRenderer {
           <div class="rec-player">
             ${content.instruction ? `<p class="rec-instruction">${escapeHtml(content.instruction).replace(/\n/g, '<br>')}</p>` : ''}
             <div class="rec-controls">
-              <button type="button" class="btn btn-primary rec-start">🎙 Aufnahme starten</button>
+              <button type="button" class="btn btn-primary rec-start">${icon('mic')} Aufnahme starten</button>
               <button type="button" class="btn btn-danger rec-stop hidden">⏹ Stopp</button>
               <span class="rec-time">0:00 / ${Math.floor(maxSec / 60)}:${String(maxSec % 60).padStart(2, '0')}</span>
             </div>
@@ -2040,7 +2041,7 @@ export class H5pRenderer {
           q('.rec-start').classList.add('hidden');
           q('.rec-stop').classList.remove('hidden');
           root.classList.add('recording');
-          status('🔴 Aufnahme läuft …');
+          status('● Aufnahme läuft …');
           timer = setInterval(() => {
             const sec = (Date.now() - started) / 1000;
             q('.rec-time').textContent = `${fmt(sec)} / ${fmt(maxSec)}`;
@@ -2064,10 +2065,10 @@ export class H5pRenderer {
           try {
             const data = await rec.upload(blob);
             root.dataset.submitted = data.fileName;
-            status(inRun ? '✅ Abgegeben. Du kannst neu aufnehmen und erneut abgeben – die Lehrkraft bekommt dann beide.'
-              : `✅ Probe-Abgabe angekommen: „${data.fileName}“.`);
+            status(inRun ? '✓ Abgegeben. Du kannst neu aufnehmen und erneut abgeben – die Lehrkraft bekommt dann beide.'
+              : `✓ Probe-Abgabe angekommen: „${data.fileName}“.`);
           } catch (err) {
-            status(`⚠️ Abgeben hat nicht geklappt: ${err.message}`, true);
+            status(`Abgeben hat nicht geklappt: ${err.message}`, true);
           } finally {
             btn.disabled = false;
           }
@@ -2169,12 +2170,12 @@ export class H5pRenderer {
           // Automatisch abspielen erlauben Browser nur stumm.
           player = `<video class="video-player" controls playsinline preload="metadata" src="${escapeAttr(v.src)}"
             ${content.autoplay ? 'autoplay muted' : ''} ${content.loop ? 'loop' : ''}></video>
-            <p class="video-error dict-error hidden">⚠️ Das Video lässt sich nicht abspielen.
+            <p class="video-error dict-error hidden">${icon('warn', 'lm-ico-warn')} Das Video lässt sich nicht abspielen.
               Bei Nextcloud: Freigabe ohne Passwort und ohne „Download verbergen“.
               <a href="${escapeAttr(v.src)}" target="_blank" rel="noopener noreferrer">Video direkt öffnen</a></p>`;
         } else {
           player = `<p class="hint">Dieser Link lässt sich nicht direkt einbetten.</p>
-            <p><a class="btn btn-secondary btn-sm" href="${escapeAttr(v.src)}" target="_blank" rel="noopener noreferrer">🎬 Video in neuem Tab öffnen</a></p>`;
+            <p><a class="btn btn-secondary btn-sm" href="${escapeAttr(v.src)}" target="_blank" rel="noopener noreferrer">Video in neuem Tab öffnen</a></p>`;
         }
         div.innerHTML = `<div class="video-module">${title}${player}</div>`;
         const video = div.querySelector('video.video-player');
@@ -2200,7 +2201,7 @@ export class H5pRenderer {
           const name = String(f.name || 'Datei');
           const isPdf = f.type === 'application/pdf' || /\.pdf$/i.test(name);
           return `<li class="attachment-item">
-            <span class="attachment-icon">${isPdf ? '📕' : '📄'}</span>
+            <span class="attachment-icon">${icon(isPdf ? 'book' : 'document')}</span>
             <span class="attachment-name">${escapeHtml(name)}<small>${escapeHtml(size(f.size))}</small></span>
             <span class="attachment-actions">
               ${isPdf ? `<a class="btn btn-secondary btn-sm" href="${escapeAttr(f.href)}" target="_blank" rel="noopener noreferrer">Öffnen</a>` : ''}

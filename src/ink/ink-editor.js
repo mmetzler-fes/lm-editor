@@ -85,6 +85,9 @@ const ICON_PATHS = {
   more: 'M5 12h.01M12 12h.01M19 12h.01',
   head: 'M4 3h16v6H4zM7 6h4M4 13h16M4 17h12M4 21h14',
   save: 'M5 4h11l3 3v13H5zM8 4v5h7V4M8 20v-6h8v6',
+  warn: 'M12 3.5l9.5 16.5h-19zM12 10v4.5M12 17.5h.01',
+  wait: 'M7 3h10M7 21h10M8 3c0 5 8 5 8 9s-8 4-8 9M16 3c0 5-8 5-8 9s8 4 8 9',
+  link: 'M10 14a4 4 0 005.7 0l3-3a4 4 0 00-5.7-5.7l-1 1M14 10a4 4 0 00-5.7 0l-3 3a4 4 0 005.7 5.7l1-1',
   image: 'M4 5h16v14H4zM4 16l5-5 4 4 2.5-2.5L20 17M15.5 7.5a1.5 1.5 0 100 3 1.5 1.5 0 000-3z',
 };
 // Feld (Abdeckung): Raster wie im Dokument – Karo 5 mm, Linien 10 mm.
@@ -494,10 +497,14 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
   const palmLike = (e) => penDevice && (Math.max(e.width || 0, e.height || 0) > PALM_SIZE || Date.now() - penNearAt < PEN_NEAR_MS);
   const pagesEl = $('.ink-pages');
   // Nur das Zeichen (💾, ⚠️, …) – der Text steht im Tooltip. Längerer Text machte die Leiste breiter, die Knöpfe rutschten.
+  // Symbol statt Emoji (Feedback): das Zeichen vorn im Text wählt das Symbol.
+  const STATUS_ICON = { '💾': 'save', '⚠️': 'warn', '⚠': 'warn', '⏳': 'wait', '…': 'wait', '📷': 'camera', '📋': 'copy', '🔗': 'link', '🧽': 'eraser' };
   const status = (text) => {
     const el = $('.ink-status');
     const head = String(text || '').split(' ')[0];
-    el.textContent = !head ? '' : /^[\p{L}\p{N}]/u.test(head) ? '⏳' : head;
+    const name = !head ? '' : /^[\p{L}\p{N}]/u.test(head) ? 'wait' : STATUS_ICON[head] || 'wait';
+    el.innerHTML = name ? icon(name) : '';
+    el.classList.toggle('ink-status-warn', name === 'warn');
     el.title = text || '';
     el.setAttribute('aria-label', text || '');
   };
@@ -2959,7 +2966,7 @@ const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-r
           <button type="button" data-shot="copy">📋 Kopieren</button>
           ${canShare ? '<button type="button" data-shot="share">📤 Teilen</button>' : ''}
           <a href="${url}" download="${esc(name)}" data-shot="save">⬇ Speichern</a>
-          ${typeof window.lmOpenFeedback === 'function' ? '<button type="button" data-shot="feedback">💬 Als Feedback senden</button>' : ''}
+          ${typeof window.lmOpenFeedback === 'function' ? '<button type="button" data-shot="feedback">Als Feedback senden</button>' : ''}
           <button type="button" data-shot="close">Schließen</button>
         </div></div>`;
     overlay.appendChild(box);

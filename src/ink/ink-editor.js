@@ -68,6 +68,7 @@ const ICON_PATHS = {
   zoomIn: 'M11 4a7 7 0 100 14 7 7 0 000-14zM20 20l-4-4M8 11h6M11 8v6',
   zoomOut: 'M11 4a7 7 0 100 14 7 7 0 000-14zM20 20l-4-4M8 11h6',
   fit: 'M4 12h16M7.5 8.5L4 12l3.5 3.5M16.5 8.5L20 12l-3.5 3.5',
+  fitPage: 'M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5',
   trash: 'M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3',
   pointer: 'M6 3l13 8-6 1.5L9.5 19z',
   field: 'M4 5h16v14H4zM4 9.7h16M4 14.3h16M9.3 5v14M14.7 5v14',
@@ -358,6 +359,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
       <span class="ink-group ink-zoom">
         ${btn('ink-zoom-out', 'zoomOut', 'Verkleinern')}
         ${btn('ink-zoom-fit', 'fit', 'Auf ganze Breite (↔)')}
+        ${btn('ink-zoom-page', 'fitPage', 'Ganze Seite (⤢) – alles ohne Scrollen')}
         <button type="button" class="ink-btn ink-zoom-pct" title="Auf 100 % – zoomen auch mit zwei Fingern oder Strg + Mausrad" aria-label="Zoom 100 %">100 %</button>
         ${btn('ink-zoom-in', 'zoomIn', 'Vergrößern')}
       </span>
@@ -985,6 +987,7 @@ const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-r
   $('.ink-zoom-pct').addEventListener('click', () => { state.zoomTouched = true; setZoom(1); });
   $('.ink-zoom-out').addEventListener('click', () => { state.zoomTouched = true; setZoom(state.zoom / 1.25); });
   $('.ink-zoom-fit').addEventListener('click', () => fitContent());
+  $('.ink-zoom-page').addEventListener('click', () => fitContent('page'));
   $('.ink-add-page').addEventListener('click', () => {
     snapshot();
     doc.pages.push({ items: [] });
@@ -1115,10 +1118,12 @@ const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-r
       }
       // Reicht das nicht (Handy hochkant): alles Weitere von rechts nach links ins ⋯-Menü – nichts wird
       // abgeschnitten. Schließen, Weiter/Zurück, ↔ und Zoom bleiben am längsten.
-      const KEEP = '.ink-close, .ink-bar-more, .ink-action, .ink-zoom-fit, .ink-zoom-pct';
+      const KEEP = '.ink-close, .ink-bar-more, .ink-action, .ink-zoom-fit, .ink-zoom-page, .ink-zoom-pct';
       const rest = [...toolbarEl.querySelectorAll('button, select')].filter((el) => !el.closest('.ink-ovf') && !el.matches(KEEP)).reverse();
       for (const el of rest) if (hide(el)) return;
-      for (const el of [...toolbarEl.querySelectorAll('.ink-zoom-pct, .ink-zoom-fit, .ink-action')].reverse()) if (hide(el)) return;
+      for (const sel of ['.ink-zoom-page', '.ink-zoom-pct', '.ink-zoom-fit', '.ink-action']) {
+        for (const el of [...toolbarEl.querySelectorAll(sel)].reverse()) if (hide(el)) return;
+      }
     } finally {
       fitting = false;
     }
@@ -1538,7 +1543,10 @@ const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-r
     showZoomPct();
     sizePage(page);
     // Wie ein Druck auf ↔: auf den Inhalt des Blatts, nicht auf die Seite mit ihren Rändern.
-    if (firstFit) requestAnimationFrame(() => { if (paperView && !state.zoomTouched) fitContent(); });
+    // Am PC (Maus) ganze Seite, sonst ganze Breite.
+    if (firstFit) requestAnimationFrame(() => {
+      if (paperView && !state.zoomTouched) fitContent(window.matchMedia?.('(pointer: fine)').matches ? 'page' : 'width');
+    });
     doc.pages = [{ items: fromLayer() }];
     bindInput(page);
     addKaroHandles();
@@ -2026,26 +2034,38 @@ const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-r
     if (!page?.paper || !paperView?.el) return null;
     const base = page.el.getBoundingClientRect();
     if (!base.width) return null;
-    let left = Infinity, right = -Infinity;
+    let left = Infinity, right = -Infinity, top = Infinity, bottom = -Infinity;
     for (const b of paperView.el.querySelectorAll('.ds-b, .ds-editor-header, .lm-head')) {
       const r = b.getBoundingClientRect();
       if (!r.width) continue;
       if (r.left < left) left = r.left;
       if (r.right > right) right = r.right;
+      if (r.top < top) top = r.top;
+      if (r.bottom > bottom) bottom = r.bottom;
     }
     if (!(right > left)) return null;
     const unit = base.width / page.w; // Bildschirmpixel je Seiteneinheit
     const pad = 6;
-    return { left: Math.max(0, (left - base.left) / unit - pad), width: Math.min(page.w, (right - left) / unit + 2 * pad) };
+    return {
+      left: Math.max(0, (left - base.left) / unit - pad), width: Math.min(page.w, (right - left) / unit + 2 * pad),
+      top: Math.max(0, (top - base.top) / unit - pad), height: Math.min(page.h, (bottom - top) / unit + 2 * pad),
+    };
   }
-  /** ↔: Inhalt des Blatts auf die ganze Breite, links bündig im Bild. */
-  function fitContent() {
+  /**
+   * ↔: Inhalt des Blatts auf die ganze Breite, links bündig im Bild.
+   * ⤢ (`how = 'page'`): Breite und Höhe passen hinein – alles ohne Scrollen (am PC der Standard bei Quizzen).
+   */
+  function fitContent(how = 'width') {
     const c = paperContent();
     if (!c) { setZoom(fitZoom()); return; }
-    setZoom(fitZoom(c.width));
+    let z = fitZoom(c.width);
+    if (how === 'page') z = Math.min(z, Math.max(0.3, (scroller.clientHeight - 24) / c.height));
+    setZoom(z);
     const page = pages[0];
-    const offset = page.el.getBoundingClientRect().left - scroller.getBoundingClientRect().left + scroller.scrollLeft;
-    scroller.scrollLeft = Math.max(0, offset + c.left * (page.el.getBoundingClientRect().width / page.w) - 12);
+    const pr = page.el.getBoundingClientRect(), sr = scroller.getBoundingClientRect();
+    const unit = pr.width / page.w;
+    scroller.scrollLeft = Math.max(0, pr.left - sr.left + scroller.scrollLeft + c.left * unit - 12);
+    scroller.scrollTop = Math.max(0, pr.top - sr.top + scroller.scrollTop + c.top * unit - 12);
   }
 
   function fitZoom(pageW = pages[0]?.w || A4.w) {

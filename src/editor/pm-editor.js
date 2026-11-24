@@ -968,7 +968,7 @@ export function createPmEditor(element, spec, host = {}) {
       const node = editor.state.doc.nodeAt(pos);
       if (!node) return;
       const map = TableMap.get(node);
-      let value = what === 'cols' ? equalWidths(map.width, Number(node.attrs.width) || TEXT_WIDTH_CM) : null;
+      let value = what === 'cols' ? equalWidths(map.width, Number(node.attrs.width) || host.fullWidthCm?.() || TEXT_WIDTH_CM) : null; // Zeilenbreite der Vorlage (quer: ~25 cm)
       // Mehrere Spalten markiert: nur diese – sie teilen sich ihre gemeinsame Breite gleichmäßig.
       const span = what === 'cols' ? this.selectedColumns(pos) : null;
       if (span) {

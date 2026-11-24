@@ -3245,7 +3245,8 @@ const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-r
       pinPage();
       return result;
     };
-    const editing = openRichEditor({ ...opts, surfaceHost: host, barHost: overlay });
+    // Im Blatt: „volle Breite“ ist die Zeile des Blatts – quer breiter als 16,5 cm.
+    const editing = openRichEditor({ ...(place.free ? {} : { widthCm: fieldMaxCm(!!paper.landscape) }), ...opts, surfaceHost: host, barHost: overlay });
     if (!place.free) reflowPaper();
     // Nur das Blatt scrollen: scrollIntoView schöbe auf dem iPad auch die Seite mit der Leiste weg.
     {

@@ -179,6 +179,8 @@ body.ink-open { overflow: hidden; }
 .ink-rich-inline .ds-pm-surface .ProseMirror > p { margin: 0 0 0.6em; }
 .ink-rich-inline .ds-pm-surface { width: auto; max-width: none; margin: 0; box-sizing: border-box; height: auto; min-height: 1.5em; overflow: visible; padding: 0; border: none; border-radius: 0; background: transparent; outline: 2px solid #3b82f6; outline-offset: 3px; font: inherit; color: inherit; line-height: inherit; }
 .ink-rich-inline-free .ds-pm-surface { background: #fff; }
+/* Auf dem Querformat-Blatt: Schreibfelder und Bilder in ganzer Breite füllen die Zeile wie im Druck. */
+.lm-landscape .ink-rich-inline .ds-karo { max-width: 100%; }
 /* Tabellen füllen die Textfläche, außer sie haben eine eigene Breite – auch sonst wären die Zellen kaum zu treffen. */
 .ink-rich-inner table:not([style*="width"]) { width: 100%; }
 .ink-rich-md .import-modules-card { width: min(720px, 92vw); }

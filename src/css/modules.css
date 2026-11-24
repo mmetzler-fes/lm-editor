@@ -1335,3 +1335,6 @@ body {
 .lm-ico-bad { color: #dc2626; }
 .lm-ico-warn { color: #d97706; }
 .lm-ico-muted { color: var(--text-secondary, #64748b); }
+
+/* Bild im Text (![…](…){width=…}): wie ein Zeichen, mittig zur Zeile. */
+.ds-inline-img { display: inline-block; vertical-align: middle; max-width: 100%; height: auto; }

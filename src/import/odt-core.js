@@ -1270,8 +1270,14 @@ export function odtPackageToHtml(pkg, fileName = '', opts = {}) {
             // Aneinanderstoßender Code (je Zeile bzw. Teilstück ein <code>) wird ein Stück.
             const html = buffer.replace(/<\/code><code(?: data-pt="[\d.]+")?>/g, '').replace(/^(\s|&nbsp;)+|(\s|&nbsp;)+$/g, '');
             const visible = html.replace(/<br>|&nbsp;|&emsp;|\s/g, '');
+            // Bilder „wie ein Zeichen“ neben Text: Bild im Text (data-inline) statt eigener Baustein.
+            // Allein im Absatz bleiben sie ein Bild-Baustein (zentrierbar, mit Unterschrift).
+            const words = html.replace(/<img\b[^>]*>/g, '').replace(/<[^>]+>/g, '').replace(/&nbsp;|&emsp;|\s/g, '');
+            const withInline = words && /<img\b/.test(html)
+                ? html.replace(/<img\b(?![^>]*\bws-float-)/g, '<img data-inline="1"')
+                : html;
             if (visible) {
-                parts.push(`<${tag}${alignAttr}>${wrap(html, styleName, isHeading)}</${tag}>`);
+                parts.push(`<${tag}${alignAttr}>${wrap(withInline, styleName, isHeading)}</${tag}>`);
                 if (isHeading)
                     stats.headings++;
                 else

@@ -17,7 +17,7 @@
  * Striche der Schüler.
  */
 import { fixSymbolChars } from './symbol-font.js';
-import { richText, renderDocSpecHtml, tableColgroup, tableAllFixed, firstColumnCells, tableRowAttr, tableLineStyle, TABLE_LINE_STYLES, TEXT_COLORS, HIGHLIGHTS, FONT_SIZES, BASE_FONT_PT, LINE_HEIGHTS, LIST_MARKERS, LIST_NUMBERINGS, LINE_COLORS, CELL_BACKGROUNDS, CELL_VALIGNS, paraStyle, INLINE_MATH_SOURCE, CODE_SIZES, CODE_SIZE_PT, headingNumber } from './docspec.js';
+import { richText, renderDocSpecHtml, tableColgroup, tableAllFixed, firstColumnCells, tableRowAttr, tableLineStyle, TABLE_LINE_STYLES, TEXT_COLORS, HIGHLIGHTS, FONT_SIZES, BASE_FONT_PT, LINE_HEIGHTS, INLINE_IMAGE_SRC, inlineImageText, LIST_MARKERS, LIST_NUMBERINGS, LINE_COLORS, CELL_BACKGROUNDS, CELL_VALIGNS, paraStyle, INLINE_MATH_SOURCE, CODE_SIZES, CODE_SIZE_PT, headingNumber } from './docspec.js';
 import { isBlockId } from './ids.js';
 
 const MARKUP_CHARS = /[\\*`[\]]/g;
@@ -77,7 +77,21 @@ function inline(node, images, warnings) {
     // Nummer vor Abschnitt/Aufgabe/Teilaufgabe: nur Anzeige, nie Text (wird aus der Position errechnet).
     if (c.classList?.contains('ds-num')) continue;
     if (tag === 'BR') { out += '\\\n'; continue; }
-    if (tag === 'IMG') { images.push(c); continue; }
+    if (tag === 'IMG') {
+      // Bild im Text („wie ein Zeichen“): aus dem Editor (ds-inline-img) oder vom Import (data-inline).
+      const cls = c.getAttribute('class') || '';
+      const src = c.getAttribute('src') || '';
+      if ((/\bds-inline-img\b/.test(cls) || c.getAttribute('data-inline')) && !/\bws-float-/.test(cls)
+        && new RegExp(`^${INLINE_IMAGE_SRC}$`).test(src)) {
+        const styleW = /width:\s*(\d+(?:\.\d+)?(?:cm|mm|px))/.exec(c.getAttribute('style') || '')?.[1];
+        const attrW = Number(c.getAttribute('width')) > 0 ? `${Math.round(Number(c.getAttribute('width')))}px` : null;
+        const alt = c.getAttribute('alt');
+        out += inlineImageText({ src, alt: alt && alt !== 'Zeichnung' ? alt : '', width: styleW || attrW });
+        continue;
+      }
+      images.push(c);
+      continue;
+    }
     if (BLOCK_TAGS.has(tag)) {
       // Absätze nebeneinander (z. B. in einer Tabellenzelle): je eine Zeile.
       const t = inline(c, images, warnings);
@@ -139,9 +153,15 @@ function fontSizeOf(el) {
 }
 
 function cleanText(text) {
-  return text.replace(/[ \t]+\\\n/g, '\\\n').replace(/(\\\n)+$/g, '').replace(/^\s+|\s+$/g, '')
-    // Aneinanderstoßende gleiche Auszeichnung („**Z****uordnung**“ aus einzeln fett gesetzten Buchstaben) zusammenfassen.
-    .replace(/(\S)(\*\*|\+\+|~~)\2(?=\S)/g, '$1');
+  const t = text.replace(/[ \t]+\\\n/g, '\\\n').replace(/(\\\n)+$/g, '').replace(/^\s+|\s+$/g, '');
+  // Aneinanderstoßende gleiche Auszeichnung („**Z****uordnung**“ aus einzeln fett gesetzten Buchstaben) zusammenfassen –
+  // nicht in Bildern im Text (Base64 kann „++++“ enthalten).
+  const img = new RegExp(`!\\[[^\\]\\n]*\\]\\(${INLINE_IMAGE_SRC}\\)(?:\\{width=[^}]*\\})?`, 'g');
+  let out = '';
+  let pos = 0;
+  const merge = (s) => s.replace(/(\S)(\*\*|\+\+|~~)\2(?=\S)/g, '$1');
+  for (const m of t.matchAll(img)) { out += merge(t.slice(pos, m.index)) + m[0]; pos = m.index + m[0].length; }
+  return out + merge(t.slice(pos));
 }
 
 function imageBlock(img, warnings) {
@@ -294,7 +314,9 @@ function tableBlock(el, warnings, used = new Set()) {
     }
     const found = [];
     // Führende Leerzeichen bleiben: Sie richten z. B. Programmausgaben aus.
-    const text = rich ? '' : cleanText(inline(td, found, warnings)).replace(/^/, (/^ +/.exec(td.textContent) || [''])[0]);
+    const cleaned = rich ? '' : cleanText(inline(td, found, warnings));
+    // … außer vor einem Bild im Text am Anfang (die Leerzeichen gehören dann hinter das Bild).
+    const text = rich || cleaned.startsWith('![') ? cleaned : (/^ +/.exec(td.textContent) || [''])[0] + cleaned;
     const cs = Number(td.getAttribute('colspan')) || 1;
     const rs = Number(td.getAttribute('rowspan')) || 1;
     // Bilder bleiben in ihrer Zelle (z. B. Baustein links, Zeitdiagramm rechts).

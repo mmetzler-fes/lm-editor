@@ -34,6 +34,7 @@ const VIEW = {
   column: (a) => ['div', { class: 'ds-pm-column', style: a.width ? `flex:0 0 ${a.width}` : null }, 0],
   table: () => ['table', {}, ['tbody', {}, 0]],
   tableRow: () => ['tr', {}, 0],
+  inlineImage: (a) => ['img', { class: 'ds-inline-img', src: a.src || '', alt: a.alt || '', style: a.width ? `width:${a.width}` : null, draggable: 'false' }],
   tableCell: (a) => cellView('td', a),
   tableHeader: (a) => cellView('th', a),
 };

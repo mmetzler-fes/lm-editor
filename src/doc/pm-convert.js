@@ -7,7 +7,7 @@
 // Maßstab für „verlustfrei“: Das Blatt sieht danach gleich aus (test/pm-convert.test.js,
 // tools/check-pm.mjs gegen alle Dokumente).
 
-import { INLINE_RE, SUBSCRIPT_RE, parseColorSpec, textLines } from './docspec.js';
+import { INLINE_RE, SUBSCRIPT_RE, parseColorSpec, textLines, inlineImageText } from './docspec.js';
 import { PM_NODES, MARK_ORDER } from './pm-schema.js';
 
 const isText = (v) => typeof v === 'string' || typeof v === 'number';
@@ -53,6 +53,7 @@ function lineNodes(line, marks = [], out = []) {
     flush();
     if (g.code !== undefined) pushText(out, g.code, [...marks, { type: 'code' }]);
     else if (g.math !== undefined) out.push({ type: 'inlineMath', attrs: { latex: g.math }, ...(marks.length ? { marks: sortMarks(marks) } : {}) });
+    else if (g.isrc !== undefined) out.push({ type: 'inlineImage', attrs: { src: g.isrc, alt: g.ialt || null, width: g.iw || null }, ...(marks.length ? { marks: sortMarks(marks) } : {}) });
     else if (g.bi !== undefined) add(g.bi, 'bold', 'italic');
     else if (g.b !== undefined) add(g.b, 'bold');
     else if (g.i !== undefined) add(g.i, 'italic');
@@ -100,7 +101,7 @@ function nodesToLine(nodes, plain) {
     const n = nodes[i];
     const marks = n.marks || [];
     if (!marks.length) {
-      out += n.type === 'inlineMath' ? `$${n.attrs.latex}$` : plain(n.text);
+      out += n.type === 'inlineMath' ? `$${n.attrs.latex}$` : n.type === 'inlineImage' ? inlineImageText(n.attrs) : plain(n.text);
       i++;
       continue;
     }

@@ -16,6 +16,8 @@ export const PM_NODES = {
   text: { group: 'inline' },
   hardBreak: { group: 'inline', inline: true, atom: true },
   inlineMath: { group: 'inline', inline: true, atom: true, attrs: ['latex'] },
+  // Bild im Text („wie ein Zeichen“): ![alt](src){width=…}
+  inlineImage: { group: 'inline', inline: true, atom: true, attrs: ['src', 'alt', 'width'] },
 
   // `joined`: weiterer Absatz desselben Text-Bausteins (gleiche ID, „\n\n“ in der Spec).
   paragraph: { group: 'block', content: 'inline*', attrs: ['id', 'joined', ...PARA] },
@@ -54,7 +56,7 @@ export const PM_NODES = {
 };
 
 /** Knoten, die Felder ihres Bausteins unverändert aufbewahren können. */
-export const NODES_WITH_EXTRA = Object.keys(PM_NODES).filter((n) => PM_NODES[n].attrs && !['doc', 'inlineMath', 'tableRow', 'rawBlock'].includes(n));
+export const NODES_WITH_EXTRA = Object.keys(PM_NODES).filter((n) => PM_NODES[n].attrs && !['doc', 'inlineMath', 'inlineImage', 'tableRow', 'rawBlock'].includes(n));
 
 // Reihenfolge = Schachtelung beim Zurückschreiben (außen zuerst).
 export const PM_MARKS = {

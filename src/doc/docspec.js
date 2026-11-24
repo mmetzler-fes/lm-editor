@@ -479,6 +479,24 @@ export function parseColorSpec(spec) {
 // Formel im Text wie bei Pandoc: $ direkt vor und hinter dem Inhalt, dahinter
 // keine Ziffer – „5 $“ und „$5 bis $10“ bleiben Text, \$ ist ein Dollarzeichen.
 export const INLINE_MATH_SOURCE = '\\$(?<math>[^\\s$](?:[^$\\n]*?[^\\s$\\\\])?)\\$(?!\\d)';
+/**
+ * Bild im Text („wie ein Zeichen“): `![Beschreibung](Quelle){width=1.5cm}` – Breite in cm, mm
+ * oder px, ohne Angabe so groß wie das Bild. Quellen wie beim Bild-Baustein.
+ */
+export const INLINE_IMAGE_SRC = '(?:data:image\\/(?:png|jpeg|gif|webp|svg\\+xml);base64,[A-Za-z0-9+/=]+|https?:\\/\\/[^)\\s]+|\\/api\\/[^)\\s]+|lm-img:[a-f0-9]{12})';
+const INLINE_IMAGE_WIDTH = '\\d+(?:\\.\\d+)?(?:cm|mm|px)';
+/** Bild im Text als Text: `![alt](src){width=…}`. */
+export function inlineImageText({ src, alt, width } = {}) {
+  const a = String(alt || '').replace(/[\]\n\\]/g, ' ').trim();
+  const w = new RegExp(`^${INLINE_IMAGE_WIDTH}$`).test(String(width || '')) ? `{width=${width}}` : '';
+  return `![${a}](${src})${w}`;
+}
+/** Bild im Text als HTML – mittig zur Zeile, nie breiter als der Platz. */
+function inlineImageHtml(src, alt, width) {
+  const style = width ? ` style="width:${esc(width)}"` : '';
+  return `<img class="ds-inline-img" src="${esc(src)}" alt="${esc(alt || '')}"${style}>`;
+}
+
 export const INLINE_RE = new RegExp([
   '\\\\(?<esc>[\\\\*`\\[\\]^~+{}$])',
   '`(?<code>[^`\\n]+)`',
@@ -491,6 +509,7 @@ export const INLINE_RE = new RegExp([
   '(?<![\\w~])~~(?<s>\\S(?:.*?\\S)?)~~(?![\\w~])',
   '\\^\\{(?<sup>[^}]{1,40})\\}',
   '_\\{(?<sub>[^}]{1,24})\\}',
+  `!\\[(?<ialt>[^\\]\\n]*)\\]\\((?<isrc>${INLINE_IMAGE_SRC})\\)(?:\\{width=(?<iw>${INLINE_IMAGE_WIDTH})\\})?`,
   '\\[(?<atext>[^\\]\\n]+)\\]\\((?<href>(?:https?://|mailto:)[^)\\s]+)\\)',
   '\\[(?<ctext>[^\\]\\n]+)\\]\\{(?<color>[a-z0-9-]+(?:,[a-z0-9-]+){0,2})\\}',
 ].join('|'), 'g');
@@ -535,6 +554,7 @@ export function inlineHtml(line) {
     else if (g.s !== undefined) html += `<s>${inlineHtml(g.s)}</s>`;
     else if (g.sup !== undefined) html += `<sup>${esc(g.sup)}</sup>`;
     else if (g.sub !== undefined) html += `<sub>${esc(g.sub)}</sub>`;
+    else if (g.isrc !== undefined) html += inlineImageHtml(g.isrc, g.ialt, g.iw);
     else if (g.href !== undefined) html += `<a href="${esc(g.href)}" target="_blank" rel="noopener noreferrer">${inlineHtml(g.atext)}</a>`;
     else if (g.color !== undefined) {
       const { color, hl, size } = parseColorSpec(g.color);

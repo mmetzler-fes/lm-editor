@@ -338,7 +338,11 @@ function readInline(children, opts = {}) {
     else if (t.type === 'ds_math') nodes.push({ type: 'inlineMath', attrs: { latex: t.content }, ...(marks.length ? { marks: sorted(marks) } : {}) });
     else if (t.type === 'link_open') marks = [...marks, { type: 'link', attrs: { href: t.attrGet('href') } }];
     else if (t.type === 'link_close') marks = marks.filter((m) => m.type !== 'link');
-    else if (t.type === 'image') images.push(imageNode(t));
+    else if (t.type === 'image' && t.meta?.classes?.includes('inline')) {
+      // Bild im Text: ![alt](src){.inline width=1.2cm}
+      const width = t.meta.fields?.width;
+      nodes.push({ type: 'inlineImage', attrs: { src: t.attrGet('src'), alt: t.content || null, width: /^\d+(?:\.\d+)?(?:cm|mm|px)$/.test(String(width || '')) ? String(width) : null }, ...(marks.length ? { marks: sorted(marks) } : {}) });
+    } else if (t.type === 'image') images.push(imageNode(t));
     else if (t.type === 'ds_span_open') {
       const empty = children[i + 1]?.type === 'ds_span_close';
       if (empty && t.meta.classes.includes('br')) nodes.push({ type: 'hardBreak' });
@@ -679,7 +683,7 @@ function naturalLine(nodes, plain) {
     const n = nodes[i];
     const marks = n.marks || [];
     if (!marks.length) {
-      out += n.type === 'inlineMath' ? `$${n.attrs.latex}$` : plain(n.text);
+      out += n.type === 'inlineMath' ? `$${n.attrs.latex}$` : n.type === 'inlineImage' ? inlineImageMd(n.attrs) : plain(n.text);
       i++;
       continue;
     }
@@ -703,10 +707,16 @@ function naturalLine(nodes, plain) {
   return out;
 }
 
+/** Bild im Text: ![alt](src){.inline width=…} – `.inline` unterscheidet es vom Bild-Baustein. */
+function inlineImageMd({ src, alt, width }) {
+  const a = String(alt || '').replace(/[\]\n\\]/g, ' ').trim();
+  return `![${a}](${src}){.inline${width ? ` width=${width}` : ''}}`;
+}
+
 /** Sichere Schreibweise: jedes Stück ein eigener Span mit allen Auszeichnungen. */
 function spanLine(nodes) {
   return nodes.map((n) => {
-    const piece = n.type === 'inlineMath' ? `$${n.attrs.latex}$` : escapeAll(n.text);
+    const piece = n.type === 'inlineMath' ? `$${n.attrs.latex}$` : n.type === 'inlineImage' ? inlineImageMd(n.attrs) : escapeAll(n.text);
     return n.marks?.length ? `[${piece}]${spanAttrs(n.marks)}` : piece;
   }).join('');
 }

@@ -88,6 +88,8 @@ const find = (n, name) => {
     return undefined;
 };
 const textOf = (n) => typeof n === 'string' ? n : n.children.map(textOf).join('');
+/** Text des Absatzes selbst – ohne den Text in verankerten Zeichnungen und Rahmen. */
+const ownTextOf = (n) => typeof n === 'string' ? n : /^(draw|svg):/.test(n.name) ? '' : n.children.map(ownTextOf).join('');
 // ---- Formatvorlagen ----
 // Zeichenbreiten von Arial/Helvetica in 1/1000 em (Schriftmetrik; Liberation Sans und Arimo sind
 // gleich breit). Die frühere Schätzung (Kleinbuchstaben 0,52 em) war 6–8 % zu schmal: Der Import
@@ -1592,7 +1594,10 @@ export function odtPackageToHtml(pkg, fileName = '', opts = {}) {
                 continue;
             }
             if (c.name === 'text:p' || c.name === 'text:h') {
-                const tag = c.name === 'text:h' && textOf(c).trim().length <= MAX_HEADING_CHARS ? headingTag(c)
+                // Überschrift ohne Text (z. B. nur eine verankerte Zeichnung): gewöhnlicher
+                // Absatz – sonst geht das Bild mit dem leeren Aufgabentitel verloren.
+                const headText = c.name === 'text:h' ? ownTextOf(c).trim() : '';
+                const tag = c.name === 'text:h' && headText && textOf(c).trim().length <= MAX_HEADING_CHARS ? headingTag(c)
                     : styles.inherits(c.attrs['text:style-name'], /^Title$/i) ? 'h2'
                         : styles.inherits(c.attrs['text:style-name'], /^Subtitle$/i) ? 'h3' : 'p';
                 const outlineLevel = Number(c.attrs['text:outline-level'] || 1);

@@ -691,7 +691,11 @@ const MATH_END = new RegExp(`(?<![\\\\$])${INLINE_MATH_SOURCE}$`);
  * Editor in `element` öffnen. `host`: { onChange(spec), editBlock(block, apply),
  * fullWidthCm(), onWarnings(list), onSelection(), copyImage(block) }.
  */
+/** Markierte Zellen, aber nicht die ganze Tabelle? */
+const partialCells = (sel) => sel instanceof CellSelection && !(sel.isRowSelection() && sel.isColSelection());
+
 export function createPmEditor(element, spec, host = {}) {
+  let lastCopy = null;
   const nodeViews = Object.fromEntries(ATOMS.map((t) => [t, atomView(host)]));
   nodeViews.inlineMath = mathView;
   nodeViews.table = tableView;
@@ -731,8 +735,29 @@ export function createPmEditor(element, spec, host = {}) {
         void host.imageFromFile(file).then((block) => { if (block) insertAtSelection([block]); });
         return true;
       },
-      handlePaste: (view, event) => {
+      // Was zuletzt kopiert wurde: markierte Zellen oder etwas anderes (z. B. die ganze Tabelle).
+      // Alle Zellen markiert („Ganze Tabelle auswählen“ ergibt eine solche Zellauswahl) zählt als ganze Tabelle.
+      handleDOMEvents: {
+        copy: (view) => { lastCopy = { cells: partialCells(view.state.selection), at: Date.now() }; return false; },
+        cut: (view) => { lastCopy = { cells: partialCells(view.state.selection), at: Date.now() }; return false; },
+      },
+      handlePaste: (view, event, slice) => {
         const { clipboardData: data } = event;
+        // Ganze Tabelle (nicht nur markierte Zellen) in eine Zelle: als Tabelle in der Tabelle.
+        // Sonst übernähme prosemirror-tables sie Zelle für Zelle in die Zieltabelle.
+        // Zuletzt hier kopierte Zellen (Mehrfachmarkierung) fügen sich dagegen wie gewohnt Zelle für Zelle ein.
+        const cellsCopied = lastCopy?.cells && Date.now() - lastCopy.at < 30 * 60_000;
+        if (slice && !cellsCopied && slice.content.childCount > 0
+          && slice.content.content.every((n) => n.type.name === 'table')
+          && !(view.state.selection instanceof CellSelection)) {
+          const { $from } = view.state.selection;
+          let inCell = false;
+          for (let d = $from.depth; d > 0; d--) if (['tableCell', 'tableHeader'].includes($from.node(d).type.name)) { inCell = true; break; }
+          if (inCell) {
+            view.dispatch(view.state.tr.replaceSelection(new Slice(slice.content, 0, 0)).scrollIntoView());
+            return true;
+          }
+        }
         // Bildschirmfoto in der Zwischenablage
         const shot = [...(data?.files || [])].find((f) => f.type.startsWith('image/'));
         if (shot && host.imageFromFile && !data.getData('text/plain')) {

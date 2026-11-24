@@ -10,6 +10,7 @@ import { htmlToDocSpec, specToEditorHtml } from '../doc/docspec-html.js';
 import { escapeAttr, showContextMenu } from '../util/dom.js';
 import { openParagraphDialog } from './paragraph-dialog.js';
 import { openSpecialCharDialog } from './special-chars.js';
+import { openCropDialog, dataUrlFile } from './image-crop.js';
 
 const COLOR_NAMES = { blau: '🟦 Blau', gruen: '🟩 Grün', orange: '🟧 Orange', lila: '🟪 Lila', grau: '⬜ Grau' };
 const HL_NAMES = { gelb: '🟨 Gelb', gruen: '🟩 Grün', blau: '🟦 Blau', rosa: '🩷 Rosa' };
@@ -34,6 +35,24 @@ const saveImage = async (block) => {
   if (tools) tools.tell(await tools.save(asImg(block)));
 };
 
+/**
+ * Bild zuschneiden (Dialog); das Ergebnis kommt in die Bildablage der App (sonst als data:-URL).
+ * Eine Breite in cm schrumpft mit, damit der Rest so groß bleibt wie vorher. null = abgebrochen.
+ */
+export async function cropImageBlock(block, storeImage = (file) => window.appImageStore?.(file)) {
+  const cut = await openCropDialog(block.src);
+  if (!cut) return null;
+  let src = cut.src;
+  try {
+    const stored = await storeImage?.(dataUrlFile(cut.src));
+    if (stored?.src) src = stored.src;
+    else if (stored === null) return null; // Ablage abgebrochen
+  } catch (_) { /* ohne Ablage: data:-URL */ }
+  const cm = /^(\d+(?:\.\d+)?)cm$/.exec(String(block.width ?? ''))?.[1];
+  const width = cm ? `${Math.max(0.5, Math.round(Number(cm) * cut.fraction * 10) / 10)}cm` : block.width;
+  return { ...block, src, ...(width ? { width } : {}) };
+}
+
 const IMAGE_PLACES = [['', 'wie der Text der Vorlage'], ['float:left', 'neben dem Text, links'], ['float:right', 'neben dem Text, rechts'], ['align:center', 'eigene Zeile, mittig'], ['align:right', 'eigene Zeile, rechts']];
 
 /**
@@ -53,6 +72,7 @@ export function openImageDialog(block, { apply, remove, storeImage = (file) => w
         ${window.appImageClipboard ? `<button type="button" class="btn btn-secondary btn-sm" data-a="copy" title="Für LibreOffice Draw, Word, OneNote">📋 Kopieren</button>
         <button type="button" class="btn btn-secondary btn-sm" data-a="save" title="Als Datei speichern">⬇ Speichern</button>` : ''}
         <button type="button" class="btn btn-secondary btn-sm" data-a="replace" title="Anderes Bild wählen – Breite und Lage bleiben">🔁 Ersetzen</button>
+        <button type="button" class="btn btn-secondary btn-sm" data-a="crop" title="Rand wegschneiden – das Original bleibt unverändert">✂ Zuschneiden</button>
       </div>
       <div class="ds-para-grid">
         <label>Breite<span class="ds-para-in"><input name="width" inputmode="decimal" value="${String(cm).replace('.', ',')}" placeholder="${escapeAttr(cm ? '' : String(block.width ?? 'wie das Bild'))}"> cm</span></label>
@@ -79,7 +99,16 @@ export function openImageDialog(block, { apply, remove, storeImage = (file) => w
     if (what === 'cancel') close();
     else if (what === 'del') { remove(); close(); } else if (what === 'copy') await copyImage({ ...block, src });
     else if (what === 'save') await saveImage({ ...block, src });
-    else if (what === 'replace') {
+    else if (what === 'crop') {
+      const typed = Number(overlay.querySelector('[name=width]').value.trim().replace(',', '.'));
+      const cut = await cropImageBlock({ src, ...(typed > 0 ? { width: `${typed}cm` } : {}) }, storeImage);
+      if (cut) {
+        src = cut.src;
+        show();
+        const w = /^(\d+(?:\.\d+)?)cm$/.exec(String(cut.width ?? ''))?.[1];
+        if (w) overlay.querySelector('[name=width]').value = w.replace('.', ',');
+      }
+    } else if (what === 'replace') {
       const input = Object.assign(document.createElement('input'), { type: 'file', accept: 'image/*' });
       input.onchange = async () => {
         const file = input.files?.[0];
@@ -388,6 +417,7 @@ export function mountTiptapSurface(box, host) {
     return [
       { label: '✏️ Bearbeiten', onClick: () => host.editBlock(sel.block, sel.apply) },
       ...(image ? [
+        { label: '✂ Zuschneiden …', onClick: async () => { const cut = await cropImageBlock(sel.block); if (cut) sel.apply(cut); } },
         ...(window.appImageClipboard ? [
           { label: '📋 Bild kopieren', onClick: () => copyImage(sel.block) },
           { label: '⬇ Bild speichern', onClick: () => saveImage(sel.block) },

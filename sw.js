@@ -33,6 +33,7 @@ const CORE = [
   'src/editor/pm-ids.js',
   'src/editor/pm-delete.js',
   'src/editor/pm-toolbar.js',
+  'src/editor/image-crop.js',
   'src/editor/table-props.js',
   'src/util/dom.js',
   'src/util/icons.js',

@@ -288,6 +288,10 @@ class Styles {
             const b = tcp.attrs['fo:border'] || tcp.attrs['fo:border-top'] || tcp.attrs['fo:border-bottom'] || tcp.attrs['fo:border-left'] || tcp.attrs['fo:border-right'];
             if (b)
                 info.cellBorder = b;
+            // Oben und unten ohne Rand: Trennspalte zwischen Tabellen (splitTable).
+            const none = (v) => /^(none|hidden|0)/.test(String(v || '').trim());
+            if (none(tcp.attrs['fo:border-top'] ?? tcp.attrs['fo:border']) && none(tcp.attrs['fo:border-bottom'] ?? tcp.attrs['fo:border']))
+                info.cellOpenVertical = true;
         }
         this.styles.set(name, { ...this.styles.get(name), ...info });
     }
@@ -872,7 +876,8 @@ export function odtPackageToHtml(pkg, fileName = '', opts = {}) {
     const contentXml = read('content.xml');
     if (!contentXml)
         throw new Error('content.xml fehlt – die Datei ist beschädigt.');
-    const content = parseXml(contentXml);
+    // Tabellen in Word-Textfeldern schreibt LibreOffice als loext:table – sonst wie table:table.
+    const content = parseXml(contentXml.replace(/<(\/?)loext:table/g, '<$1table:table'));
     const styles = new Styles();
     const stylesXml = read('styles.xml');
     const stylesRoot = stylesXml ? parseXml(stylesXml) : undefined;
@@ -1100,6 +1105,26 @@ export function odtPackageToHtml(pkg, fileName = '', opts = {}) {
         const src = stored ? esc(stored.url) : `data:image/svg+xml;base64,${d.svgBase64}`;
         return `<img src="${src}" alt="Zeichnung"${width ? ` width="${width}"` : ''}${stored ? ` data-source="${esc(stored.source)}"` : ''}>`;
     };
+    /**
+     * Frei verankerte Blöcke desselben Absatzes (Zeichnungen, Tabellen aus
+     * Textfeldern) in der Reihenfolge, in der sie auf der Seite stehen.
+     */
+    /** Senkrechte Lage einer Form im Absatz (px) – bei gedrehten aus draw:transform. */
+    const yOf = (c) => {
+        const y = toPx(c.attrs['svg:y']);
+        if (y != null)
+            return y;
+        const m = /translate\s*\(\s*[-\d.]+[a-z]*\s+([-\d.]+[a-z]*)\s*\)/.exec(c.attrs['draw:transform'] || '');
+        return (m && toPx(m[1])) ?? undefined;
+    };
+    const byPosition = (out) => {
+        const slots = out.map((s, k) => ('block' in s && typeof s.y === 'number' ? k : -1)).filter((k) => k >= 0);
+        if (slots.length > 1) {
+            const sorted = slots.map((k) => out[k]).sort((a, b) => a.y - b.y);
+            slots.forEach((k, m) => { out[k] = sorted[m]; });
+        }
+        return out;
+    };
     const inline = (n) => {
         const out = [];
         // Zeichnungen eines Absatzes werden gesammelt und am Ende als ein Bild
@@ -1121,7 +1146,7 @@ export function odtPackageToHtml(pkg, fileName = '', opts = {}) {
                 continue;
             if (ready !== null) {
                 // Wie ein Buchstabe im Text bleibt im Text, sonst eine eigene Zeile.
-                out.push(c.attrs['text:anchor-type'] === 'as-char' ? { inline: ready } : { block: `<p>${ready.replace('<img ', '<img class="ws-img-center" ')}</p>` });
+                out.push(c.attrs['text:anchor-type'] === 'as-char' ? { inline: ready } : { block: `<p>${ready.replace('<img ', '<img class="ws-img-center" ')}</p>`, y: yOf(c) });
                 continue;
             }
             switch (c.name) {
@@ -1178,6 +1203,13 @@ export function odtPackageToHtml(pkg, fileName = '', opts = {}) {
                     inline(c).forEach((s) => out.push(s));
                     break;
                 default:
+                    // Word-Textfeld mit Tabelle: die Tabelle, keine Zeichnung (zum Ausfüllen).
+                    if (c.name === 'draw:custom-shape' && elements(c).some((x) => x.name === 'table:table')) {
+                        const inner = blocks(c);
+                        if (inner.trim())
+                            out.push({ block: inner, y: anchored(c) ? yOf(c) : undefined });
+                        break;
+                    }
                     if (DRAWINGS.has(c.name)) {
                         shapes.push(c);
                         break;
@@ -1193,12 +1225,12 @@ export function odtPackageToHtml(pkg, fileName = '', opts = {}) {
             const split = splitTextFrames(frames, shapes);
             if (split) {
                 out.push({ block: split });
-                return out;
+                return byPosition(out);
             }
             const img = drawing([...frames, ...shapes]);
             if (img)
                 out.push({ block: `<p>${img}</p>` });
-            return out;
+            return byPosition(out);
         }
         for (const f of frames) {
             const img = image(f);
@@ -1223,7 +1255,7 @@ export function odtPackageToHtml(pkg, fileName = '', opts = {}) {
                 skippedImages++;
             }
         }
-        return out;
+        return byPosition(out);
     };
     // ---- Blöcke ----
     /** Absatz oder Überschrift; Textrahmen darin brechen ihn auf. */
@@ -1383,10 +1415,60 @@ export function odtPackageToHtml(pkg, fileName = '', opts = {}) {
             return `<table class="ws-columns">${cols}<tbody><tr>${cells.map((c) => `<td>${c || '<p><br></p>'}</td>`).join('')}</tr></tbody></table>`;
         }).join('');
     };
+    /**
+     * Mehrere kleine Tabellen, die Word als eine breite Tabelle mit leeren
+     * Trennspalten anlegt (Trennspalte: in allen Zeilen leer, oben und unten ohne
+     * Rand) – nebeneinander als einzelne Tabellen, sonst bekämen die Trennspalten
+     * Rahmen. Nur ohne verbundene oder wiederholte Zellen; sonst null.
+     */
+    const splitTable = (n) => {
+        const rows = tableRowsOf(n);
+        if (rows.length < 1 || elements(n).some((c) => c.name === 'table:table-header-rows'))
+            return null;
+        const cellRows = rows.map((r) => elements(r).filter((c) => c.name === 'table:table-cell' || c.name === 'table:covered-table-cell'));
+        const width = cellRows[0].length;
+        if (width < 3 || cellRows.some((r) => r.length !== width || r.some((c) => c.name !== 'table:table-cell'
+            || ['table:number-columns-spanned', 'table:number-rows-spanned', 'table:number-columns-repeated'].some((a) => Number(c.attrs[a] || 1) > 1))))
+            return null;
+        const gap = (k) => cellRows.every((r) => !textOf(r[k]).trim() && !elements(r[k]).some((x) => x.name !== 'text:p')
+            && styles.prop(r[k].attrs['table:style-name'], 'cellOpenVertical'));
+        const segments = [];
+        let cur = [];
+        for (let k = 0; k < width; k++) {
+            if (gap(k)) {
+                if (cur.length)
+                    segments.push(cur);
+                cur = [];
+            }
+            else
+                cur.push(k);
+        }
+        if (cur.length)
+            segments.push(cur);
+        if (segments.length < 2)
+            return null;
+        stats.tables += segments.length;
+        const widths = columnWidths(n);
+        const cm = (w) => { const m = /^([\d.]+)cm$/.exec(w || ''); return m ? Number(m[1]) : NaN; };
+        const tables = segments.map((cols) => {
+            const ws = cols.map((k) => widths[k]);
+            const colgroup = ws.every(Boolean) ? `<colgroup>${ws.map((w) => `<col style="width:${w}">`).join('')}</colgroup>` : '';
+            const body = rows.map((r, ri) => {
+                const h = rowHeight(r);
+                return `<tr${h ? ` style="height:${h}"` : ''}>${cols.map((k) => `<td>${blocks(cellRows[ri][k]).replace(/^<p data-empty="1"><br><\/p>$/, '')}</td>`).join('')}</tr>`;
+            }).join('');
+            return { html: `<table>${colgroup}<tbody>${body}</tbody></table>`, w: cols.reduce((s, k) => s + cm(widths[k]), 0) };
+        });
+        const outer = tables.every((t) => t.w > 0) ? `<colgroup>${tables.map((t) => `<col style="width:${Math.round(t.w * 100) / 100}cm">`).join('')}</colgroup>` : '';
+        return `<table class="ws-columns">${outer}<tbody><tr>${tables.map((t) => `<td>${t.html}</td>`).join('')}</tr></tbody></table>`;
+    };
     const table = (n) => {
         const layout = layoutTable(n);
         if (layout !== null)
             return layout;
+        const split = splitTable(n);
+        if (split !== null)
+            return split;
         stats.tables++;
         const rowsHtml = (container, cellTag) => {
             let html = '';

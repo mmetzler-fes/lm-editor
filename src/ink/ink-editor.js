@@ -4,7 +4,7 @@ import {
   isBox, resizedBox, resizedKeepingRatio, corners, MM, textBox as textFrame, isScribble, scribbleTargets,
 } from './ink-geometry.js';
 import { rulerSvg, rulerHandles } from './ink-ruler.js';
-import { svgEl, itemSvg, fieldSvg, shapeSvg, imageSvg, inkSvgFor, inkSvgBox, fieldMaxCm } from './ink-view.js';
+import { svgEl, itemSvg, fieldSvg, shapeSvg, imageSvg, inkSvgFor, inkSvgBox, fieldMaxCm, pageBodyCm } from './ink-view.js';
 import { isRich, richHtml, richHasFormula, mergeParagraphs, PX_PT as RICH_PX_PT } from './ink-rich.js';
 import { pasteToSpec } from '../doc/paste.js';
 import { askTable } from '../editor/block-dialog.js';
@@ -1569,7 +1569,7 @@ const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-r
     const page = pages[0];
     const v = paperView;
     // Wo im Druck eine Seite endet (wie in der Vorschau des Dokument-Editors): Linien „Seite 2“ …
-    try { markPageBreaks(v.el, { landscape: !!paper.landscape }); } catch (_) { /* nur Anzeige */ }
+    try { markPageBreaks(v.el, { landscape: !!paper.landscape, bodyCm: pageBodyCm(paper.page) }); } catch (_) { /* nur Anzeige */ }
     page.w = v.el.offsetWidth * PX_PT;
     page.h = v.el.offsetHeight * PX_PT;
     for (const svg of [page.svg, page.top]) svg.setAttribute('viewBox', `0 0 ${page.w} ${page.h}`);
@@ -1654,7 +1654,7 @@ const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-r
 
   const BLOCK_PATTERNS = { karo: '▦ Karo', linien: '☰ Linien', leer: '▢ Leer', frei: '◌ Unsichtbar' };
   const FIELD_MIN_CM = 2;
-  const FIELD_MAX_CM = fieldMaxCm(!!paper?.landscape);
+  const FIELD_MAX_CM = fieldMaxCm(!!paper?.landscape, paper?.page);
 
   /** Maße eines Schreibfelds im Dokument (beim ersten Mal am Element abgelegt). */
   function fieldBase(karo) {
@@ -3246,7 +3246,7 @@ const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-r
       return result;
     };
     // Im Blatt: „volle Breite“ ist die Zeile des Blatts – quer breiter als 16,5 cm.
-    const editing = openRichEditor({ ...(place.free ? {} : { widthCm: fieldMaxCm(!!paper.landscape) }), ...opts, surfaceHost: host, barHost: overlay });
+    const editing = openRichEditor({ ...(place.free ? {} : { widthCm: fieldMaxCm(!!paper.landscape, paper.page) }), ...opts, surfaceHost: host, barHost: overlay });
     if (!place.free) reflowPaper();
     // Nur das Blatt scrollen: scrollIntoView schöbe auf dem iPad auch die Seite mit der Leiste weg.
     {

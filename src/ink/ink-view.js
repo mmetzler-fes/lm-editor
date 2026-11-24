@@ -15,7 +15,16 @@ const TEXT_SIZE = 13;   // wie im Editor
 const PX_PT = 0.75;     // 1 CSS-Pixel = 0,75 pt
 
 /** Volle Breite eines Schreibfelds im Stift-Editor: die Satzbreite im 0,5-cm-Raster, A4 hoch bzw. quer. */
-export const fieldMaxCm = (landscape) => (landscape ? 25 : 16.5);
+/**
+ * Breite der Zeile in cm (ein Schreibfeld so breit heißt „volle Breite“): aus der Seite der
+ * Druckvorlage (/api/worksheets/context), sonst A4 mit den Standardrändern.
+ */
+export const fieldMaxCm = (landscape, page = null) => (page?.width && page.margin
+  ? Math.floor((page.width - page.margin.left - page.margin.right) * 2) / 2
+  : (landscape ? 25 : 16.5));
+/** Höhe des Textbereichs einer Seite der Vorlage in cm (für die Seitenumbrüche) – 0 ohne Vorlage. */
+export const pageBodyCm = (page) => (page?.height && page.margin
+  ? page.height - page.margin.top - page.margin.bottom - (page.header || 0) - (page.footer || 0) : 0);
 
 export const svgEl = (tag, attrs) => {
   const el = document.createElementNS('http://www.w3.org/2000/svg', tag);

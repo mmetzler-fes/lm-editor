@@ -59,8 +59,7 @@ const inkOf = (o) => ({ svg: o.svg, x: o.x, y: o.y, w: o.w, h: o.h });
  * `inserts`: [{ id, after: Pfad | null (an den Anfang) | 'end', pattern?, lines?, width? }].
  * Das Original bleibt unverändert.
  */
-export function applyInkToSpec(spec, { karo = [], overlays = [], inserts = [] } = {}) {
-  const fullCm = spec?.orientation === 'landscape' ? 25 : 16.5;
+export function applyInkToSpec(spec, { karo = [], overlays = [], inserts = [] } = {}, { fullCm = spec?.orientation === 'landscape' ? 25 : 16.5 } = {}) {
   const out = structuredClone(spec && typeof spec === 'object' ? spec : { content: [] });
   if (!Array.isArray(out.content)) out.content = [];
   for (const k of karo) {

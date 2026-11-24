@@ -445,6 +445,20 @@ function odfPoint(t, x, y) {
     }
     return [x, y];
 }
+/**
+ * Klein genug für ein Bild im Text: Zeichen, Formelbild, Schaltzeichen (bis 1,2 cm hoch oder
+ * bis 4 × 2,5 cm). Größere Bilder neben Text werden eigene Bausteine (sonst sprengen sie die Zeile).
+ */
+function smallImage(tag) {
+    const w = Number(/\swidth="(\d+(?:\.\d+)?)"/.exec(tag)?.[1]) || 0;
+    const h = Number(/\sdata-h="(\d+(?:\.\d+)?)"/.exec(tag)?.[1]) || 0;
+    const cm = 96 / 2.54;
+    if (!w)
+        return false;
+    if (!h)
+        return w <= 3 * cm;
+    return h <= 1.2 * cm || (w <= 4 * cm && h <= 2.5 * cm);
+}
 function toPx(value) {
     const m = /^([\d.]+)\s*(cm|mm|in|pt|pc|px)?$/.exec(String(value || '').trim());
     if (!m)
@@ -926,8 +940,9 @@ export function odtPackageToHtml(pkg, fileName = '', opts = {}) {
             imageBytes += data.size;
             stats.images++;
             const width = toPx(frame.attrs['svg:width']);
+            const height = toPx(frame.attrs['svg:height']);
             const alt = textOf(elements(frame).find((c) => c.name === 'svg:title') || '') || frame.attrs['draw:name'] || '';
-            return `<img src="data:${type};base64,${data.base64}" alt="${esc(alt)}"${width ? ` width="${width}"` : ''}>`;
+            return `<img src="data:${type};base64,${data.base64}" alt="${esc(alt)}"${width ? ` width="${width}"` : ''}${height ? ` data-h="${height}"` : ''}>`;
         }
         return null;
     };
@@ -1274,7 +1289,7 @@ export function odtPackageToHtml(pkg, fileName = '', opts = {}) {
             // Allein im Absatz bleiben sie ein Bild-Baustein (zentrierbar, mit Unterschrift).
             const words = html.replace(/<img\b[^>]*>/g, '').replace(/<[^>]+>/g, '').replace(/&nbsp;|&emsp;|\s/g, '');
             const withInline = words && /<img\b/.test(html)
-                ? html.replace(/<img\b(?![^>]*\bws-float-)/g, '<img data-inline="1"')
+                ? html.replace(/<img\b(?![^>]*\bws-float-)[^>]*>/g, (tag) => (smallImage(tag) ? tag.replace('<img', '<img data-inline="1"') : tag))
                 : html;
             if (visible) {
                 parts.push(`<${tag}${alignAttr}>${wrap(withInline, styleName, isHeading)}</${tag}>`);

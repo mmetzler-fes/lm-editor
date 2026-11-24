@@ -507,11 +507,17 @@ function blocksOf(parent, warnings, used = new Set()) {
       }
     } else if (/^H[1-6]$/.test(tag)) {
       const level = Math.min(3, Math.max(1, Number(tag[1]) - 1));
-      const text = cleanText(inline(el, [], warnings));
+      const headImages = [];
+      const text = cleanText(inline(el, headImages, warnings));
       const id = text ? takeId(el, used) : null;
       if (!text) { /* leere Überschrift */ } else if (ds === 'section') out.push(withId({ type: 'section', text }, id));
       else if (ds === 'task' || ds === 'subtask') out.push(withId({ type: ds, title: text }, id));
       else out.push(withId({ type: 'heading', level, text }, id));
+      // Bild in der Überschrift (aus der .odt, oft rechts daneben verankert): folgt als Baustein.
+      for (const img of headImages) {
+        const b = imageBlock(img, warnings);
+        if (b) { close(); out.push(withId(b, takeId(img, used))); }
+      }
     } else if (tag === 'P' && ds === 'note') {
       const text = cleanText(inline(el, [], warnings)).replace(/^\*([\s\S]*)\*$/, '$1');
       if (text) out.push(withId({ type: 'note', text }, takeId(el, used)));
@@ -549,7 +555,11 @@ function blocksOf(parent, warnings, used = new Set()) {
         close();
         out.push(...blocksOf(holder, warnings, used));
       }
-      if (images.length) warnings.push(`${images.length} Bild${images.length === 1 ? '' : 'er'} in Listen weggelassen.`);
+      // Bilder in Listenpunkten (nicht im Text): folgen der Liste als Bausteine.
+      for (const img of images) {
+        const b = imageBlock(img, warnings);
+        if (b) { close(); out.push(withId(b, takeId(img, used))); }
+      }
     } else if (tag === 'TABLE' && el.classList.contains('ws-columns')) {
       // Spalten: je Zelle der ersten Zeile eine Spalte mit eigenen Bausteinen.
       const id = takeId(el, used);

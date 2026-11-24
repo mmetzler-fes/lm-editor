@@ -7,6 +7,7 @@
 // verloren (scripts/check-doc-pm.mjs gegen alle Dokumente).
 
 import MarkdownIt from '../vendor/markdown-it/markdown-it.mjs';
+import { lenientStrong } from './md-lenient.js';
 import { HIGHLIGHTS, INLINE_MATH_SOURCE, TEXT_COLORS } from './docspec.js';
 import { MARK_ORDER, PM_NODES } from './pm-schema.js';
 import { canonicalLine, pushText } from './pm-convert.js';
@@ -125,6 +126,7 @@ const node = (type, attrs, content) => ({
 // ---------- Parser: markdown-it mit eigenen Regeln ----------
 
 const md = new MarkdownIt({ html: false, linkify: false, typographer: false });
+lenientStrong(md); // **Titel:**Text wie in KI-Chats fett (md-lenient.js)
 // Adressen bleiben, wie sie sind; was davon gilt, entscheidet die Spec (nur http, https, mailto).
 md.validateLink = () => true;
 md.normalizeLink = (s) => s;

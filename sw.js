@@ -19,6 +19,7 @@ const CORE = [
   'src/doc/ids.js',
   'src/doc/image-group.js',
   'src/doc/mathml-latex.js',
+  'src/doc/md-lenient.js',
   'src/doc/paste.js',
   'src/doc/pm-convert.js',
   'src/doc/pm-markdown.js',

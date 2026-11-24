@@ -6,6 +6,7 @@
 // in einer Zeile, ein kleiner `line-height` ließe Zeichen übereinanderliegen.
 
 import MarkdownIt from '../vendor/markdown-it/markdown-it.mjs';
+import { lenientStrong } from './md-lenient.js';
 import { INLINE_MATH_SOURCE, validateDocSpec } from './docspec.js';
 import { htmlToDocSpec, specToEditorHtml } from './docspec-html.js';
 import { pmToSpec, specToPm } from './pm-convert.js';
@@ -33,6 +34,7 @@ const MATH_START = new RegExp(`^${INLINE_MATH_SOURCE}`);
 
 // Zeilenumbrüche bleiben Zeilenumbrüche (breaks), HTML im Text bleibt Text.
 const md = new MarkdownIt({ html: false, breaks: true, linkify: false });
+lenientStrong(md); // **Titel:**Text wie in KI-Chats fett (md-lenient.js)
 // Formeln unangetastet lassen: `_` und `*` darin sind keine Auszeichnung.
 md.inline.ruler.before('escape', 'ds_math', (state, silent) => {
   if (state.src[state.pos] !== '$') return false;

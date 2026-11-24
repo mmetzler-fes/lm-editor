@@ -197,6 +197,38 @@ export function mountTiptapSurface(box, host) {
       setTimeout(() => { if (!timer) { watch.disconnect(); holder.remove(); } }, 50);
     }).observe(document.body, { childList: true });
   };
+  /** Kleiner Dialog: Breite der Tabelle in cm. */
+  const askTableWidth = (pos) => {
+    const now = pm.tableWidth(pos);
+    const overlay = document.createElement('div');
+    overlay.className = 'confirm-overlay';
+    overlay.innerHTML = `<form class="import-modules-card ds-tprops" role="dialog" aria-modal="true">
+        <h3>↔ Breite der Tabelle</h3>
+        <label>Breite<span class="ds-para-in"><input name="w" inputmode="decimal" value="${now ? String(now).replace('.', ',') : ''}" placeholder="z. B. 8"> cm</span></label>
+        <p class="hint">Feste Spalten werden im gleichen Verhältnis breiter oder schmaler.</p>
+        <p class="hint ds-para-error" hidden>Bitte eine Zahl zwischen 1 und 25,5 (A4 quer).</p>
+        <div class="confirm-actions"><button type="button" class="btn btn-secondary" data-x>Abbrechen</button><button type="submit" class="btn btn-primary">OK</button></div>
+      </form>`;
+    document.body.appendChild(overlay);
+    const close = () => overlay.remove();
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+    overlay.querySelector('[data-x]').addEventListener('click', close);
+    const input = overlay.querySelector('input');
+    input.focus();
+    input.select();
+    overlay.querySelector('form').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const v = Number(String(input.value).trim().replace(',', '.'));
+      if (!(v >= 1 && v <= 25.5)) { overlay.querySelector('.ds-para-error').hidden = false; return; }
+      close();
+      pm.setTableWidth(pos, v);
+      // Schmaler als der Inhalt (Text und Innenabstand der Zellen) geht nicht – dann sagen, wie schmal es geht.
+      requestAnimationFrame(() => {
+        const shown = pm.renderedTableCm?.(pos);
+        if (shown && shown > v + 0.2) host.status?.(`ℹ️ Schmaler als ${String(shown).replace('.', ',')} cm geht es mit diesem Inhalt nicht (Text und Innenabstand der Zellen).`);
+      });
+    });
+  };
   const tableMenu = () => {
     const at = pm.tableAt();
     const check = (on, label) => `${on ? '✓ ' : ''}${label}`;
@@ -214,6 +246,7 @@ export function mountTiptapSurface(box, host) {
         : { label: '⇔ Spalten gleichmäßig verteilen', title: 'Alle Spalten gleich breit über die Breite der Tabelle (sonst die Seitenbreite, 16,5 cm). Mehrere Zellen markiert: nur diese Spalten', onClick: () => pm.distribute(at.pos, 'cols') },
       { label: '⇔ Spaltenbreiten automatisch', title: 'Keine festen Breiten: Die Tabelle füllt die Zeile, die Spalten richten sich nach dem Inhalt', onClick: () => pm.distribute(at.pos, 'auto') },
       { label: '⇕ Zeilen ohne feste Höhe', onClick: () => pm.distribute(at.pos, 'rows') }, '-',
+      { label: '↔ Breite der Tabelle …', title: 'Breite in cm – feste Spalten ändern sich im gleichen Verhältnis. Ziehen geht auch: am rechten Außenrand der Tabelle', onClick: () => askTableWidth(at.pos) },
       { label: check(!at.node.attrs.position, '⇤ Tabelle links'), onClick: () => pm.tablePosition(at.pos, '') },
       { label: check(at.node.attrs.position === 'center', '⇔ Tabelle in der Mitte'), onClick: () => pm.tablePosition(at.pos, 'center') },
       { label: check(at.node.attrs.position === 'right', '⇥ Tabelle rechts'), title: 'In Spalten: innerhalb der Spalte', onClick: () => pm.tablePosition(at.pos, 'right') }, '-',

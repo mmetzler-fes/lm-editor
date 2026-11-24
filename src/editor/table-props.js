@@ -126,10 +126,24 @@ function setTableProps(table, { width, position, sb, sa, pad }) {
 }
 
 /** Dialog „Tabelleneigenschaften“: Reiter Tabelle, Umrandung, Zellen – wirkt mit OK. `onDone`: danach. */
+/** Feste Spaltenbreiten (colgroup) in cm – oder null, wenn nicht jede Spalte fest ist. */
+function fixedColumnsCm(table) {
+  const cols = [...(table.querySelector(':scope > colgroup')?.children || [])];
+  if (!cols.length || cols.length < grid(table).cols) return null;
+  const out = cols.map((c) => {
+    const m = /^([\d.]+)(cm|mm)$/.exec((c.style.width || '').trim());
+    return m ? (m[2] === 'mm' ? Number(m[1]) / 10 : Number(m[1])) : NaN;
+  });
+  return out.every((x) => x > 0) ? out : null;
+}
+
 export function openTableProps(td, { onDone = null } = {}) {
   const table = td?.closest('table');
   if (!table) return;
   const d = table.dataset;
+  // Alle Spalten fest: Die Tabelle ist so breit wie ihre Spalten – das zeigt das Feld „Breite“.
+  const fixed = fixedColumnsCm(table);
+  const fixedSum = fixed ? Math.round(fixed.reduce((a, b) => a + b, 0) * 10) / 10 : null;
   const num = (v) => (v === undefined || v === '' ? '' : String(v).replace('.', ','));
   const opt = (list, cur) => list.map(([v, l]) => `<option value="${v}" ${String(cur) === String(v) ? 'selected' : ''}>${l}</option>`).join('');
   const plain = table.classList.contains('ws-table-plain');
@@ -143,7 +157,7 @@ export function openTableProps(td, { onDone = null } = {}) {
         <button type="button" class="admin-tab" data-tab="z">Zellen</button>
       </div>
       <div class="ds-para-grid" data-pane="t">
-        <label>Breite<span class="ds-para-in"><input name="width" inputmode="decimal" value="${num(d.width)}" placeholder="volle"> cm</span></label>
+        <label>Breite<span class="ds-para-in"><input name="width" inputmode="decimal" value="${num(fixedSum ?? d.width)}" placeholder="volle"> cm</span></label>
         <label>Lage auf der Seite<select name="position">${opt([['', 'Links'], ['center', 'Mitte'], ['right', 'Rechts']], d.position || '')}</select></label>
         <label>Abstand oben<span class="ds-para-in"><input name="sb" inputmode="decimal" value="${num(d.sb)}" placeholder="0,2"> cm</span></label>
         <label>Abstand unten<span class="ds-para-in"><input name="sa" inputmode="decimal" value="${num(d.sa)}" placeholder="0,2"> cm</span></label>
@@ -184,7 +198,12 @@ export function openTableProps(td, { onDone = null } = {}) {
     };
     const v = { width: cm(f.width.value, 2, 25.5), sb: cm(f.sb.value, 0, 3), sa: cm(f.sa.value, 0, 3), pad: cm(f.pad.value, 0, 1) };
     if (Object.values(v).some((x) => x === null)) { overlay.querySelector('.ds-para-error').hidden = false; return; }
-    setTableProps(table, { ...v, position: f.position.value });
+    if (fixed && v.width !== '' && v.width !== fixedSum) {
+      // Feste Spalten im gleichen Verhältnis auf die neue Breite.
+      const cols = [...table.querySelector(':scope > colgroup').children];
+      cols.forEach((c, i) => { c.style.width = `${Math.max(0.3, Math.round((fixed[i] * v.width) / fixedSum * 100) / 100)}cm`; });
+    }
+    setTableProps(table, { ...v, width: fixed ? '' : v.width, position: f.position.value });
     setLines(table, { width: f.lw.value, style: f.ls.value, color: f.lc.value });
     if (f.head.checked !== [...table.children].some((c) => c.tagName === 'THEAD')) toggleHeader(table);
     const cells = f.scope.value === 'all' ? grid(table).rows.flatMap(cellsOf) : [td];

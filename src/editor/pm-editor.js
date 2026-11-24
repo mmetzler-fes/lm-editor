@@ -319,6 +319,18 @@ function mathView({ node, getPos, editor }) {
 
 const lengthCss = (v) => (typeof v === 'number' ? `${v}cm` : v) || '';
 
+/** Feste Spaltenbreiten einer Tabelle in cm – oder null, wenn eine Spalte keine feste Breite hat. */
+function tableColumnsCm(node, cols) {
+  const w = Array.isArray(node.attrs.widths) ? node.attrs.widths : [];
+  const out = [];
+  for (let i = 0; i < cols; i++) {
+    const m = /^([\d.]+)\s*(cm|mm)?$/.exec(String(w[i] ?? '').trim());
+    if (!m || !Number(m[1])) return null;
+    out.push(m[2] === 'mm' ? Number(m[1]) / 10 : Number(m[1]));
+  }
+  return out.length ? out : null;
+}
+
 /**
  * Tabellenzeile wie gewohnt, aber die Zeilenhöhe, die tableView an das <tr> schreibt, ist kein
  * Tippen. Sonst zeichnete ProseMirror die Zeilen neu, tableView setzte die Höhe wieder … – eine
@@ -538,7 +550,7 @@ function columnsView({ node, getPos, editor }) {
         if (still > 0) next[i] = Math.max(least[i], r1(next[i] - still));
       }
       widths = next;
-      list.forEach((c, k) => { c.style.flex = `0 1 ${widths[k]}cm`; });
+      list.forEach((c, k) => { c.style.flex = `0 0 ${widths[k]}cm`; });
       layout();
     };
     const up = () => {
@@ -980,6 +992,39 @@ export function createPmEditor(element, spec, host = {}) {
       }
       editor.view.dispatch(editor.state.tr.setNodeAttribute(pos, what === 'rows' ? 'heights' : 'widths', value));
       editor.view.focus();
+    },
+    /**
+     * Breite der Tabelle an `pos` in cm: Feste Spalten ändern sich im gleichen Verhältnis,
+     * sonst bekommt die Tabelle die Breite und die Spalten richten sich nach dem Inhalt.
+     */
+    setTableWidth(pos, cm) {
+      const node = editor.state.doc.nodeAt(pos);
+      if (!node || !(cm > 0)) return;
+      const map = TableMap.get(node);
+      const fixed = tableColumnsCm(node, map.width);
+      let tr = editor.state.tr;
+      if (fixed) {
+        const sum = fixed.reduce((a, b) => a + b, 0);
+        tr = tr.setNodeAttribute(pos, 'widths', fixed.map((w) => `${Math.max(0.3, Math.round((w * cm) / sum * 100) / 100)}cm`)).setNodeAttribute(pos, 'width', null);
+      } else tr = tr.setNodeAttribute(pos, 'width', Math.round(cm * 10) / 10);
+      editor.view.dispatch(tr);
+      editor.view.focus();
+    },
+    /** Wie breit die Tabelle an `pos` gezeichnet ist, in cm. */
+    renderedTableCm(pos) {
+      const el = editor.view.nodeDOM(pos);
+      const table = el?.tagName === 'TABLE' ? el : el?.querySelector?.('table');
+      if (!table) return null;
+      const zoom = table.getBoundingClientRect().width / (table.offsetWidth || 1) || 1;
+      return Math.round((table.getBoundingClientRect().width / zoom / (96 / 2.54)) * 10) / 10;
+    },
+    /** Jetzige Breite der Tabelle an `pos` in cm (feste Spalten zusammen, sonst die Breite oder null). */
+    tableWidth(pos) {
+      const node = editor.state.doc.nodeAt(pos);
+      if (!node) return null;
+      const fixed = tableColumnsCm(node, TableMap.get(node).width);
+      if (fixed) return Math.round(fixed.reduce((a, b) => a + b, 0) * 10) / 10;
+      return Number(node.attrs.width) || null;
     },
     /** Lage der Tabelle an `pos` auf der Zeile: '' (links), 'center', 'right'. */
     tablePosition(pos, position) {

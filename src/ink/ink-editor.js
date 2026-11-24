@@ -2059,7 +2059,11 @@ const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-r
     const c = paperContent();
     if (!c) { setZoom(fitZoom()); return; }
     let z = fitZoom(c.width);
-    if (how === 'page') z = Math.min(z, Math.max(0.3, (scroller.clientHeight - 24) / c.height));
+    if (how === 'page') {
+      // Dokument: Das Blatt ist eine lange Seite – eingepasst wird eine Druckseite, nicht alles.
+      const sheetH = paperView ? ((paper?.page?.height || (paper?.landscape ? 21 : 29.7)) / 2.54) * 72 : Infinity;
+      z = Math.min(z, Math.max(0.3, (scroller.clientHeight - 24) / Math.min(c.height, sheetH)));
+    }
     setZoom(z);
     const page = pages[0];
     const pr = page.el.getBoundingClientRect(), sr = scroller.getBoundingClientRect();

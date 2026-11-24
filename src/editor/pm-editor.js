@@ -391,6 +391,29 @@ function tableView({ node, getPos, editor }) {
     const startY = e.clientY;
     const pxPerCm = 96 / 2.54;
     const zoom = dom.getBoundingClientRect().width / (dom.offsetWidth || 1);
+    if (edge.dir === 'col' && edge.index === edge.cols - 1) {
+      // Äußerer rechter Rand: die ganze Tabelle – alle Spalten im gleichen Verhältnis.
+      while (colgroup.children.length < edge.cols) colgroup.appendChild(document.createElement('col'));
+      const startCm = [...colgroup.children].slice(0, edge.cols).map((c) => c.getBoundingClientRect().width / zoom / pxPerCm);
+      const startTotal = startCm.reduce((a, b) => a + b, 0) || 1;
+      let widths = null;
+      const move = (ev) => {
+        const factor = Math.max(0.2, (startTotal + (ev.clientX - startX) / zoom / pxPerCm) / startTotal);
+        widths = startCm.map((w) => `${Math.max(0.3, Math.round(w * factor * 20) / 20)}cm`);
+        dom.classList.add('ds-table-fixed');
+        dom.style.width = '';
+        widths.forEach((w, i) => { colgroup.children[i].style.width = w; });
+      };
+      const up = () => {
+        document.removeEventListener('mousemove', move);
+        document.removeEventListener('mouseup', up);
+        if (!widths) return;
+        editor.view.dispatch(editor.state.tr.setNodeAttribute(getPos(), 'widths', widths).setNodeAttribute(getPos(), 'width', null));
+      };
+      document.addEventListener('mousemove', move);
+      document.addEventListener('mouseup', up);
+      return;
+    }
     if (edge.dir === 'col') {
       // Alle Spalten messen: Fest wird nur, was gezogen wurde; der Rest teilt sich den Platz.
       const was = Array.isArray(current.attrs.widths) ? current.attrs.widths : [];
@@ -443,6 +466,109 @@ function tableView({ node, getPos, editor }) {
     },
     // Unsere eigenen Stile an Tabelle, Spalten und Zeilen sind kein Tippen.
     ignoreMutation: (m) => m.type === 'attributes' || m.target === colgroup || colgroup.contains(m.target),
+  };
+}
+
+/**
+ * Spalten nebeneinander: zwischen zwei Spalten ein Griff, um die Breite zu ziehen.
+ * Die beiden Nachbarn tauschen Breite, die übrigen Spalten bleiben, wie sie sind
+ * (beim ersten Ziehen werden alle Spalten mit ihrer gezeichneten Breite fest).
+ */
+function columnsView({ node, getPos, editor }) {
+  let current = node;
+  const dom = document.createElement('div');
+  dom.className = 'ds-pm-columns-wrap';
+  const contentDOM = document.createElement('div');
+  contentDOM.className = 'ds-pm-columns';
+  const handles = document.createElement('div');
+  handles.className = 'ds-pm-col-handles';
+  handles.contentEditable = 'false';
+  dom.append(contentDOM, handles);
+  const pxPerCm = 96 / 2.54;
+  const zoomOf = () => dom.getBoundingClientRect().width / (dom.offsetWidth || 1) || 1;
+  const cols = () => [...contentDOM.children].filter((c) => c.classList.contains('ds-pm-column'));
+  const layout = () => {
+    const list = cols();
+    while (handles.children.length > Math.max(0, list.length - 1)) handles.lastChild.remove();
+    while (handles.children.length < list.length - 1) {
+      const h = document.createElement('div');
+      h.className = 'ds-pm-col-handle';
+      h.title = 'Ziehen: Spaltenbreite ändern';
+      handles.appendChild(h);
+    }
+    const box = dom.getBoundingClientRect();
+    const zoom = zoomOf();
+    [...handles.children].forEach((h, i) => {
+      const a = list[i].getBoundingClientRect();
+      const b = list[i + 1].getBoundingClientRect();
+      h.style.left = `${((a.right + b.left) / 2 - box.left) / zoom}px`;
+      h.dataset.index = String(i);
+    });
+  };
+  const ro = typeof ResizeObserver === 'function' ? new ResizeObserver(() => layout()) : null;
+  ro?.observe(contentDOM);
+  queueMicrotask(layout);
+  handles.addEventListener('mousedown', (e) => {
+    const h = e.target.closest('.ds-pm-col-handle');
+    if (!h) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const i = Number(h.dataset.index);
+    const list = cols();
+    const zoom = zoomOf();
+    const cssCm = (el) => parseFloat(getComputedStyle(el).width) / pxPerCm;
+    const r1 = (v) => Math.round(v * 10) / 10;
+    // Inhaltsbreite der Spalten (ohne Rand und Innenabstand) und der Platz der Zeile.
+    const start = list.map((c) => r1(cssCm(c)));
+    const frame = (c) => (c.offsetWidth - parseFloat(getComputedStyle(c).width)) / pxPerCm;
+    const gap = (parseFloat(getComputedStyle(contentDOM).columnGap) || 0) / pxPerCm;
+    const avail = cssCm(contentDOM) - gap * (list.length - 1) - list.reduce((s2, c) => s2 + frame(c), 0);
+    // Nicht schmaler als die breiteste Tabelle bzw. das breiteste Bild darin – sonst ragte sie in die Nachbarspalte.
+    const least = list.map((c) => Math.max(1, r1(Math.max(0, ...[...c.querySelectorAll('table, img')].map((t) => t.getBoundingClientRect().width / zoom / pxPerCm)) + 0.1)));
+    const startX = e.clientX;
+    let widths = null;
+    const move = (ev) => {
+      const next = [...start];
+      next[i] = Math.max(least[i], r1(start[i] + (ev.clientX - startX) / zoom / pxPerCm));
+      // Nur die linke Spalte ändert sich – bis die Zeile voll ist; dann gibt die rechte Nachbarin ab.
+      const over = next.reduce((a, b) => a + b, 0) - avail;
+      if (over > 0) {
+        next[i + 1] = Math.max(least[i + 1], r1(start[i + 1] - over));
+        const still = next.reduce((a, b) => a + b, 0) - avail;
+        if (still > 0) next[i] = Math.max(least[i], r1(next[i] - still));
+      }
+      widths = next;
+      list.forEach((c, k) => { c.style.flex = `0 1 ${widths[k]}cm`; });
+      layout();
+    };
+    const up = () => {
+      document.removeEventListener('mousemove', move);
+      document.removeEventListener('mouseup', up);
+      if (!widths) return;
+      const pos = getPos();
+      let tr = editor.state.tr;
+      let at = pos + 1;
+      current.forEach((child, _o, k) => {
+        if (widths[k] !== undefined) tr = tr.setNodeAttribute(at, 'width', `${widths[k]}cm`);
+        at += child.nodeSize;
+      });
+      editor.view.dispatch(tr);
+    };
+    document.addEventListener('mousemove', move);
+    document.addEventListener('mouseup', up);
+  });
+  return {
+    dom,
+    contentDOM,
+    update(next) {
+      if (next.type !== current.type) return false;
+      current = next;
+      queueMicrotask(layout);
+      return true;
+    },
+    stopEvent: (e) => handles.contains(e.target),
+    ignoreMutation: (m) => !contentDOM.contains(m.target) || m.target === contentDOM && m.type === 'attributes',
+    destroy: () => ro?.disconnect(),
   };
 }
 
@@ -558,6 +684,7 @@ export function createPmEditor(element, spec, host = {}) {
   nodeViews.inlineMath = mathView;
   nodeViews.table = tableView;
   nodeViews.tableRow = tableRowView;
+  nodeViews.columns = columnsView;
   nodeViews.heading = headingView;
   const toDoc = (s) => {
     const json = specToPm(s);
@@ -852,6 +979,11 @@ export function createPmEditor(element, spec, host = {}) {
         value = Array.from({ length: map.width }, (_, c) => (c >= span.left && c < span.right ? same[c - span.left] : was[c] ?? ''));
       }
       editor.view.dispatch(editor.state.tr.setNodeAttribute(pos, what === 'rows' ? 'heights' : 'widths', value));
+      editor.view.focus();
+    },
+    /** Lage der Tabelle an `pos` auf der Zeile: '' (links), 'center', 'right'. */
+    tablePosition(pos, position) {
+      editor.view.dispatch(editor.state.tr.setNodeAttribute(pos, 'position', position || null));
       editor.view.focus();
     },
     /** Markierte Spalten der Tabelle an `pos` ({ left, right }, rechts ausschließlich) – null bei weniger als zwei. */

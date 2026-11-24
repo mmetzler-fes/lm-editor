@@ -1459,7 +1459,8 @@ export function odtPackageToHtml(pkg, fileName = '', opts = {}) {
             }).join('');
             return { html: `<table>${colgroup}<tbody>${body}</tbody></table>`, w: cols.reduce((s, k) => s + cm(widths[k]), 0) };
         });
-        const outer = tables.every((t) => t.w > 0) ? `<colgroup>${tables.map((t) => `<col style="width:${Math.round(t.w * 100) / 100}cm">`).join('')}</colgroup>` : '';
+        // Etwas Luft: Zellrahmen und Innenabstand machen die Tabelle breiter als die Summe ihrer Spalten.
+        const outer = tables.every((t) => t.w > 0) ? `<colgroup>${tables.map((t) => `<col style="width:${Math.round((t.w + 0.5) * 100) / 100}cm">`).join('')}</colgroup>` : '';
         return `<table class="ws-columns">${outer}<tbody><tr>${tables.map((t) => `<td>${t.html}</td>`).join('')}</tr></tbody></table>`;
     };
     const table = (n) => {

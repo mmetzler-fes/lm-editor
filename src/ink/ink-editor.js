@@ -981,10 +981,10 @@ const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-r
   const barEnd = () => { barGrab = null; };
   bar.addEventListener('pointerup', barEnd);
   bar.addEventListener('pointercancel', barEnd);
-  $('.ink-zoom-in').addEventListener('click', () => setZoom(state.zoom * 1.25));
-  $('.ink-zoom-pct').addEventListener('click', () => setZoom(1));
-  $('.ink-zoom-out').addEventListener('click', () => setZoom(state.zoom / 1.25));
-  $('.ink-zoom-fit').addEventListener('click', () => setZoom(fitZoom()));
+  $('.ink-zoom-in').addEventListener('click', () => { state.zoomTouched = true; setZoom(state.zoom * 1.25); });
+  $('.ink-zoom-pct').addEventListener('click', () => { state.zoomTouched = true; setZoom(1); });
+  $('.ink-zoom-out').addEventListener('click', () => { state.zoomTouched = true; setZoom(state.zoom / 1.25); });
+  $('.ink-zoom-fit').addEventListener('click', () => fitContent());
   $('.ink-add-page').addEventListener('click', () => {
     snapshot();
     doc.pages.push({ items: [] });
@@ -1089,7 +1089,7 @@ const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-r
   // Zoom wie bei der HTML-App: ↔ und die Prozentanzeige bleiben am längsten (Handy: zwei Finger statt −/+).
   const OVERFLOW_ORDER = ['.ink-title', '.ink-feedback', '.ink-zoom-out', '.ink-zoom-in', '.ink-head', '.ink-add-page', '.ink-bg-select', '.ink-print', '.ink-save',
     '[data-tool="laser"]', '.ink-ruler-toggle', '[data-tool="shape"]', '[data-tool="field"]', '[data-tool="area"]', '.ink-share',
-    '[data-tool="text"]', '.ink-redo', '.ink-pages-toggle', '.ink-zoom-pct', '.ink-zoom-fit'];
+    '[data-tool="text"]', '.ink-redo', '.ink-pages-toggle'];
   const toolbarEl = $('.ink-toolbar');
   const moreBtn = $('.ink-bar-more');
   let overflowed = [];
@@ -1104,14 +1104,21 @@ const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-r
       const fits = () => toolbarEl.scrollWidth <= toolbarEl.clientWidth + 1;
       if (fits()) return;
       moreBtn.hidden = false;
+      const hide = (el) => {
+        if (el.hidden || el.classList.contains('ink-ovf') || !el.getClientRects().length) return false;
+        el.classList.add('ink-ovf');
+        overflowed.push(el);
+        return fits();
+      };
       for (const sel of OVERFLOW_ORDER) {
-        for (const el of toolbarEl.querySelectorAll(sel)) {
-          if (el.hidden || el.classList.contains('ink-ovf') || !el.getClientRects().length) continue;
-          el.classList.add('ink-ovf');
-          overflowed.push(el);
-          if (fits()) return;
-        }
+        for (const el of toolbarEl.querySelectorAll(sel)) if (hide(el)) return;
       }
+      // Reicht das nicht (Handy hochkant): alles Weitere von rechts nach links ins ⋯-Menü – nichts wird
+      // abgeschnitten. Schließen, Weiter/Zurück, ↔ und Zoom bleiben am längsten.
+      const KEEP = '.ink-close, .ink-bar-more, .ink-action, .ink-zoom-fit, .ink-zoom-pct';
+      const rest = [...toolbarEl.querySelectorAll('button, select')].filter((el) => !el.closest('.ink-ovf') && !el.matches(KEEP)).reverse();
+      for (const el of rest) if (hide(el)) return;
+      for (const el of [...toolbarEl.querySelectorAll('.ink-zoom-pct, .ink-zoom-fit, .ink-action')].reverse()) if (hide(el)) return;
     } finally {
       fitting = false;
     }
@@ -1526,9 +1533,12 @@ const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-r
     const page = { i: 0, w: 0, h: 0, el, svg: el.querySelector('.ink-svg'), top: el.querySelector('.ink-top'), texts: el.querySelector('.ink-texts'), paper: true };
     pages = [page];
     measurePaper();
+    const firstFit = !state.zoomSet;
     if (!state.zoomSet) { state.zoom = fitZoom(page.w); state.zoomSet = true; }
     showZoomPct();
     sizePage(page);
+    // Wie ein Druck auf ↔: auf den Inhalt des Blatts, nicht auf die Seite mit ihren Rändern.
+    if (firstFit) requestAnimationFrame(() => { if (paperView && !state.zoomTouched) fitContent(); });
     doc.pages = [{ items: fromLayer() }];
     bindInput(page);
     addKaroHandles();
@@ -2004,6 +2014,38 @@ const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-r
     ctx.beginPath();
     for (const [x0, y0, x1, y1] of ruling(kind, p.w, p.h)) { ctx.moveTo(x0 * scale, y0 * scale); ctx.lineTo(x1 * scale, y1 * scale); }
     ctx.stroke();
+  }
+
+  /**
+   * ↔ auf einem Blatt (Dokument, Quiz): auf die Breite dessen, was darauf steht – nicht auf die
+   * Seite samt ihren Rändern, sonst bleibt links und rechts viel Luft (Handy). Ergebnis in Seiten-
+   * einheiten { left, width } oder null (ohne Blatt, nichts zu messen).
+   */
+  function paperContent() {
+    const page = pages[0];
+    if (!page?.paper || !paperView?.el) return null;
+    const base = page.el.getBoundingClientRect();
+    if (!base.width) return null;
+    let left = Infinity, right = -Infinity;
+    for (const b of paperView.el.querySelectorAll('.ds-b, .ds-editor-header, .lm-head')) {
+      const r = b.getBoundingClientRect();
+      if (!r.width) continue;
+      if (r.left < left) left = r.left;
+      if (r.right > right) right = r.right;
+    }
+    if (!(right > left)) return null;
+    const unit = base.width / page.w; // Bildschirmpixel je Seiteneinheit
+    const pad = 6;
+    return { left: Math.max(0, (left - base.left) / unit - pad), width: Math.min(page.w, (right - left) / unit + 2 * pad) };
+  }
+  /** ↔: Inhalt des Blatts auf die ganze Breite, links bündig im Bild. */
+  function fitContent() {
+    const c = paperContent();
+    if (!c) { setZoom(fitZoom()); return; }
+    setZoom(fitZoom(c.width));
+    const page = pages[0];
+    const offset = page.el.getBoundingClientRect().left - scroller.getBoundingClientRect().left + scroller.scrollLeft;
+    scroller.scrollLeft = Math.max(0, offset + c.left * (page.el.getBoundingClientRect().width / page.w) - 12);
   }
 
   function fitZoom(pageW = pages[0]?.w || A4.w) {
@@ -4405,6 +4447,7 @@ const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-r
     pagesEl.style.transform = '';
     pagesEl.style.transformOrigin = '';
     if (Math.abs(s - 1) < 0.03) return; // nur verschoben
+    state.zoomTouched = true;
     const r = scroller.getBoundingClientRect();
     setZoom(z0 * s, { x: r.left + c[0] - scroller.scrollLeft, y: r.top + c[1] - scroller.scrollTop });
   };

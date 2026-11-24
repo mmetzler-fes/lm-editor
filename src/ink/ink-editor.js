@@ -1439,11 +1439,46 @@ const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-r
   const anchorY = (it) => (it.points ? it.points[0][1] : it.y);
 
   function leavePaper() {
+    undockBank();
     paperView?.observer?.disconnect();
     paperView = null;
   }
 
+  /**
+   * Wörter zum Ziehen (Drag the Words) neben dem Blatt: Hat das Blatt genau eine Wortablage und ist
+   * neben dem Blatt Platz, kommt sie in eine Leiste rechts – sie verdeckt dann keinen Text, und das Blatt
+   * passt sich an die übrige Breite an. Gezogen wird wie vorher (über den Bildschirmpunkt). Vor dem
+   * Speichern, Neuaufbau und Schließen kehrt sie an ihren Platz im Quiz zurück.
+   */
+  let bankDock = null; // { panel, bank, mark }
+  const BANK_ROOM = 860; // so breit muss die Fläche mindestens sein (Blatt + Leiste)
+  function dockBank(sheet) {
+    undockBank();
+    const banks = sheet.querySelectorAll('.dtw-word-bank');
+    if (banks.length !== 1 || overlay.querySelector('.ink-stage').clientWidth < BANK_ROOM) return;
+    const bank = banks[0];
+    const mark = document.createComment('wortablage');
+    bank.replaceWith(mark);
+    const panel = document.createElement('aside');
+    panel.className = 'ink-bank-side';
+    panel.setAttribute('aria-label', 'Wörter zum Ziehen');
+    panel.innerHTML = '<div class="ink-bank-head">Wörter zum Ziehen</div>';
+    panel.appendChild(bank);
+    overlay.querySelector('.ink-stage').appendChild(panel);
+    overlay.querySelector('.ink-stage').classList.add('ink-has-bank');
+    bankDock = { panel, bank, mark };
+  }
+  function undockBank() {
+    if (!bankDock) return;
+    const { panel, bank, mark } = bankDock;
+    bankDock = null;
+    if (mark.isConnected) mark.replaceWith(bank);
+    panel.remove();
+    overlay.querySelector('.ink-stage')?.classList.remove('ink-has-bank');
+  }
+
   async function layoutPaper() {
+    undockBank();
     if (paperView) { layer = toLayer(); captureForms(); }
     leavePaper();
     status('Wird geladen …');
@@ -1474,6 +1509,7 @@ const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-r
       sheet.addEventListener('input', changed);
       sheet.addEventListener('change', changed);
     }
+    dockBank(sheet);
     if (headOn && paper.headerPdf) {
       try { placeHead(sheet, await headStrip()); } catch (err) { status(`Kopfzeile: ${err.message}`); }
     }
@@ -4381,6 +4417,7 @@ const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-r
     return closing;
   }
   async function closeNow() {
+    undockBank();
     if (document.activeElement?.classList?.contains('ink-text')) document.activeElement.blur();
     await persist();
     leavePaper();

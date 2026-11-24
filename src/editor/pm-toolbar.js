@@ -53,6 +53,77 @@ export async function cropImageBlock(block, storeImage = (file) => window.appIma
   return { ...block, src, ...(width ? { width } : {}) };
 }
 
+/**
+ * Dialog für ein Bild im Text: Breite, Beschreibung; zuschneiden, als eigenes Bild, entfernen.
+ * `ops`: { apply(attrs), remove(), toBlock() }.
+ */
+export function openInlineImageDialog(attrs, { apply, remove, toBlock }, storeImage = (file) => window.appImageStore?.(file)) {
+  const overlay = document.createElement('div');
+  overlay.className = 'confirm-overlay';
+  const unit = /^(\d+(?:\.\d+)?)(cm|mm|px)$/.exec(String(attrs.width ?? ''));
+  const cm = unit ? (unit[2] === 'cm' ? Number(unit[1]) : unit[2] === 'mm' ? Number(unit[1]) / 10 : Math.round((Number(unit[1]) / 96) * 2.54 * 100) / 100) : '';
+  overlay.innerHTML = `<form class="import-modules-card ds-para-dialog ds-image-dialog" role="dialog" aria-modal="true">
+      <h3>🖼 Bild im Text</h3>
+      <div class="ds-pm-image-preview"></div>
+      <div class="ds-image-tools">
+        <button type="button" class="btn btn-secondary btn-sm" data-a="crop" title="Rand wegschneiden – das Original bleibt unverändert">✂ Zuschneiden</button>
+        <button type="button" class="btn btn-secondary btn-sm" data-a="block" title="Eigenes Bild unter dem Absatz – mit Lage, Unterschrift, Rahmen">⬚ Als eigenes Bild</button>
+      </div>
+      <div class="ds-para-grid">
+        <label>Breite<span class="ds-para-in"><input name="width" inputmode="decimal" value="${String(cm).replace('.', ',')}" placeholder="wie das Bild"> cm</span></label>
+        <label class="ds-image-wide">Beschreibung (Screenreader)<input name="alt" maxlength="200" value="${escapeAttr(attrs.alt ?? '')}" placeholder="Was zeigt das Bild?"></label>
+      </div>
+      <p class="hint">Steht in der Zeile wie ein Zeichen, mittig zur Schrift.</p>
+      <p class="hint ds-para-error" hidden>Breite bitte als Zahl in cm, 0,2 bis 16,5.</p>
+      <div class="confirm-actions">
+        <button type="button" class="btn btn-danger ds-image-del" data-a="del">🗑 Entfernen</button>
+        <button type="button" class="btn btn-secondary" data-a="cancel">Abbrechen</button>
+        <button type="submit" class="btn btn-primary">OK</button>
+      </div></form>`;
+  document.body.appendChild(overlay);
+  let src = attrs.src;
+  const preview = overlay.querySelector('.ds-pm-image-preview');
+  const show = () => { preview.replaceChildren(Object.assign(new Image(), { src: src || '', alt: '' })); };
+  show();
+  const close = () => overlay.remove();
+  const widthField = overlay.querySelector('[name=width]');
+  overlay.addEventListener('click', async (e) => {
+    const what = e.target.dataset?.a;
+    if (what === 'cancel') close();
+    else if (what === 'del') { remove(); close(); } else if (what === 'block') { close(); toBlock(); } else if (what === 'crop') {
+      const typed = Number(widthField.value.trim().replace(',', '.'));
+      const cut = await cropImageBlock({ src, ...(typed > 0 ? { width: `${typed}cm` } : {}) }, storeImage);
+      if (cut) {
+        src = cut.src;
+        show();
+        const w = /^(\d+(?:\.\d+)?)cm$/.exec(String(cut.width ?? ''))?.[1];
+        if (w) widthField.value = w.replace('.', ',');
+      }
+    }
+  });
+  overlay.querySelector('form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const typed = widthField.value.trim().replace(',', '.');
+    let width = attrs.width ?? null;
+    if (typed) {
+      const n = Number(typed);
+      if (!(n >= 0.2 && n <= 16.5)) { overlay.querySelector('.ds-para-error').hidden = false; return; }
+      width = `${n}cm`;
+    } else width = null;
+    const alt = e.target.elements.alt.value.trim();
+    apply({ src, width, alt: alt || null });
+    close();
+  });
+}
+
+/** Natürliche Breite eines Bilds in cm (96 dpi), höchstens `max`. */
+const naturalCm = (src, max) => new Promise((resolve) => {
+  const img = new Image();
+  img.onload = () => resolve(Math.max(0.3, Math.min(max, Math.round(((img.naturalWidth || 96) / 96) * 2.54 * 10) / 10)));
+  img.onerror = () => resolve(Math.min(1, max));
+  img.src = src;
+});
+
 const IMAGE_PLACES = [['', 'wie der Text der Vorlage'], ['float:left', 'neben dem Text, links'], ['float:right', 'neben dem Text, rechts'], ['align:center', 'eigene Zeile, mittig'], ['align:right', 'eigene Zeile, rechts']];
 
 /**
@@ -188,6 +259,7 @@ export function mountTiptapSurface(box, host) {
     imageFromFile: (file) => host.imageFromFile(file),
     // 📋 in der Leiste über einem Bild – nur, wo der Gastgeber Bilder kopieren kann.
     copyImage: window.appImageClipboard ? copyImage : null,
+    editInlineImage: (attrs, ops) => openInlineImageDialog(attrs, ops, host.storeImage),
     penSelects: host.penSelects,
   });
   pm.el = el;
@@ -394,7 +466,10 @@ export function mountTiptapSurface(box, host) {
       showContextMenu(r.left, r.bottom + 4, menus[b.dataset.dd]());
     } else if (b.classList.contains('ds-pm-plus')) {
       const r = b.getBoundingClientRect();
-      showContextMenu(r.left, r.bottom + 4, host.insertEntries(pm));
+      showContextMenu(r.left, r.bottom + 4, [
+        ...(pm.editor.state.selection.$from.parent.isTextblock && host.imageFromFile ? [{ label: '🖼 Bild im Text …', onClick: insertInlineImage }, '-'] : []),
+        ...host.insertEntries(pm),
+      ]);
     }
   });
   /** Bilder nebeneinander in einen Zeichenrahmen: Seitenverhältnisse erst messen. */
@@ -408,16 +483,39 @@ export function mountTiptapSurface(box, host) {
     const images = await Promise.all(run.images.map(measure));
     pm.replaceRange(run.from, run.to, [{ type: 'group', ...groupRow(images) }]);
   };
+  /** Bild im Text an der Schreibmarke: Datei wählen, ablegen wie andere Bilder, Breite wie das Bild (höchstens 2,5 cm). */
+  const insertInlineImage = () => {
+    const input = Object.assign(document.createElement('input'), { type: 'file', accept: 'image/png,image/jpeg,image/gif,image/webp,image/svg+xml' });
+    input.onchange = async () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      const block = await host.imageFromFile?.(file);
+      if (!block?.src) return;
+      pm.insertInlineImage({ src: block.src, alt: block.alt || null, width: `${await naturalCm(block.src, 2.5)}cm` });
+    };
+    input.click();
+  };
+  /** Menüeinträge für ein gewähltes Bild im Text. */
+  const inlineImageEntries = () => {
+    const sel = pm.selectedInlineImage?.();
+    if (!sel) return [];
+    return [
+      { label: '🖼 Bild im Text …', onClick: () => sel.edit() },
+      { label: '⬚ Als eigenes Bild (Baustein)', onClick: () => sel.toBlock() },
+      '-',
+    ];
+  };
   /** Menüeinträge für den gewählten Baustein am Stück. */
   const atomEntries = () => {
     const sel = pm.selectedBlock();
-    if (!sel) return [];
+    if (!sel) return inlineImageEntries();
     const run = pm.imageRun();
     const image = sel.block.type === 'image';
     return [
       { label: '✏️ Bearbeiten', onClick: () => host.editBlock(sel.block, sel.apply) },
       ...(image ? [
         { label: '✂ Zuschneiden …', onClick: async () => { const cut = await cropImageBlock(sel.block); if (cut) sel.apply(cut); } },
+        { label: '↘ Als Bild im Text (wie ein Zeichen)', onClick: () => pm.imageToInline() },
         ...(window.appImageClipboard ? [
           { label: '📋 Bild kopieren', onClick: () => copyImage(sel.block) },
           { label: '⬇ Bild speichern', onClick: () => saveImage(sel.block) },
@@ -441,6 +539,7 @@ export function mountTiptapSurface(box, host) {
       ...fields, ...(fields.length ? ['-'] : []),
       ...(pm.paragraphAttrs() ? [{ label: '¶ Absatz …', onClick: paragraphDialog }] : []),
       ...(pm.editor.state.selection.$from.parent.isTextblock ? [{ label: 'Ω Sonderzeichen …', onClick: specialChars }] : []),
+      ...(pm.editor.state.selection.$from.parent.isTextblock && host.imageFromFile ? [{ label: '🖼 Bild im Text …', onClick: insertInlineImage }] : []),
       { label: '↑ Nach oben', onClick: () => pm.move(-1) },
       { label: '↓ Nach unten', onClick: () => pm.move(1) },
       { label: '⧉ Verdoppeln', onClick: () => pm.duplicate() },

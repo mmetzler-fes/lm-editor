@@ -317,6 +317,73 @@ function mathView({ node, getPos, editor }) {
   return { dom, update: (next) => (next.type === node.type ? (paint(next.attrs.latex), true) : false), ignoreMutation: () => true };
 }
 
+/** Bild im Text: wie ein Zeichen; Doppelklick öffnet den kleinen Dialog (Breite, Zuschneiden, als Baustein). */
+function inlineImageView(host) {
+  return ({ node, getPos, editor }) => {
+    const dom = document.createElement('img');
+    dom.className = 'ds-inline-img';
+    dom.contentEditable = 'false';
+    dom.draggable = false;
+    dom.dataset.pmAtom = 'inlineImage';
+    const paint = (attrs) => {
+      dom.src = attrs.src || '';
+      dom.alt = attrs.alt || '';
+      dom.style.width = attrs.width || '';
+      dom.title = 'Bild im Text – Doppelklick: Größe, Zuschneiden, als eigenes Bild';
+    };
+    paint(node.attrs);
+    dom.addEventListener('dblclick', (e) => {
+      e.preventDefault();
+      editInlineImage(editor, getPos(), host);
+    });
+    return {
+      dom,
+      update: (next) => (next.type === node.type ? (paint(next.attrs), true) : false),
+      selectNode: () => dom.classList.add('ProseMirror-selectednode'),
+      deselectNode: () => dom.classList.remove('ProseMirror-selectednode'),
+      ignoreMutation: () => true,
+    };
+  };
+}
+
+/** Dialog des Gastgebers für das Bild im Text an `pos`. */
+function editInlineImage(editor, pos, host) {
+  const node = editor.state.doc.nodeAt(pos);
+  if (node?.type.name !== 'inlineImage' || !host.editInlineImage) return;
+  host.editInlineImage({ ...node.attrs }, {
+    apply: (attrs) => {
+      const cur = editor.state.doc.nodeAt(pos);
+      if (cur?.type.name !== 'inlineImage') return;
+      editor.view.dispatch(editor.state.tr.setNodeMarkup(pos, null, { ...cur.attrs, ...attrs }));
+    },
+    remove: () => editor.view.dispatch(editor.state.tr.delete(pos, pos + 1)),
+    toBlock: () => inlineToBlock(editor, pos),
+  });
+}
+
+/** Bild im Text → eigener Bild-Baustein nach dem Absatz (bzw. statt des Absatzes, wenn sonst nichts darin steht). */
+function inlineToBlock(editor, pos) {
+  const { state } = editor;
+  const node = state.doc.nodeAt(pos);
+  if (node?.type.name !== 'inlineImage') return false;
+  const $pos = state.doc.resolve(pos);
+  // Der nächste Behälter, der Bausteine aufnimmt (Dokument, Zelle, Spalte …).
+  let d = $pos.depth;
+  while (d > 0 && !$pos.node(d - 1).type.contentMatch.matchType(state.schema.nodes.image)) d--;
+  if (d < 1) return false;
+  const width = node.attrs.width && /cm$/.test(node.attrs.width) ? node.attrs.width : null;
+  const image = state.schema.nodes.image.create({ src: node.attrs.src, ...(node.attrs.alt ? { alt: node.attrs.alt } : {}), ...(width ? { width } : {}) });
+  const para = $pos.node(d);
+  const tr = state.tr;
+  if (para.content.size === node.nodeSize) tr.replaceWith($pos.before(d), $pos.after(d), image);
+  else {
+    tr.insert($pos.after(d), image);
+    tr.delete(pos, pos + 1);
+  }
+  editor.view.dispatch(tr);
+  return true;
+}
+
 const lengthCss = (v) => (typeof v === 'number' ? `${v}cm` : v) || '';
 
 /** Feste Spaltenbreiten einer Tabelle in cm – oder null, wenn eine Spalte keine feste Breite hat. */
@@ -698,6 +765,7 @@ export function createPmEditor(element, spec, host = {}) {
   let lastCopy = null;
   const nodeViews = Object.fromEntries(ATOMS.map((t) => [t, atomView(host)]));
   nodeViews.inlineMath = mathView;
+  nodeViews.inlineImage = inlineImageView(host);
   nodeViews.table = tableView;
   nodeViews.tableRow = tableRowView;
   nodeViews.columns = columnsView;
@@ -719,7 +787,7 @@ export function createPmEditor(element, spec, host = {}) {
             handler: ({ state, range, match }) => { state.tr.replaceWith(range.from, range.to, type.create({ latex: match.groups.math })); },
           })],
         },
-        inlineAtomText: { inlineMath: ({ node }) => `$${node.attrs.latex}$` },
+        inlineAtomText: { inlineMath: ({ node }) => `$${node.attrs.latex}$`, inlineImage: ({ node }) => (node.attrs.alt ? `[${node.attrs.alt}]` : '') },
       }),
       BlockIds,
       Basics,
@@ -785,7 +853,7 @@ export function createPmEditor(element, spec, host = {}) {
       // Reiner Text in der Zwischenablage ist Markdown – Karos und Lösungen gehen auch anderswo nicht verloren.
       clipboardTextSerializer: (slice) => {
         const content = slice.content.toJSON() || [];
-        if (content.every((n) => n.type !== 'text' && n.type !== 'listItem' && n.type !== 'tableRow' && n.type !== 'hardBreak' && n.type !== 'inlineMath')) {
+        if (content.every((n) => n.type !== 'text' && n.type !== 'listItem' && n.type !== 'tableRow' && n.type !== 'hardBreak' && n.type !== 'inlineMath' && n.type !== 'inlineImage')) {
           return pmToMarkdown({ type: 'doc', content }, { ids: false });
         }
         return slice.content.textBetween(0, slice.content.size, '\n', (leaf) => (leaf.type.name === 'inlineMath' ? `$${leaf.attrs.latex}$` : leaf.type.name === 'hardBreak' ? '\n' : ''));
@@ -1092,10 +1160,42 @@ export function createPmEditor(element, spec, host = {}) {
       view.dispatch(state.tr.replaceWith(from, to, nodes));
       view.focus();
     },
+    /** Bild im Text an der Schreibmarke einfügen (`attrs`: src, alt, width). */
+    insertInlineImage(attrs) {
+      const { state, view } = editor;
+      if (!state.selection.$from.parent.isTextblock) return false;
+      view.dispatch(state.tr.replaceSelectionWith(state.schema.nodes.inlineImage.create(attrs), true).scrollIntoView());
+      view.focus();
+      return true;
+    },
+    /** Gewähltes Bild im Text: { attrs, edit(), toBlock() } oder null. */
+    selectedInlineImage() {
+      const { selection } = editor.state;
+      if (!(selection instanceof NodeSelection) || selection.node.type.name !== 'inlineImage') return null;
+      const pos = selection.from;
+      return { attrs: { ...selection.node.attrs }, edit: () => editInlineImage(editor, pos, host), toBlock: () => inlineToBlock(editor, pos) };
+    },
+    /** Gewählter Bild-Baustein → Bild im Text in einem eigenen Absatz (daneben lässt sich schreiben). */
+    imageToInline() {
+      const { state, view } = editor;
+      const { selection } = state;
+      if (!(selection instanceof NodeSelection) || selection.node.type.name !== 'image') return false;
+      const b = blockOfNode(selection.node);
+      const cm = /^(\d+(?:\.\d+)?)cm$/.exec(String(b.width ?? ''))?.[1];
+      // Als Zeichen höchstens 8 cm breit; die Bildunterschrift wird zum Bildtext.
+      const width = cm ? `${Math.min(Number(cm), 8)}cm` : '3cm';
+      const img = state.schema.nodes.inlineImage.create({ src: b.src, alt: b.alt || b.caption || null, width });
+      const para = state.schema.nodes.paragraph.create(null, img);
+      const tr = state.tr.replaceWith(selection.from, selection.to, para);
+      tr.setSelection(TextSelection.create(tr.doc, selection.from + 2));
+      view.dispatch(tr);
+      view.focus();
+      return true;
+    },
     /** Gerade gewählter Baustein am Stück mit seiner Ersetzungsfunktion. */
     selectedBlock() {
       const { selection } = editor.state;
-      if (!(selection instanceof NodeSelection)) return null;
+      if (!(selection instanceof NodeSelection) || selection.node.isInline) return null;
       const pos = selection.from;
       return { block: blockOfNode(selection.node), apply: applyAt(editor, () => pos) };
     },

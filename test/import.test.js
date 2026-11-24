@@ -55,3 +55,25 @@ test('Folien (.odp/.odg) erkennt und liest derselbe Leser', async () => {
   const { html } = odtToHtml(bytes, 'Skizze.odg');
   assert.equal(html, '<h2>Skizze</h2>');
 });
+
+test('.odt: zugeschnittenes Bild (fo:clip) – nur der Ausschnitt, als SVG um das Bild', async () => {
+  const { zipSync, strToU8 } = await import('../src/vendor/fflate/fflate.js');
+  // PNG 200×100 px mit 96 dpi (ohne pHYs): 5,29 × 2,65 cm. Links 1,3229 cm = 50 px weg.
+  const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52, 0, 0, 0, 200, 0, 0, 0, 100, 8, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82]);
+  const ns = 'xmlns:office="o" xmlns:draw="d" xmlns:text="t" xmlns:style="st" xmlns:svg="s" xmlns:fo="f" xmlns:xlink="x"';
+  const bytes = zipSync({
+    mimetype: strToU8('application/vnd.oasis.opendocument.text'),
+    'Pictures/a.png': png,
+    'content.xml': strToU8(`<office:document-content ${ns}><office:automatic-styles>`
+      + '<style:style style:name="gr1" style:family="graphic"><style:graphic-properties fo:clip="rect(0cm, 0cm, 0cm, 1.3229cm)"/></style:style>'
+      + '</office:automatic-styles><office:body><office:text><text:p>'
+      + '<draw:frame draw:style-name="gr1" draw:name="Bild" text:anchor-type="as-char" svg:width="4cm" svg:height="2cm"><draw:image xlink:href="Pictures/a.png"/></draw:frame>'
+      + '</text:p></office:text></office:body></office:document-content>'),
+  }, { level: 0 });
+  const { html } = odtToHtml(bytes, 'z.odt');
+  const b64 = /src="data:image\/svg\+xml;base64,([^"]+)"/.exec(html)?.[1];
+  assert.ok(b64, html.slice(0, 200));
+  const svg = Buffer.from(b64, 'base64').toString('utf8');
+  assert.match(svg, /viewBox="50 0 150 100"/);
+  assert.match(svg, /<image width="200" height="100"/);
+});

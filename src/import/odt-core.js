@@ -252,6 +252,8 @@ class Styles {
                 info.markerEnd = g['draw:marker-end'];
             if (g['draw:fill-image-name'])
                 info.fillImage = g['draw:fill-image-name'];
+            if (g['fo:clip'])
+                info.clip = g['fo:clip'];
             if (g['fo:border'])
                 info.border = g['fo:border'];
             if (g['fo:background-color'])
@@ -445,6 +447,115 @@ function odfPoint(t, x, y) {
     }
     return [x, y];
 }
+// ---- Zugeschnittene Bilder (fo:clip) ----
+// LibreOffice speichert das ganze Bild und dazu den Rand, der weggeschnitten ist:
+// fo:clip="rect(oben, rechts, unten, links)" in cm, gemessen an der Originalgröße
+// des Bilds (Pixel und Auflösung der Datei, ohne Angabe 96 dpi). Der sichtbare Rest
+// füllt den Rahmen (svg:width × svg:height), auch verzerrt.
+// Ergebnis: ein SVG mit dem Bild darin und dem Ausschnitt als viewBox.
+
+const B64_INDEX = Object.fromEntries([...B64].map((c, i) => [c, i]));
+
+/** Die ersten Bytes aus Base64 (für den Bildkopf genügt der Anfang). */
+function base64Head(b64, maxBytes = 256 * 1024) {
+  const chars = b64.slice(0, Math.ceil(maxBytes / 3) * 4).replace(/[^A-Za-z0-9+/]/g, '');
+  const out = new Uint8Array(Math.floor((chars.length * 3) / 4));
+  let o = 0;
+  for (let i = 0; i < chars.length; i += 4) {
+    const n = (B64_INDEX[chars[i]] << 18) | (B64_INDEX[chars[i + 1]] << 12) | ((B64_INDEX[chars[i + 2]] ?? 0) << 6) | (B64_INDEX[chars[i + 3]] ?? 0);
+    if (o < out.length) out[o++] = (n >> 16) & 255;
+    if (o < out.length) out[o++] = (n >> 8) & 255;
+    if (o < out.length) out[o++] = n & 255;
+  }
+  return out;
+}
+
+/** Pixel und Auflösung (dpi) eines PNG oder JPEG; sonst null. */
+function imageGeometry(bytes) {
+  const u16 = (i) => (bytes[i] << 8) | bytes[i + 1];
+  const u32 = (i) => ((bytes[i] << 24) >>> 0) + ((bytes[i + 1] << 16) | (bytes[i + 2] << 8) | bytes[i + 3]);
+  // PNG: IHDR, dann ggf. pHYs (Pixel je Meter).
+  if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) {
+    const r = { width: u32(16), height: u32(20), dpiX: 96, dpiY: 96 };
+    for (let i = 8; i + 8 < bytes.length;) {
+      const len = u32(i);
+      const type = String.fromCharCode(bytes[i + 4], bytes[i + 5], bytes[i + 6], bytes[i + 7]);
+      if (type === 'pHYs' && bytes[i + 16] === 1) {
+        const x = u32(i + 8);
+        const y = u32(i + 12);
+        if (x && y) { r.dpiX = x * 0.0254; r.dpiY = y * 0.0254; }
+      }
+      if (type === 'IDAT' || type === 'IEND') break;
+      i += 12 + len;
+    }
+    return r.width && r.height ? r : null;
+  }
+  // JPEG: JFIF-Dichte (APP0) und Größe aus dem SOF-Segment.
+  if (bytes[0] === 0xff && bytes[1] === 0xd8) {
+    let dpiX = 96;
+    let dpiY = 96;
+    for (let i = 2; i + 9 < bytes.length;) {
+      if (bytes[i] !== 0xff) { i++; continue; }
+      const marker = bytes[i + 1];
+      if (marker === 0xd8 || marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) { i += 2; continue; }
+      const len = u16(i + 2);
+      if (marker === 0xe0 && String.fromCharCode(...bytes.slice(i + 4, i + 8)) === 'JFIF') {
+        const unit = bytes[i + 11];
+        const x = u16(i + 12);
+        const y = u16(i + 14);
+        if (x && y && unit === 1) { dpiX = x; dpiY = y; }
+        if (x && y && unit === 2) { dpiX = x * 2.54; dpiY = y * 2.54; }
+      }
+      if (marker >= 0xc0 && marker <= 0xcf && ![0xc4, 0xc8, 0xcc].includes(marker)) {
+        const height = u16(i + 5);
+        const width = u16(i + 7);
+        return width && height ? { width, height, dpiX, dpiY } : null;
+      }
+      if (marker === 0xda) break;
+      i += 2 + len;
+    }
+  }
+  return null;
+}
+
+const cmOf = (v) => {
+  const m = /^(-?\d+(?:\.\d+)?)(cm|mm|in|pt|px)?$/.exec(String(v).trim());
+  if (!m) return NaN;
+  const n = parseFloat(m[1]);
+  return { cm: n, mm: n / 10, in: n * 2.54, pt: (n / 72) * 2.54, px: (n / 96) * 2.54 }[m[2] || 'cm'];
+};
+
+/** fo:clip="rect(o, r, u, l)" → Rand in cm, null ohne Zuschnitt. */
+function parseClip(clip) {
+  const m = /^rect\(\s*([^,\s]+)[,\s]+([^,\s]+)[,\s]+([^,\s]+)[,\s]+([^,\s)]+)\s*\)$/.exec(String(clip || '').trim());
+  if (!m) return null;
+  const [top, right, bottom, left] = m.slice(1).map((v) => (v === 'auto' ? 0 : cmOf(v)));
+  if (![top, right, bottom, left].every(Number.isFinite)) return null;
+  if (top <= 0.005 && right <= 0.005 && bottom <= 0.005 && left <= 0.005) return null;
+  return { top, right, bottom, left };
+}
+
+/**
+ * Zugeschnittenes Bild als SVG-Text: `mime`/`b64` das Originalbild, `clip` aus parseClip,
+ * `frameW`/`frameH` die Größe des Rahmens in px. null, wenn sich nichts sinnvoll schneiden lässt.
+ */
+function clippedSvg(mime, b64, clip, frameW, frameH) {
+  const geo = imageGeometry(base64Head(b64));
+  if (!geo || !clip) return null;
+  const px = (cm, dpi) => (cm / 2.54) * dpi;
+  const l = px(clip.left, geo.dpiX);
+  const t = px(clip.top, geo.dpiY);
+  const w = geo.width - l - px(clip.right, geo.dpiX);
+  const h = geo.height - t - px(clip.bottom, geo.dpiY);
+  if (!(w > 1 && h > 1)) return null;
+  const r = (n) => Math.round(n * 100) / 100;
+  const fw = frameW || r(w);
+  const fh = frameH || r(h);
+  return `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${r(fw)}" height="${r(fh)}"`
+    + ` viewBox="${r(l)} ${r(t)} ${r(w)} ${r(h)}" preserveAspectRatio="none">`
+    + `<image width="${geo.width}" height="${geo.height}" preserveAspectRatio="none" xlink:href="data:${mime};base64,${b64}"/></svg>`;
+}
+
 /**
  * Klein genug für ein Bild im Text: Zeichen, Formelbild, Schaltzeichen (bis 1,2 cm hoch oder
  * bis 4 × 2,5 cm). Größere Bilder neben Text werden eigene Bausteine (sonst sprengen sie die Zeile).
@@ -942,7 +1053,11 @@ export function odtPackageToHtml(pkg, fileName = '', opts = {}) {
             const width = toPx(frame.attrs['svg:width']);
             const height = toPx(frame.attrs['svg:height']);
             const alt = textOf(elements(frame).find((c) => c.name === 'svg:title') || '') || frame.attrs['draw:name'] || '';
-            return `<img src="data:${type};base64,${data.base64}" alt="${esc(alt)}"${width ? ` width="${width}"` : ''}${height ? ` data-h="${height}"` : ''}>`;
+            // In LibreOffice zugeschnitten (fo:clip): nur der sichtbare Ausschnitt – als SVG um das Bild.
+            const clip = type !== 'image/svg+xml' ? parseClip(styles.graphic(frame.attrs['draw:style-name'], 'clip')) : null;
+            const cut = clip ? clippedSvg(type, data.base64, clip, width, height) : null;
+            const src = cut ? `data:image/svg+xml;base64,${utf8Base64(cut)}` : `data:${type};base64,${data.base64}`;
+            return `<img src="${src}" alt="${esc(alt)}"${width ? ` width="${width}"` : ''}${height ? ` data-h="${height}"` : ''}>`;
         }
         return null;
     };

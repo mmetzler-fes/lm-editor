@@ -34,9 +34,22 @@ const VIEW = {
   column: (a) => ['div', { class: 'ds-pm-column', style: a.width ? `flex:0 0 ${a.width}` : null }, 0],
   table: () => ['table', {}, ['tbody', {}, 0]],
   tableRow: () => ['tr', {}, 0],
-  tableCell: (a) => ['td', cellAttrs(a), 0],
-  tableHeader: (a) => ['th', cellAttrs(a), 0],
+  tableCell: (a) => cellView('td', a),
+  tableHeader: (a) => cellView('th', a),
 };
+
+/**
+ * Zelle; Bilder der Zelle (`images`, z. B. aus einem Import) zeigt der Editor über dem Text –
+ * nur zum Ansehen, der Text bleibt editierbar. Sonst wären sie im Editor unsichtbar.
+ */
+function cellView(tag, a) {
+  const imgs = (Array.isArray(a.images) ? a.images : []).filter((i) => i && typeof i.src === 'string' && /^(data:image\/|https?:|\/|lm-img:)/.test(i.src));
+  if (!imgs.length) return [tag, cellAttrs(a), 0];
+  return [tag, cellAttrs(a),
+    ['div', { class: 'ds-pm-cell-imgs', contenteditable: 'false', title: 'Bild in der Zelle – im Editor nur zum Ansehen' },
+      ...imgs.map((i) => ['img', { src: i.src, alt: i.alt || '', style: i.width ? `width:${i.width};max-width:100%` : 'max-width:100%' }])],
+    ['div', { class: 'ds-pm-cell-body' }, 0]];
+}
 
 const MARK_VIEW = {
   link: (a) => ['a', { href: a.href, rel: 'noopener', target: '_blank' }, 0],

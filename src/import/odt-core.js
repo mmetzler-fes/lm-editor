@@ -1463,7 +1463,50 @@ export function odtPackageToHtml(pkg, fileName = '', opts = {}) {
         const outer = tables.every((t) => t.w > 0) ? `<colgroup>${tables.map((t) => `<col style="width:${Math.round((t.w + 0.5) * 100) / 100}cm">`).join('')}</colgroup>` : '';
         return `<table class="ws-columns">${outer}<tbody><tr>${tables.map((t) => `<td>${t.html}</td>`).join('')}</tr></tbody></table>`;
     };
-    const table = (n) => {
+    /**
+     * Bilder, die an einem Absatz in einer Zelle hängen, aber rechts außerhalb der Zelle stehen
+     * (svg:x hinter der Spaltenbreite – Word verankert so Bilder neben einer Tabelle): aus der
+     * Zelle nehmen und als Bild rechts neben der Tabelle davorstellen. Sonst landeten sie in der Zelle.
+     */
+    const liftOutsideFrames = (n) => {
+        const widths = columnWidths(n).map((w) => toPx(w) ?? 0);
+        const lifted = [];
+        const walk = (node, cellW) => {
+            node.children = node.children.filter((c) => {
+                if (typeof c === 'string')
+                    return true;
+                if (c.name === 'draw:frame' && anchored(c) && isImageFrame(c) && !isTextFrame(c)) {
+                    const x = toPx(c.attrs['svg:x']) ?? 0;
+                    if (cellW > 0 && x >= cellW) {
+                        lifted.push(c);
+                        return false;
+                    }
+                    return true;
+                }
+                if (c.name !== 'table:table')
+                    walk(c, cellW);
+                return true;
+            });
+        };
+        for (const row of tableRowsOf(n)) {
+            let col = 0;
+            for (const cell of elements(row)) {
+                if (cell.name !== 'table:table-cell' && cell.name !== 'table:covered-table-cell')
+                    continue;
+                const span = Math.max(1, Number(cell.attrs['table:number-columns-spanned'] || 1));
+                const cellW = widths.slice(col, col + span).reduce((a, b) => a + b, 0);
+                if (cell.name === 'table:table-cell')
+                    walk(cell, cellW);
+                col += Math.max(span, Number(cell.attrs['table:number-columns-repeated'] || 1));
+            }
+        }
+        return lifted.map((f) => {
+            const img = exported(f) ?? image(f);
+            return img ? `<p>${img.replace('<img ', '<img class="ws-float-right" ')}</p>` : '';
+        }).join('');
+    };
+    const table = (n) => liftOutsideFrames(n) + tableInner(n);
+    const tableInner = (n) => {
         const layout = layoutTable(n);
         if (layout !== null)
             return layout;

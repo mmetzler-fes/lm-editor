@@ -12,3 +12,12 @@ test('Markdown: **Titel:**Text aus KI-Chats wird fett, einzelne * bleiben streng
   assert.equal(md.renderInline('a**b ohne Partner'), 'a**b ohne Partner');
   assert.equal(md.renderInline('*Verification:*Der'), '*Verification:*Der');
 });
+
+test('DocSpec-Text: **Titel:**Text ist fett (INLINE_RE, wie make_worksheet.py)', async () => {
+  const { INLINE_RE } = await import('../src/doc/docspec.js');
+  const bold = (t) => [...t.matchAll(new RegExp(INLINE_RE.source, 'g'))].filter((m) => m.groups.b !== undefined).map((m) => m.groups.b);
+  assert.deepEqual(bold('**1.Feste IP setzen:**Nur Lehrer-Pi.'), ['1.Feste IP setzen:']);
+  assert.deepEqual(bold('**Hinweis:**Über alles'), ['Hinweis:']);
+  assert.deepEqual(bold('a**b**c bleibt'), []);
+  assert.deepEqual(bold('2**3 und 4**5'), []);
+});

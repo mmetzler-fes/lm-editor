@@ -127,6 +127,8 @@ const strip = (b) => Object.fromEntries(Object.entries(b).filter(([k]) => !LAYOU
 /** Unser Markdown → Markdown, wie Jupyter es zeigt: {…}-Zusätze und leere Spans weg, [Text]{.farbe} → Text. */
 export function jupyterMarkdown(md) {
   return String(md)
+    // Bild im Text: als <img> in der Zeile (Jupyter kennt die {…}-Angaben nicht).
+    .replace(/!\[([^\]\n]*)\]\(([^)\s]+)\)\{\.inline(?: width=([\d.]+(?:cm|mm|px)))?\}/g, (_m, alt, src, w) => `<img src="${src}" alt="${alt.replace(/"/g, '&quot;')}" style="${w ? `width:${w};` : ''}vertical-align:middle">`)
     .replace(/\[\]\{[^}]*\}/g, '')
     .replace(/(^|[^\\])\[([^\]\n]*)\]\{[^}\n]*\}/g, '$1$2')
     .replace(/^(#{1,6} .*?)[ \t]*\{[^}\n]*\}[ \t]*$/gm, '$1')

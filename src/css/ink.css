@@ -440,3 +440,13 @@ body.ink-open { overflow: hidden; }
   position: static; max-height: none; overflow: visible; box-shadow: none;
   border: none; background: none; padding: 0; align-content: flex-start;
 }
+
+/* Zoom wie bei der HTML-App: aktuelle Größe, Klick = 100 % (zwischen ↔ und +). */
+.ink-zoom-pct { min-width: 52px; padding: 0 6px; font-size: 0.85rem; font-weight: 600; white-space: nowrap; }
+/* Handy: Knöpfe etwas schmaler, damit Werkzeuge, ↔ und Zoom in eine Zeile passen. */
+@media (pointer: coarse) and (max-width: 500px) {
+  .ink-toolbar .ink-btn { min-width: 40px; height: 42px; }
+  .ink-toolbar .ink-icon { width: 25px; height: 25px; }
+  .ink-toolbar .ink-zoom-pct { min-width: 42px; padding: 0 2px; font-size: 0.78rem; }
+  .ink-toolbar .ink-status:empty { display: none; }
+}

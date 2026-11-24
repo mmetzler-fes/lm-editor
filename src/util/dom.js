@@ -506,11 +506,19 @@ export function attachPointerDrag(el, { onHover, onDrop, onLongPress, canLongPre
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', end);
       window.removeEventListener('pointercancel', end);
+      window.removeEventListener('pointerdown', secondFinger, true);
     }
+
+    // Kommt ein zweiter Finger dazu, ist es eine Zoom-Geste (Stift-Editor): nicht ziehen.
+    const secondFinger = (ev) => {
+      if (ev.pointerId === id || ev.pointerType !== 'touch' || e.pointerType !== 'touch') return;
+      cleanup();
+    };
 
     window.addEventListener('pointermove', move, { passive: false });
     window.addEventListener('pointerup', end);
     window.addEventListener('pointercancel', end);
+    window.addEventListener('pointerdown', secondFinger, true);
   });
 }
 

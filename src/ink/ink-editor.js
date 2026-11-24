@@ -357,7 +357,8 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
       </span>
       <span class="ink-group ink-zoom">
         ${btn('ink-zoom-out', 'zoomOut', 'Verkleinern')}
-        ${btn('ink-zoom-fit', 'fit', 'Auf Breite')}
+        ${btn('ink-zoom-fit', 'fit', 'Auf ganze Breite (↔)')}
+        <button type="button" class="ink-btn ink-zoom-pct" title="Auf 100 % – zoomen auch mit zwei Fingern oder Strg + Mausrad" aria-label="Zoom 100 %">100 %</button>
         ${btn('ink-zoom-in', 'zoomIn', 'Vergrößern')}
       </span>
       <span class="ink-status" aria-live="polite"></span>
@@ -981,6 +982,7 @@ const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-r
   bar.addEventListener('pointerup', barEnd);
   bar.addEventListener('pointercancel', barEnd);
   $('.ink-zoom-in').addEventListener('click', () => setZoom(state.zoom * 1.25));
+  $('.ink-zoom-pct').addEventListener('click', () => setZoom(1));
   $('.ink-zoom-out').addEventListener('click', () => setZoom(state.zoom / 1.25));
   $('.ink-zoom-fit').addEventListener('click', () => setZoom(fitZoom()));
   $('.ink-add-page').addEventListener('click', () => {
@@ -1084,9 +1086,10 @@ const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-r
   // ---------- Werkzeugleiste: passt immer, was nicht passt, steht im ⋯-Menü ----------
   //
   // Reihenfolge: was zuerst ins Menü wandert. Werkzeuge, Rückgängig und Schließen bleiben am längsten.
-  const OVERFLOW_ORDER = ['.ink-title', '.ink-feedback', '.ink-zoom', '.ink-head', '.ink-add-page', '.ink-bg-select', '.ink-print', '.ink-save',
+  // Zoom wie bei der HTML-App: ↔ und die Prozentanzeige bleiben am längsten (Handy: zwei Finger statt −/+).
+  const OVERFLOW_ORDER = ['.ink-title', '.ink-feedback', '.ink-zoom-out', '.ink-zoom-in', '.ink-head', '.ink-add-page', '.ink-bg-select', '.ink-print', '.ink-save',
     '[data-tool="laser"]', '.ink-ruler-toggle', '[data-tool="shape"]', '[data-tool="field"]', '[data-tool="area"]', '.ink-share',
-    '[data-tool="text"]', '.ink-redo', '.ink-pages-toggle'];
+    '[data-tool="text"]', '.ink-redo', '.ink-pages-toggle', '.ink-zoom-pct', '.ink-zoom-fit'];
   const toolbarEl = $('.ink-toolbar');
   const moreBtn = $('.ink-bar-more');
   let overflowed = [];
@@ -1392,6 +1395,7 @@ const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-r
     // Mehr beschriftete Seiten als der Hintergrund hat: auf Karo weiterführen.
     while (sizes.length < doc.pages.length) sizes.push({ ...sizes[sizes.length - 1] || A4 });
     if (!state.zoomSet) { state.zoom = fitZoom(sizes[0].w); state.zoomSet = true; }
+    showZoomPct();
 
     pagesEl.innerHTML = '';
     pages = sizes.map((s, i) => buildPage(i, s));
@@ -1523,6 +1527,7 @@ const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-r
     pages = [page];
     measurePaper();
     if (!state.zoomSet) { state.zoom = fitZoom(page.w); state.zoomSet = true; }
+    showZoomPct();
     sizePage(page);
     doc.pages = [{ items: fromLayer() }];
     bindInput(page);
@@ -2011,11 +2016,18 @@ const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-r
    * Zoom setzen. `at` (Bildschirmpunkt, z. B. die Mitte zwischen zwei Fingern): Die Stelle des
    * Blatts darunter bleibt dort stehen. Ohne `at` bleibt der Anteil des Gescrollten gleich.
    */
+  /** Zoom in der Leiste anzeigen (wie bei der HTML-App: „100 %“, Klick setzt 100 %). */
+  function showZoomPct() {
+    const el = overlay.querySelector('.ink-zoom-pct');
+    if (el) el.textContent = `${Math.round(state.zoom * 100)} %`;
+  }
+
   function setZoom(z, at = null) {
     const keep = scroller.scrollTop / (scroller.scrollHeight || 1);
     const before = state.zoom;
     state.zoom = Math.max(0.3, Math.min(MAX_ZOOM, z));
     state.zoomSet = true;
+    showZoomPct();
     const r = scroller.getBoundingClientRect();
     const ax = at ? at.x - r.left : 0;
     const ay = at ? at.y - r.top : 0;
@@ -4399,6 +4411,34 @@ const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-r
   document.addEventListener('gesturestart', pinchStart);
   document.addEventListener('gesturechange', pinchChange);
   document.addEventListener('gestureend', pinchEnd);
+  // Android & Co. kennen die Gesten-Ereignisse von Safari nicht, und das Blatt erlaubt dem Browser kein
+  // eigenes Zoomen (touch-action) – deshalb dieselbe Geste aus zwei Berührungen: Abstand → scale, Mitte →
+  // Fixpunkt. Gilt für alles im Stift-Editor, auch auf Quizzen (Drag and Drop & Co.).
+  const safariGestures = 'ongesturestart' in window;
+  let touchPinch = null;
+  const twoOf = (e) => {
+    const [a, b] = [e.touches[0], e.touches[1]];
+    return { d: Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY) || 1, x: (a.clientX + b.clientX) / 2, y: (a.clientY + b.clientY) / 2 };
+  };
+  const touchStart = (e) => {
+    if (safariGestures || e.touches.length !== 2 || !scroller.contains(e.target)) return;
+    const t = twoOf(e);
+    touchPinch = { d0: t.d };
+    pinchStart({ target: e.target, clientX: t.x, clientY: t.y });
+  };
+  const touchMove = (e) => {
+    if (!touchPinch || e.touches.length !== 2) return;
+    pinchChange({ scale: twoOf(e).d / touchPinch.d0 });
+  };
+  const touchEnd = (e) => {
+    if (!touchPinch || e.touches.length >= 2) return;
+    touchPinch = null;
+    pinchEnd();
+  };
+  document.addEventListener('touchstart', touchStart, { passive: true, capture: true });
+  document.addEventListener('touchmove', touchMove, { passive: true, capture: true });
+  document.addEventListener('touchend', touchEnd, { passive: true, capture: true });
+  document.addEventListener('touchcancel', touchEnd, { passive: true, capture: true });
   let wheelZoom = 1;
   let wheelTimer = null;
   const onWheel = (e) => {
@@ -4442,6 +4482,10 @@ const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-r
     document.removeEventListener('gesturestart', pinchStart);
     document.removeEventListener('gesturechange', pinchChange);
     document.removeEventListener('gestureend', pinchEnd);
+    document.removeEventListener('touchstart', touchStart, { capture: true });
+    document.removeEventListener('touchmove', touchMove, { capture: true });
+    document.removeEventListener('touchend', touchEnd, { capture: true });
+    document.removeEventListener('touchcancel', touchEnd, { capture: true });
     barObserver.disconnect();
     for (const v of Object.values(pdfs)) Promise.resolve(v).then((d) => d?.destroy?.()).catch(() => {});
     toolbarObserver.disconnect();

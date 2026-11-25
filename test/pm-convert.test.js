@@ -82,6 +82,23 @@ describe('Auszeichnung', () => {
       expect(round(t)).toBe(t);
     }
   });
+  it('Link mit Schriftgröße oder Farbe bleibt ein Link (Rückmeldung: [[url]{14pt}](url) stand als Text da)', () => {
+    const url = 'https://wokwi.com/projects/479751860106596353';
+    const nodes = [{ type: 'text', text: url, marks: [{ type: 'link', attrs: { href: url } }, { type: 'textStyle', attrs: { color: null, fontSize: 14 } }] }];
+    const text = inlineToText(nodes);
+    expect(textToInline(text)).toEqual(textToInline(inlineToText(textToInline(text))));
+    expect(textToInline(text).every((n) => (n.marks || []).some((m) => m.type === 'link'))).toBe(true);
+    const out = html({ content: [{ type: 'text', text }] });
+    expect(out.includes(`href="${url}"`)).toBe(true);
+    expect(out.includes('](')).toBe(false);
+    expect(round('[[farbig]{blau}](https://x.de)')).toBe('[[farbig]{blau}](https://x.de)');
+    // Farbe außen, Link innen: wird gleichwertig als Link außen geschrieben.
+    expect(round('[[a](https://x.de)]{blau}')).toBe('[[a]{blau}](https://x.de)');
+    // Link mitten im farbigen Text: Farbe außen, Link innen (nicht „Siehe [a“ als Link).
+    const mixed = textToInline('[Siehe [a](https://x.de) hier]{blau}');
+    expect(mixed.map((n) => n.text).join('')).toBe('Siehe a hier');
+    expect(mixed.filter((n) => (n.marks || []).some((m) => m.type === 'link')).map((n) => n.text)).toEqual(['a']);
+  });
   it('zerlegt in Knoten', () => {
     expect(textToInline('a **b** $x$')).toEqual([
       { type: 'text', text: 'a ' },

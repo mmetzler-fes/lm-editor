@@ -510,8 +510,9 @@ export const INLINE_RE = new RegExp([
   '\\^\\{(?<sup>[^}]{1,40})\\}',
   '_\\{(?<sub>[^}]{1,24})\\}',
   `!\\[(?<ialt>[^\\]\\n]*)\\]\\((?<isrc>${INLINE_IMAGE_SRC})\\)(?:\\{width=(?<iw>${INLINE_IMAGE_WIDTH})\\})?`,
-  '\\[(?<atext>[^\\]\\n]+)\\]\\((?<href>(?:https?://|mailto:)[^)\\s]+)\\)',
-  '\\[(?<ctext>[^\\]\\n]+)\\]\\{(?<color>[a-z0-9-]+(?:,[a-z0-9-]+){0,2})\\}',
+  // Link- und Farbtext dürfen eine Ebene [ … ] enthalten: [[Text]{14pt}](https://…) – Link mit Schriftgröße.
+  '\\[(?<atext>(?:\\\\.|\\[[^\\[\\]\\n]*\\]|[^\\[\\]\\n])+)\\]\\((?<href>(?:https?://|mailto:)[^)\\s]+)\\)',
+  '\\[(?<ctext>(?:\\\\.|\\[[^\\[\\]\\n]*\\]|[^\\[\\]\\n])+)\\]\\{(?<color>[a-z0-9-]+(?:,[a-z0-9-]+){0,2})\\}',
 ].join('|'), 'g');
 
 /** Unbeschriebener Text: `n_S`-Indizes wie bisher. */

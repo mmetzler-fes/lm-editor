@@ -10,6 +10,7 @@ import { htmlToDocSpec, specToEditorHtml } from '../doc/docspec-html.js';
 import { escapeAttr, showContextMenu } from '../util/dom.js';
 import { openParagraphDialog } from './paragraph-dialog.js';
 import { openSpecialCharDialog } from './special-chars.js';
+import { openLinkDialog } from './link-dialog.js';
 import { openCropDialog, dataUrlFile } from './image-crop.js';
 
 const COLOR_NAMES = { blau: '🟦 Blau', gruen: '🟩 Grün', orange: '🟧 Orange', lila: '🟪 Lila', grau: '⬜ Grau' };
@@ -449,8 +450,13 @@ export function mountTiptapSurface(box, host) {
     para: paragraphDialog,
     chars: () => specialChars(),
     link: () => {
-      const href = window.prompt('Adresse des Links (leer: Link entfernen)', pm.linkHref() || 'https://');
-      if (href !== null) pm.setLink(href.trim() && href.trim() !== 'https://' ? href.trim() : null);
+      const cur = pm.linkInfo();
+      openLinkDialog({
+        href: cur.href,
+        text: cur.text && cur.text !== cur.href ? cur.text : '',
+        onOk: ({ href, text }) => { if (!pm.applyLink(href, text)) host.status('🔗: Erst in den Text klicken – dort kommt der Link hin.'); },
+        onClose: () => pm.focus(),
+      });
     },
   };
 

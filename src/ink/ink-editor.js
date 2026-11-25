@@ -15,6 +15,7 @@ import {
 } from './ink-shapes.js';
 import { showContextMenu, solutionSwitch } from '../util/dom.js';
 import { FONT_SIZES } from '../doc/docspec.js';
+import { headStripFromPdf } from './template-head.js';
 
 // ==================== STIFT-EDITOR ====================
 //
@@ -4151,38 +4152,7 @@ const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-r
   /** Streifen der Kopfzeile: { src, cm } – Höhe in cm ab der Blattkante. */
   async function headStrip() {
     if (headCache) return headCache;
-    const pdf = await openPdf(await paper.headerPdf());
-    const page = await pdf.getPage(1);
-    const scale = 2;
-    const vp = page.getViewport({ scale });
-    const canvas = document.createElement('canvas');
-    canvas.width = Math.ceil(vp.width);
-    canvas.height = Math.ceil(vp.height);
-    const ctx = canvas.getContext('2d', { willReadFrequently: true });
-    ctx.fillStyle = '#fff';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    await page.render({ canvasContext: ctx, viewport: vp }).promise;
-    // Von oben: erste Zeile mit Inhalt, dann bis zur ersten Lücke von 1 cm (danach käme nur noch die Fußzeile).
-    const pxPerCm = canvas.height / (vp.height / scale / 72 * 2.54);
-    const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    const inked = (y) => {
-      for (let x = 0; x < canvas.width; x += 2) {
-        const i = (y * canvas.width + x) * 4;
-        if (data[i] < 200 || data[i + 1] < 200 || data[i + 2] < 200) return true;
-      }
-      return false;
-    };
-    let y = 0;
-    while (y < canvas.height && !inked(y)) y++;
-    let last = y;
-    for (; y < canvas.height && y - last < pxPerCm; y++) if (inked(y)) last = y;
-    if (last <= 0) throw new Error('Die Vorlage hat keine Kopfzeile.');
-    const cut = Math.min(canvas.height, last + Math.round(pxPerCm * 0.3));
-    const strip = document.createElement('canvas');
-    strip.width = canvas.width;
-    strip.height = cut;
-    strip.getContext('2d').drawImage(canvas, 0, 0);
-    headCache = { src: strip.toDataURL('image/png'), cm: cut / pxPerCm };
+    headCache = await headStripFromPdf(await paper.headerPdf());
     return headCache;
   }
 

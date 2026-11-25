@@ -89,6 +89,10 @@
 .ds-vtoolbar .ds-dd-a { font-weight: 700; border-bottom: 3px solid #1d4ed8; line-height: 1; }
 .ds-vtoolbar .ds-dd-size { font-size: 0.8em; font-weight: 700; }
 .ds-para-dialog { max-width: 460px; }
+/* Link (link-dialog.js) */
+.ds-link-dialog { max-width: 460px; width: 94%; }
+.ds-link-dialog label { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
+.ds-link-dialog input { padding: 6px 8px; border: 1px solid var(--border); border-radius: var(--radius-sm); font: inherit; }
 /* Sonderzeichen (special-chars.js) */
 .ds-chars-dialog { max-width: 560px; width: 94%; }
 .ds-chars-bar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }

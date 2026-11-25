@@ -17,6 +17,7 @@ import { pmToSpec, specToPm, textToInline } from '../doc/pm-convert.js';
 import { pmToMarkdown } from '../doc/pm-markdown.js';
 import { missingIds } from './pm-ids.js';
 import { deleteInLine } from './pm-delete.js';
+import { linkPlan } from './pm-link.js';
 import { penSelects } from '../util/dom.js';
 
 const ATOMS = ['image', 'group', 'formula', 'karo', 'spacer', 'pagebreak', 'quiz', 'rawBlock'];
@@ -989,6 +990,41 @@ export function createPmEditor(element, spec, host = {}) {
       (href ? chain.setMark('link', { href }) : chain.unsetMark('link')).run();
     },
     linkHref: () => editor.getAttributes('link').href || '',
+    /** Link an der Auswahl: Adresse und angezeigter Text (ganzer Link, sonst die Markierung). */
+    linkInfo() {
+      const href = editor.getAttributes('link').href || '';
+      if (href) editor.commands.extendMarkRange('link');
+      const { from, to, empty } = editor.state.selection;
+      return { href, text: empty ? '' : editor.state.doc.textBetween(from, to, ' ') };
+    },
+    /**
+     * Link setzen: `text` leer → die Adresse selbst wird angezeigt. Ohne Markierung kommt der
+     * Text an die Schreibmarke; mit Markierung bzw. in einem Link wird dieser ersetzt, wenn sich
+     * der Text ändert. `href` leer entfernt den Link. false, wenn keine Schreibmarke im Text steht.
+     */
+    applyLink(href, text) {
+      const chain = editor.chain().focus();
+      if (editor.getAttributes('link').href) chain.extendMarkRange('link');
+      chain.run();
+      const { state } = editor;
+      const { selection } = state;
+      if (selection.node || !selection.$from.parent.isTextblock) return false;
+      const { from, to, empty } = selection;
+      const plan = linkPlan(state.doc, from, to, href, text);
+      const link = state.schema.marks.link;
+      const tr = state.tr;
+      if (plan.kind === 'none') return true;
+      if (plan.kind === 'remove') tr.removeMark(from, to, link);
+      else if (plan.kind === 'mark') tr.addMark(from, to, link.create({ href }));
+      else {
+        const marks = (empty ? selection.$from.marks() : state.doc.resolve(from + 1).marks()).filter((m) => m.type !== link);
+        tr.replaceWith(from, to, state.schema.text(plan.text, [...marks, link.create({ href })]));
+        tr.setSelection(TextSelection.create(tr.doc, from + plan.text.length));
+        tr.removeStoredMark(link);
+      }
+      editor.view.dispatch(tr.scrollIntoView());
+      return true;
+    },
     clearMarks: () => editor.chain().focus().unsetAllMarks().run(),
     /** Felder des Absatzes bzw. der Liste an der Auswahl (align, indent …). */
     paragraphAttrs() {

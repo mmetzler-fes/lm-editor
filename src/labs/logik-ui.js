@@ -140,6 +140,8 @@ export function mount(el, { state, mode, onChange, say = () => {} }) {
 
   canvas.addEventListener('pointerdown', (e) => {
     if (e.button !== 0) return;
+    // Fokus auf die Zeichenfläche, damit Entf/⌫ das Ausgewählte löscht (preventDefault verhindert ihn sonst).
+    canvas.focus({ preventScroll: true });
     const g = toGrid(e);
     const pin = hitPin(g);
     if (pin) {
@@ -197,7 +199,7 @@ export function mount(el, { state, mode, onChange, say = () => {} }) {
   };
   canvas.addEventListener('pointerup', end);
   canvas.addEventListener('pointercancel', end);
-  canvas.addEventListener('keydown', (e) => { if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); removeSel(); } });
+  canvas.addEventListener('keydown', (e) => { if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); e.stopPropagation(); removeSel(); } });
 
   // ---------- Leisten ----------
   palette.append(...PALETTE.map(([type, label, title]) => h('button', { type: 'button', class: 'lab-btn lab-gate', title: `${title} einfügen`, onclick: () => add(type) }, label)),

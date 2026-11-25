@@ -1175,6 +1175,15 @@ const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-r
   const toolbarObserver = new ResizeObserver(() => { fitToolbar(); fitSubLater?.(); paintPages(); });
   toolbarObserver.observe(toolbarEl);
   toolbarObserver.observe(pagesEl); // Blatt fertig geladen, Bilder nachgeladen: Seiten neu zählen
+  // Die Leiste selbst bleibt gleich breit, ihr Inhalt aber nicht (Schrift nachgeladen, Knöpfe ein-/aus-
+  // geblendet, Fenster beim Öffnen noch im Umbau): Sonst bliebe ein zu eng gemessener Stand stehen –
+  // Titel und fast alle Knöpfe im ⋯-Menü, obwohl genug Platz ist.
+  let refitRaf = 0;
+  const refitSoon = () => { if (!refitRaf) refitRaf = requestAnimationFrame(() => { refitRaf = 0; fitToolbar(); }); };
+  for (const c of toolbarEl.children) toolbarObserver.observe(c);
+  toolbarObserver.observe(overlay);
+  document.fonts?.ready?.then(refitSoon).catch(() => {});
+  for (const ms of [300, 1200]) setTimeout(refitSoon, ms);
   fitLater = fitToolbar;
 
   // ---------- Einstellungsleiste (Farben, Stärken, Formen): eine Zeile, Überzähliges unter ⋯ ----------
@@ -4466,7 +4475,7 @@ const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-r
     if (state.editing) return; // Der offene Texteditor hat die Tastatur für sich.
     // Tippen in Textfeldern und Quizzen (Dokument) bleibt Tippen.
     const t = e.target;
-    if (t.closest?.('.ink-text') || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) || t.isContentEditable) return;
+    if (t.closest?.('.ink-text, .lab-live') || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) || t.isContentEditable) return;
     const mod = e.ctrlKey || e.metaKey;
     const k = e.key.toLowerCase();
     const sel = hasSelection();

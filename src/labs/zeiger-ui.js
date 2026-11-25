@@ -68,6 +68,8 @@ export function mount(el, { state, mode, onChange, say = () => {} }) {
 
   canvas.addEventListener('pointerdown', (e) => {
     if (e.button !== 0) return;
+    // Fokus auf die Zeichenfläche, damit Entf/⌫ das Ausgewählte löscht (preventDefault verhindert ihn sonst).
+    canvas.focus({ preventScroll: true });
     const p = toMath(e);
     const res = zeigerResolve(st).filter((r) => r.show !== false && r.val);
     let hit = null;
@@ -141,8 +143,9 @@ export function mount(el, { state, mode, onChange, say = () => {} }) {
   canvas.addEventListener('pointerup', endDrag);
   canvas.addEventListener('pointercancel', endDrag);
   canvas.addEventListener('keydown', (e) => {
-    if ((e.key === 'Delete' || e.key === 'Backspace') && sel && editable(byId(sel) || {})) { e.preventDefault(); remove(sel); }
-    if (e.key === '-' && sel && byId(sel)) { e.preventDefault(); copyOf(sel, true); }
+    if ((e.key === 'Delete' || e.key === 'Backspace') && sel && editable(byId(sel) || {})) { e.preventDefault(); e.stopPropagation(); remove(sel); }
+    else if ((e.key === 'Delete' || e.key === 'Backspace') && sel) say('🔒 Dieser Zeiger ist vorgegeben.');
+    if (e.key === '-' && sel && byId(sel)) { e.preventDefault(); e.stopPropagation(); copyOf(sel, true); }
   });
 
   // ---------- Kopie / Gegenzeiger ----------
@@ -298,6 +301,7 @@ export function mount(el, { state, mode, onChange, say = () => {} }) {
         if (e.target.closest('input, select, button')) return;
         sel = sel === it.id ? null : it.id;
         renderAll();
+        canvas.focus({ preventScroll: true });
       } },
         h('td', {}, h('input', { type: 'color', value: it.color || LAB_COLORS[0], disabled: !can, title: 'Farbe', oninput: (e) => { it.color = e.target.value; renderCanvas(); }, onchange: () => { changed(); } })),
         h('td', {}, field(it.name ?? '', (v) => { it.name = v.trim(); if (!it.unit && guessUnit(it.name)) it.unit = guessUnit(it.name); changed(); renderAll(); }, { size: 4, disabled: !can, class: 'lab-name', title: 'Name' })),

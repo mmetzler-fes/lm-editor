@@ -331,11 +331,30 @@ export function mount(el, { state, mode, onChange, say = () => {} }) {
     const table = h('table', { class: 'lab-table' },
       h('thead', {}, h('tr', {}, ...['', 'Name', 'Wert', 'Einheit', 'Anfang (cm)', 'Dicke', ''].map((t) => h('th', { text: t })))),
       h('tbody', {}, ...rows));
-    const viewRow = teacher ? h('div', { class: 'lab-row lab-view' }, h('span', { class: 'lab-label', text: 'Bereich (cm):' }),
-      ...[['xmin', 'x von'], ['xmax', 'bis'], ['ymin', 'y von'], ['ymax', 'bis']].map(([k, label]) => h('label', {}, ` ${label} `, field(fmtNum(view()[k]), (v) => {
-        try { st[k] = evalExpr(v)[0]; changed(); renderAll(); } catch (err) { say(`⚠️ ${err.message}`); }
-      }, { size: 3 })))) : null;
-    panel.replaceChildren(top, table, scales, ...(viewRow ? [viewRow] : []),
+    // Blatt (nur Lehrkraft): Breite, Höhe, Lage des Ursprungs, Raster – gespeichert als xmin … ymax.
+    const viewRow = teacher ? (() => {
+      const v = view();
+      const geo = { w: v.xmax - v.xmin, h: v.ymax - v.ymin, ox: -v.xmin, oy: v.ymax };
+      const apply = (g) => {
+        if (!(g.w >= 2 && g.w <= 40 && g.h >= 2 && g.h <= 40)) { say('⚠️ Breite und Höhe: 2 … 40 cm'); renderAll(); return; }
+        Object.assign(st, { xmin: round(-g.ox), xmax: round(g.w - g.ox), ymax: round(g.oy), ymin: round(g.oy - g.h) });
+        changed();
+        renderAll();
+      };
+      const num = (key, label, title) => h('label', { title }, ` ${label} `, field(fmtNum(round(geo[key])), (val) => {
+        try { apply({ ...geo, [key]: evalExpr(val)[0] }); } catch (err) { say(`⚠️ ${err.message}`); }
+      }, { size: 3 }), ' cm');
+      const preset = (label, ox, oy, title) => h('button', { type: 'button', class: 'lab-mini', title, onclick: () => apply({ ...geo, ox: ox(geo), oy: oy(geo) }) }, label);
+      return h('div', { class: 'lab-row lab-view' }, h('span', { class: 'lab-label', text: 'Blatt:' }),
+        num('w', 'Breite', 'Breite der Zeichenfläche'), num('h', 'Höhe', 'Höhe der Zeichenfläche'),
+        h('span', { class: 'lab-label', text: ' Ursprung:' }),
+        num('ox', 'von links', 'Abstand des Ursprungs vom linken Rand'), num('oy', 'von oben', 'Abstand des Ursprungs vom oberen Rand'),
+        preset('links', (g) => 1, (g) => g.h / 2, 'Ursprung links, halbe Höhe'),
+        preset('Mitte', (g) => g.w / 2, (g) => g.h / 2, 'Ursprung in der Mitte'),
+        h('label', { title: 'Kästchengröße' }, ' Raster ', h('select', { onchange: (e) => { st.grid = Number(e.target.value); changed(); renderAll(); } },
+          ...[0.25, 0.5, 1].map((g) => h('option', { value: String(g), selected: Math.abs(v.grid - g) < 1e-9 }, `${fmtNum(g)} cm`)))));
+    })() : null;
+    panel.replaceChildren(...(viewRow ? [viewRow] : []), top, table, scales,
       h('p', { class: 'lab-hint', text: 'Ziehen: Mitte verschiebt, Spitze ändert den Wert (Alt = ohne Raster). Vorgegebene (🔒) Zeiger ziehen = Kopie herausziehen; ⧉ Kopie, − Gegenzeiger (Taste „-“). Der Anfang rastet an der Spitze eines anderen Zeigers ein und wandert dann mit. Werte: 3 + j4, 5∠30°, 10k, = U2 / Z2.' }));
   }
 

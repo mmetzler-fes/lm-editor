@@ -625,7 +625,9 @@ export function widgetHtml(block) {
   const preview = renderDocSpecHtml({ content: [block] }, { showSolutions: true, showPageBreaks: true });
   const field = { linien: 'Linien', leer: 'Feld', frei: 'Platz (unsichtbar)' }[block?.pattern];
   const label = { image: 'Bild', rawBlock: 'Baustein', karo: field || 'Karo', solution: 'Lösung', formula: 'Formel', code: 'Code', spacer: 'Platz', pagebreak: 'Seitenumbruch', quiz: 'Quiz', group: 'Zeichenrahmen', lab: 'Labor' }[block?.type] || block?.type || 'Baustein';
-  return `<div class="ds-widget" contenteditable="false" data-block="${encodeURIComponent(JSON.stringify(block))}" title="${esc(label)} – Doppelklick zum Bearbeiten"><span class="ds-widget-label">${esc(label)}</span>${preview}</div>`;
+  // Labor: sichtbar sagen, wo Vorgabe, Größe und Maßstab eingestellt werden.
+  const shown = block?.type !== 'lab' ? label : block.lab === 'zeiger' ? 'Zeigerlabor – Doppelklick: Zeiger, Blattgröße, Maßstab einstellen' : 'Labor – Doppelklick: Vorgabe einstellen';
+  return `<div class="ds-widget" contenteditable="false" data-block="${encodeURIComponent(JSON.stringify(block))}" title="${esc(label)} – Doppelklick zum Bearbeiten"><span class="ds-widget-label">${esc(shown)}</span>${preview}</div>`;
 }
 
 /** data-id für die feste ID eines Blocks (ids.js). */

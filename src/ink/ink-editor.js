@@ -168,7 +168,9 @@ const pickImageFile = (from) => new Promise((resolve) => {
 });
 const stored = (key) => { try { return localStorage.getItem(key); } catch (_) { return null; } };
 const store1 = (key, value) => { try { localStorage.setItem(key, value); } catch (_) { /* privater Modus */ } };
-const PALM_MS = 500;          // so lange nach dem Absetzen des Stifts zählt kein Finger (Handballen)
+const PALM_MS = 800;          // so lange nach dem Absetzen des Stifts zählt kein Finger (Handballen)
+const BAR_TOUCH_MS = 350;     // Finger auf der Scrollleiste: erst nach so langem Halten zieht er das Blatt
+const BAR_PALM_MS = 1500;     // so lange nach dem Stift nimmt die Scrollleiste keinen Finger an (Handballen am Rand)
 const PALM_SIZE = 90;         // größere Auflage (CSS-Pixel) ist ein Handballen – ein Finger meldet auf dem iPad oft 40–60
 const PEN_NEAR_MS = 400;      // so lange nach einer Bewegung des Stifts auf dem Blatt zählt kein Finger
 const PAGES_KEY = 'lm_ink_pages';   // Seitenleiste offen (Gerät)
@@ -968,20 +970,46 @@ const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-r
   barObserver.observe(scroller);
   barObserver.observe(pagesEl);
   let barGrab = null; // Abstand des Fingers von der Oberkante des Griffs
+  let barId = null;   // der Zeiger, der die Leiste führt
+  let barReadyAt = 0; // Finger: erst ab dann folgt das Blatt
+  const barTouches = new Set();
   const barDrag = (e) => {
     const size = thumb.offsetHeight;
     const at = (e.clientY - bar.getBoundingClientRect().top - barGrab) / (bar.clientHeight - size);
     scroller.scrollTop = at * (scroller.scrollHeight - scroller.clientHeight);
   };
+  const barEnd = (e) => {
+    barTouches.delete(e.pointerId);
+    if (e.pointerId === barId) { barGrab = null; barId = null; }
+  };
+  // Handballenschutz (Rückmeldung: das Blatt sprang, wenn der Ballen rechts am Rand lag):
+  // Ein Finger greift nur den Griff selbst, nicht kurz nach dem Stift, nicht als große oder
+  // zweite Auflage, und zieht erst nach kurzem Halten. Maus und Stift wie bisher sofort.
   bar.addEventListener('pointerdown', (e) => {
     e.preventDefault();
-    bar.setPointerCapture?.(e.pointerId);
     const t = thumb.getBoundingClientRect();
+    if (e.pointerType === 'touch') {
+      barTouches.add(e.pointerId);
+      const onThumb = e.clientY >= t.top - 12 && e.clientY <= t.bottom + 12;
+      const palm = barTouches.size > 1 || palmLike(e) || penDown || Date.now() - Math.max(penNearAt, penLiftAt) < BAR_PALM_MS;
+      if (palm) { barGrab = null; barId = null; return; }
+      if (!onThumb) return;
+      barReadyAt = Date.now() + BAR_TOUCH_MS;
+    } else barReadyAt = 0;
+    bar.setPointerCapture?.(e.pointerId);
+    barId = e.pointerId;
     barGrab = e.clientY >= t.top && e.clientY <= t.bottom ? e.clientY - t.top : t.height / 2;
+    if (!barReadyAt) barDrag(e);
+  });
+  bar.addEventListener('pointermove', (e) => {
+    if (barGrab === null || e.pointerId !== barId) return;
+    if (e.pointerType === 'touch') {
+      // Wird die Auflage groß, kommt der Stift oder ein zweiter Kontakt dazu: loslassen.
+      if (barTouches.size > 1 || palmLike(e) || penDown) { barGrab = null; barId = null; return; }
+      if (Date.now() < barReadyAt) return;
+    }
     barDrag(e);
   });
-  bar.addEventListener('pointermove', (e) => { if (barGrab !== null) barDrag(e); });
-  const barEnd = () => { barGrab = null; };
   bar.addEventListener('pointerup', barEnd);
   bar.addEventListener('pointercancel', barEnd);
   $('.ink-zoom-in').addEventListener('click', () => { state.zoomTouched = true; setZoom(state.zoom * 1.25); });

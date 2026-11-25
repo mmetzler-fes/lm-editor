@@ -274,7 +274,7 @@ export async function closeInkEditor() {
 /** Ist gerade ein Stift-Editor offen? */
 export const inkEditorOpen = () => !!currentClose;
 
-export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = null, solutions = false, paper = null, store = null, actions = [], onClose = null, laser = solutions, side = null, noExport = false }) {
+export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = null, solutions = false, paper = null, store = null, actions = [], onClose = null, laser = solutions, side = null, noExport = false, fit = null }) {
   const storeKey = `ink:${key}`;
   const saved = store ? await store.load() : await dbGet(storeKey);
   const doc = saved?.v === 1 ? saved : { v: 1, bg: paper ? 'paper' : loadPdf ? 'pdf' : 'karo', pages: [{ items: [] }] };
@@ -1543,9 +1543,9 @@ const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-r
     showZoomPct();
     sizePage(page);
     // Wie ein Druck auf ↔: auf den Inhalt des Blatts, nicht auf die Seite mit ihren Rändern.
-    // Am PC (Maus) ganze Seite, sonst ganze Breite.
+    // `fit` vom Gastgeber (Quizze: immer ganze Seite); sonst am PC (Maus) ganze Seite, auf Tablet/Handy ganze Breite.
     if (firstFit) requestAnimationFrame(() => {
-      if (paperView && !state.zoomTouched) fitContent(window.matchMedia?.('(pointer: fine)').matches ? 'page' : 'width');
+      if (paperView && !state.zoomTouched) fitContent(fit || (window.matchMedia?.('(pointer: fine)').matches ? 'page' : 'width'));
     });
     doc.pages = [{ items: fromLayer() }];
     bindInput(page);

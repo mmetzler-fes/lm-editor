@@ -51,6 +51,8 @@ export const PM_NODES = {
   spacer: { group: 'block', atom: true, attrs: ['id', 'lines'] },
   pagebreak: { group: 'block', atom: true, attrs: ['id'] },
   quiz: { group: 'block', atom: true, attrs: ['id', 'module', 'title', 'scale'] },
+  // Labor (src/labs): Zeiger, Bode, Ortskurve, Logik – Vorgabe in preset.
+  lab: { group: 'block', atom: true, attrs: ['id', 'lab', 'preset'] },
   // Unbekannter Baustein (neuere Datei): bleibt unberührt erhalten.
   rawBlock: { group: 'block', atom: true, attrs: ['block'] },
 };

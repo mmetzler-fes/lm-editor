@@ -109,6 +109,11 @@ export function askTable() {
 }
 
 export function openBlockDialog(start, { apply, remove, cancel = () => {} }) {
+  // Labor: Vorgabe im Labor selbst bearbeiten (src/labs/labs.js).
+  if (start?.type === 'lab') {
+    import('../labs/labs.js').then(({ openLabDialog }) => openLabDialog(start)).then((next) => (next ? apply(next) : cancel()));
+    return;
+  }
   // Alter „Platz“: wird zum unsichtbaren Schreibfeld (eine Zeile ≈ 0,5 cm), wie in LearningModules.
   const block = start.type === 'spacer'
     ? { ...(start.id ? { id: start.id } : {}), type: 'karo', lines: Number.isInteger(start.lines) ? start.lines : 3, pattern: 'frei' }

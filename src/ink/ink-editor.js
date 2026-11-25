@@ -837,7 +837,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
   const held = typeof Touch !== 'undefined' && 'touchType' in Touch.prototype; // nur Safari kennt den Stift hier
   const STYLUS_CONTROL = 'button, a, select, summary, label, [role="button"], [role="menuitem"], input[type="checkbox"], input[type="radio"], input[type="file"], input[type="range"], input[type="color"], .ink-touchbar';
   /** Bausteine, die im Blatt bedienbar bleiben: eingebettete Quizze und ausführbares Python (Gastgeber). */
-const LIVE_BLOCK = '.ds-quiz-live, .py-block';
+const LIVE_BLOCK = '.ds-quiz-live, .py-block, .lab-live';
 // Was der Stift auf einem Quiz greift, statt zu scrollen.
 const QUIZ_GRAB = 'input, textarea, select, button, a, label, [contenteditable="true"], canvas, .dnd-player-drag, .dnd-player-draggables, [draggable="true"]';
 const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-rich-edit, .ink-area-bar';
@@ -4161,7 +4161,7 @@ const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-r
     p.el.addEventListener('contextmenu', (e) => {
       if (state.editing) return;
       // In einem Quiz oder Textfeld bleibt das Menü des Browsers (Kopieren, Rechtschreibung).
-      if (e.target.closest?.('.ds-quiz-live input, .ds-quiz-live textarea, .py-block textarea, .py-block input, .ink-text[contenteditable="true"]:focus')) return;
+      if (e.target.closest?.('.ds-quiz-live input, .ds-quiz-live textarea, .py-block textarea, .py-block input, .lab-live input, .lab-live select, .ink-text[contenteditable="true"]:focus')) return;
       e.preventDefault();
       // Die Löschtaste des Stifts hat radiert – kein Menü und kein Wechsel zu „Auswählen“.
       if (Date.now() - penEraseAt < 1000) return;

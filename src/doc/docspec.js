@@ -11,7 +11,7 @@
 // `n_S` mit tiefgestelltem S, Lösungen zunächst ausgeblendet.
 
 export const DOC_BLOCK_TYPES = ['section', 'task', 'subtask', 'heading', 'text', 'list', 'code', 'image', 'group', 'table',
-  'formula', 'note', 'solution', 'box', 'karo', 'spacer', 'pagebreak', 'quiz', 'columns', 'column'];
+  'formula', 'note', 'solution', 'box', 'karo', 'spacer', 'pagebreak', 'quiz', 'columns', 'column', 'lab'];
 
 const HEADING_TYPES = ['section', 'task', 'subtask'];
 const WITH_BLOCKS = ['section', 'task', 'subtask', 'solution', 'box', 'columns', 'column'];
@@ -108,6 +108,11 @@ export const SLASH_COMMANDS = {
   frame: { what: 'frame', build: () => ({ type: 'group', width: '12cm', ratio: 0.25, items: [{ text: 'Text', size: 11, x: 0, y: 0, w: 50, h: 30 }] }) },
   solution: { what: 'solution', build: () => ({ type: 'solution', blocks: [{ type: 'text', text: 'Musterlösung' }] }) },
   quiz: { what: 'quiz', build: () => null }, // keine Vorgabe möglich – der Editor öffnet seine Quiz-Auswahl
+  // Labore (src/labs): ohne preset gilt die Grundeinstellung des Labors.
+  zeiger: { what: 'lab', build: () => ({ type: 'lab', lab: 'zeiger' }) },
+  bode: { what: 'lab', build: () => ({ type: 'lab', lab: 'bode' }) },
+  ortskurve: { what: 'lab', build: () => ({ type: 'lab', lab: 'ortskurve' }) },
+  logik: { what: 'lab', build: () => ({ type: 'lab', lab: 'logik' }) },
 };
 
 /**
@@ -389,6 +394,14 @@ function checkBlock(block, path, errors, inSolution, parent = '') {
       need(!inSolution, 'Ein Quiz in einer Lösung ist nicht möglich.');
       if (block.title !== undefined) need(isText(block.title), 'title muss ein Text sein.');
       if (block.scale !== undefined) need(typeof block.scale === 'number' && block.scale >= 0.2 && block.scale <= 1.5, 'scale: Größe von 0.2 bis 1.5, z. B. 0.8 für 80 %.');
+      break;
+    case 'lab':
+      // Labor (src/labs/lab-core.js): Zeiger, Bode, Ortskurve, Logik – Vorgabe in preset.
+      if (labEngine) labEngine.labValidate(block).forEach((m) => need(false, m));
+      else {
+        need(LAB_NAMES_FALLBACK.includes(block.lab), `lab: eines von ${LAB_NAMES_FALLBACK.join(', ')}.`);
+        if (block.preset !== undefined) need(!!block.preset && typeof block.preset === 'object' && !Array.isArray(block.preset), 'preset: Objekt mit der Vorgabe des Labors.');
+      }
       break;
     case 'karo':
       if (block.width !== undefined) need(KARO_WIDTH_RE.test(String(block.width).trim()), 'width: Breite in cm, z. B. "8cm".');
@@ -981,6 +994,17 @@ export function hasLatexEngine() {
   return !!latexEngine;
 }
 
+// Labore: Prüfen und Bild kommen aus src/labs/lab-core.js – angemeldet von src/labs/register.js im
+// Browser bzw. vom Server (docspec.ts). Ohne Anmeldung nur eine grobe Prüfung und ein Platzhalter.
+let labEngine = null;
+const LAB_NAMES_FALLBACK = ['zeiger', 'bode', 'ortskurve', 'logik'];
+export function useLabEngine(engine) {
+  labEngine = engine && typeof engine.labSvg === 'function' ? engine : null;
+}
+export function hasLabEngine() {
+  return !!labEngine;
+}
+
 /** LaTeX (Mathe-Modus) → MathML. Wirft LatexError. */
 export function latexToMathml(src, display = true) {
   if (!latexEngine) throw new LatexError('LaTeX-Formeln lassen sich hier nicht setzen');
@@ -1331,6 +1355,15 @@ function renderBlockHtml(block, ctx) {
       // Mit blockIds (Blatt im Stift-Editor) eine unsichtbare Marke – der Druck bricht dort um.
       return ctx.options.showPageBreaks ? '<div class="ds-pagebreak"><span>Seitenumbruch</span></div>'
         : ctx.options.blockIds ? '<div class="ds-pagebreak-mark" aria-hidden="true"><span>Seitenumbruch</span></div>' : '';
+    case 'lab': {
+      // Bild der Vorgabe; im Durchlauf macht src/labs/labs.js daraus das bedienbare Labor.
+      const data = encodeURIComponent(JSON.stringify({ lab: block.lab, preset: block.preset || {} }));
+      let svg = '';
+      if (labEngine) { try { svg = labEngine.labSvg(block); } catch (_) { svg = ''; } }
+      const label = { zeiger: 'Zeigerlabor', bode: 'Bode-Diagramm', ortskurve: 'Ortskurve', logik: 'Logikschaltung' }[block.lab] || 'Labor';
+      return `<div class="ds-lab" data-lab="${esc(block.lab ?? '')}" data-block="${data}">${svg || `<p class="ds-lab-hint">🧪 ${esc(label)}</p>`}`
+        + `<p class="ds-lab-hint">🧪 ${esc(label)} – beim Bearbeiten des Lernthemas zum Ausprobieren, im Druck als Bild.</p></div>`;
+    }
     case 'quiz':
       // Platzhalter; im Durchlauf hängt h5p-renderer.js das Modul hinein.
       return `<div class="ds-quiz" data-module="${esc(block.module ?? '')}"${typeof block.scale === 'number' ? ` data-scale="${block.scale}"` : ''}><p class="ds-quiz-title">🧩 ${richText(isText(block.title) ? block.title : 'Quiz')}</p>`

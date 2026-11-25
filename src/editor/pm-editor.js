@@ -20,7 +20,7 @@ import { deleteInLine } from './pm-delete.js';
 import { linkPlan } from './pm-link.js';
 import { penSelects } from '../util/dom.js';
 
-const ATOMS = ['image', 'group', 'formula', 'karo', 'spacer', 'pagebreak', 'quiz', 'rawBlock'];
+const ATOMS = ['image', 'group', 'formula', 'karo', 'spacer', 'pagebreak', 'quiz', 'lab', 'rawBlock'];
 const BAR = [['up', '↑', 'Nach oben'], ['down', '↓', 'Nach unten'], ['dup', '⧉', 'Verdoppeln'], ['edit', '✏️', 'Bearbeiten'], ['del', '✕', 'Entfernen']];
 const blockOfNode = (node) => pmToSpec({ type: 'doc', content: [node.toJSON()] }).content[0];
 

@@ -8,6 +8,7 @@
 // Ohne DOM – testbar in Node.
 
 import { resolveDocRefs, withFormulaMathml } from '../doc/docspec.js';
+import { labSvg, labSvgWidthCm } from '../labs/lab-core.js';
 
 const PRINTABLE = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/svg+xml': 'svg' };
 const BY_EXT = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', svg: 'image/svg+xml', gif: 'image/gif', webp: 'image/webp' };
@@ -130,6 +131,7 @@ export function renderJob(spec, { title = '', media = {}, modules = {}, outputs 
     return { file: name, x: pt(ink.x), y: pt(ink.y), width: pt(ink.w), height: pt(ink.h) };
   };
 
+  let labCount = 0;
   function walk(blocks) {
     const out = [];
     for (const item of blocks) {
@@ -141,7 +143,13 @@ export function renderJob(spec, { title = '', media = {}, modules = {}, outputs 
       else if (block.type === 'table') out.push(tableCells(block));
       else if (block.type === 'image' && block.src !== undefined) out.push(imageBlock(block));
       else if (block.type === 'group') out.push(groupBlock(block));
-      else if ((block.type === 'code' && block.file !== undefined && block.code === undefined) || (block.type === 'image' && block.file !== undefined)) {
+      else if (block.type === 'lab') {
+        // Labor: Bild der Vorgabe (lab-core.js), wie der Server es druckt.
+        const svg = labSvg(block);
+        const name = `labor/labor-${++labCount}.svg`;
+        files[name] = base64(new TextEncoder().encode(svg));
+        out.push({ type: 'image', file: name, width: `${Math.min(labSvgWidthCm(svg), TEXT_WIDTH_CM).toFixed(2)}cm`, ...(block.id ? { id: block.id } : {}) });
+      } else if ((block.type === 'code' && block.file !== undefined && block.code === undefined) || (block.type === 'image' && block.file !== undefined)) {
         warnings.push(`„${block.file}“ gibt es nur im Kurs-Projekt – im Druck steht ein Hinweis.`);
         out.push({ type: 'note', text: `[${block.file}]` });
       } else out.push(Array.isArray(block.blocks) ? { ...block, blocks: walk(block.blocks) } : block);

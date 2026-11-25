@@ -216,7 +216,7 @@ function tableNode(b) {
   return node('table', attrsOf('table', b, ['header', 'rows']), rows);
 }
 
-const ATOMS = ['image', 'group', 'formula', 'karo', 'spacer', 'pagebreak', 'quiz'];
+const ATOMS = ['image', 'group', 'formula', 'karo', 'spacer', 'pagebreak', 'quiz', 'lab'];
 
 function blockToPm(b) {
   if (isText(b)) return paragraphNodes(b);

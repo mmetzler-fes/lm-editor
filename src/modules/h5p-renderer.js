@@ -1858,6 +1858,8 @@ export class H5pRenderer {
         }
         // Ausführbares Python (Code-Block mit run): Eingabe, ▶ und Ausgabe liefert der Gastgeber.
         if (div.querySelector('pre.ds-code-run') && this.host.pythonBlocks) this.host.pythonBlocks({ el: div, moduleId: options.moduleId, title: options.title });
+        // Labore (Zeiger, Bode, Ortskurve, Logik): aus dem Bild wird das bedienbare Labor.
+        if (div.querySelector('.ds-lab[data-block]')) import('../labs/labs.js').then(({ mountLabs }) => mountLabs(div, { moduleId: options.moduleId })).catch(() => { /* Bild bleibt */ });
         // Knöpfe des Dokuments (✍️, ⬇ PDF) in einer eigenen Leiste über dem
         // Blatt – das Quiz hängt sie in seine feste Titelleiste (quiz.js).
         const actionsBar = () => {

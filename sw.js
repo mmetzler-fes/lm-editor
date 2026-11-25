@@ -7,7 +7,7 @@
 const CACHE = 'lm-editor';
 const CORE = [
   './', 'index.html', 'manifest.webmanifest', 'icons/app-192.png',
-  'src/app/app.js', 'src/app/app.css', 'src/css/modules.css', 'src/css/ink.css', 'src/css/paper.css',
+  'src/app/app.js', 'src/app/app.css', 'src/css/modules.css', 'src/css/ink.css', 'src/css/paper.css', 'src/css/labs.css',
   'src/vendor/pdfjs/pdf.min.mjs', 'src/vendor/pdfjs/pdf.worker.min.mjs', 'examples/ohm.json',
   'src/vendor/temml/temml.mjs', 'src/vendor/temml/temml.css', 'src/vendor/markdown-it/markdown-it.mjs',
   // Text bearbeiten und In LearningModules öffnen (test/sw-core.test.js prüft, dass nichts fehlt).
@@ -15,6 +15,12 @@ const CORE = [
   'src/app/send-to-lm.js',
   'src/app/text-editor.js',
   'src/doc/docspec-html.js',
+  'src/labs/lab-core.js',
+  'src/labs/labs.js',
+  'src/labs/register.js',
+  'src/labs/zeiger-ui.js',
+  'src/labs/curves-ui.js',
+  'src/labs/logik-ui.js',
   'src/doc/docspec.js',
   'src/doc/ids.js',
   'src/doc/image-group.js',

@@ -12,6 +12,7 @@ import { studentVersionOf, createZlm, readZlm, writeZlm, editorStateOf, layerOf,
 import { findBlock, insertBlocks, removeBlocks, moveBlocks, replaceBlock } from '../doc/block-ops.js';
 import { stampBlockIds } from '../doc/ids.js';
 import '../doc/latex.js'; // LaTeX-Formeln
+import '../labs/register.js'; // Labore (Zeiger, Bode, Ortskurve, Logik)
 import { openInkEditor } from '../ink/ink-editor.js';
 import { H5pRenderer } from '../modules/h5p-renderer.js';
 import { sniff, importOdt, importPdfPages } from '../import/import.js';

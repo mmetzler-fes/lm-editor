@@ -78,15 +78,19 @@ export function mount(el, { state, mode, onChange, say = () => {} }) {
       if (sel) { sel = null; renderAll(); }
       return;
     }
-    sel = hit.r.id;
+    let id = hit.r.id;
+    let kind = hit.kind;
+    let created = false;
     if (!editable(hit.r)) {
-      say('🔒 Dieser Zeiger ist vorgegeben.');
-      renderAll();
-      return;
+      // Vorgegebener Zeiger: eine verbundene Kopie herausziehen (z. B. an die Spitze eines anderen legen).
+      id = copyOf(hit.r.id, false, false).id;
+      kind = 'move';
+      created = true;
     }
+    sel = id;
     e.preventDefault();
     canvas.setPointerCapture(e.pointerId);
-    drag = { id: hit.r.id, kind: hit.kind, off: [p[0] - hit.r.start[0], p[1] - hit.r.start[1]], moved: false };
+    drag = { id, kind, off: [p[0] - hit.r.start[0], p[1] - hit.r.start[1]], moved: false, created, orig: hit.r.id };
     renderCanvas();
   });
   canvas.addEventListener('pointermove', (e) => {
@@ -124,16 +128,58 @@ export function mount(el, { state, mode, onChange, say = () => {} }) {
   });
   const endDrag = () => {
     if (!drag) return;
-    const moved = drag.moved;
+    const { moved, created, id, orig } = drag;
     drag = null;
-    if (moved) changed();
+    if (created && !moved) {
+      // Nur angetippt: keine Kopie, nur auswählen.
+      st.items = items().filter((it) => it.id !== id);
+      sel = orig;
+      say('🔒 Vorgegeben – ziehen legt eine Kopie an, „−“ in der Liste den Gegenzeiger.');
+    } else if (moved) changed();
     renderAll();
   };
   canvas.addEventListener('pointerup', endDrag);
   canvas.addEventListener('pointercancel', endDrag);
   canvas.addEventListener('keydown', (e) => {
     if ((e.key === 'Delete' || e.key === 'Backspace') && sel && editable(byId(sel) || {})) { e.preventDefault(); remove(sel); }
+    if (e.key === '-' && sel && byId(sel)) { e.preventDefault(); copyOf(sel, true); }
   });
+
+  // ---------- Kopie / Gegenzeiger ----------
+  const freeName = (base) => {
+    const taken = new Set(items().map((it) => String(it.name ?? '').trim()));
+    let n = base;
+    while (taken.has(n)) n += "'";
+    return n;
+  };
+  /** Neuer Zeiger, über eine Formel mit dem Original verbunden: Kopie (= I23) oder Gegenzeiger (= -I23). */
+  function copyOf(id, negate, commit = true) {
+    const src = byId(id);
+    const r = zeigerResolve(st).find((x) => x.id === id);
+    if (!src || !r) return null;
+    const name = String(src.name ?? '').trim();
+    const it = {
+      id: uid(),
+      name: freeName(negate ? `−${name.replace(/^[−-]/, '')}` : name),
+      unit: src.unit ?? '',
+      expr: negate ? `-(${name})` : name,
+      x0: round(r.start[0]),
+      y0: round(r.start[1]),
+      color: src.color || LAB_COLORS[0],
+      width: src.width || 'm',
+    };
+    if (negate && /^[−-]/.test(name)) it.name = freeName(name.replace(/^[−-]/, ''));
+    // Nur ein schlichter Name lässt sich in einer Formel verwenden (−I23 nicht) – sonst den Wert übernehmen.
+    if (!/^[A-Za-z_Ͱ-Ͽ][A-Za-z0-9_'Ͱ-Ͽ]*$/.test(name)) { it.value = (r.val || [0, 0]).map((v) => round(negate ? -v : v)); delete it.expr; }
+    items().push(it);
+    sel = it.id;
+    if (commit) {
+      changed();
+      renderAll();
+      say(negate ? `Gegenzeiger ${it.name} angelegt – in der Mitte anfassen und an eine Spitze ziehen.` : `Kopie ${it.name} angelegt.`);
+    }
+    return it;
+  }
 
   // ---------- Liste ----------
   function remove(id) {
@@ -265,6 +311,8 @@ export function mount(el, { state, mode, onChange, say = () => {} }) {
           ...WIDTHS.map(([k, label]) => h('option', { value: k, selected: (it.width || 'm') === k }, label)))),
         h('td', { class: 'lab-acts' },
           h('button', { type: 'button', class: 'lab-mini', disabled: !can, title: it.show === false ? 'Als Pfeil zeigen' : 'Nur als Wert (ohne Pfeil)', onclick: () => { it.show = it.show === false; if (it.show) delete it.show; changed(); renderAll(); } }, it.show === false ? '🙈' : '👁'),
+          h('button', { type: 'button', class: 'lab-mini', title: 'Kopie (bleibt mit dem Zeiger verbunden)', onclick: () => copyOf(it.id, false) }, '⧉'),
+          h('button', { type: 'button', class: 'lab-mini', title: 'Gegenzeiger anlegen (gleich lang, entgegengesetzt)', onclick: () => copyOf(it.id, true) }, '−'),
           it.expr && can ? h('button', { type: 'button', class: 'lab-mini', title: 'Von der Formel lösen – der Wert bleibt fest', onclick: () => {
             if (!r.val) return;
             it.value = r.val.map(round);
@@ -284,7 +332,7 @@ export function mount(el, { state, mode, onChange, say = () => {} }) {
         try { st[k] = evalExpr(v)[0]; changed(); renderAll(); } catch (err) { say(`⚠️ ${err.message}`); }
       }, { size: 3 })))) : null;
     panel.replaceChildren(top, table, scales, ...(viewRow ? [viewRow] : []),
-      h('p', { class: 'lab-hint', text: 'Ziehen: Mitte verschiebt, Spitze ändert den Wert (Alt = ohne Raster). Der Anfang rastet an der Spitze eines anderen Zeigers ein und wandert dann mit. Werte: 3 + j4, 5∠30°, 10k, = U2 / Z2.' }));
+      h('p', { class: 'lab-hint', text: 'Ziehen: Mitte verschiebt, Spitze ändert den Wert (Alt = ohne Raster). Vorgegebene (🔒) Zeiger ziehen = Kopie herausziehen; ⧉ Kopie, − Gegenzeiger (Taste „-“). Der Anfang rastet an der Spitze eines anderen Zeigers ein und wandert dann mit. Werte: 3 + j4, 5∠30°, 10k, = U2 / Z2.' }));
   }
 
   renderAll();

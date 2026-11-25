@@ -867,9 +867,27 @@ export function createPmEditor(element, spec, host = {}) {
   function insertAtSelection(blocks) {
     const { state, view } = editor;
     const cur = currentBlock(state);
-    const at = cur ? cur.pos + cur.node.nodeSize : 0;
+    let at = cur ? cur.pos + cur.node.nodeSize : 0;
     const nodes = specToPm({ content: blocks }).content.map((j) => PmNode.fromJSON(state.schema, j));
-    const tr = state.tr.insert(at, nodes);
+    const tr = state.tr;
+    // Schreibmarke mitten in einem Absatz oder Code-Block: dort teilen – obere Hälfte, das Neue, untere Hälfte.
+    // Die untere Hälfte bekommt eine eigene ID (missingIds vergibt sie).
+    const sel = state.selection;
+    const $c = sel.$from;
+    if (cur && sel.empty && !(sel instanceof NodeSelection) && cur.node === $c.parent
+      && ['paragraph', 'codeBlock'].includes($c.parent.type.name)
+      && $c.parentOffset > 0 && $c.parentOffset < $c.parent.content.size) {
+      let pos = $c.pos;
+      // Im Code den Zeilenumbruch an der Trennstelle nicht mitnehmen.
+      if ($c.parent.type.name === 'codeBlock') {
+        const text = $c.parent.textContent;
+        if (text[$c.parentOffset] === '\n') tr.delete(pos, pos + 1);
+        if (text[$c.parentOffset - 1] === '\n') { tr.delete(pos - 1, pos); pos -= 1; }
+      }
+      tr.split(pos, 1, [{ type: $c.parent.type, attrs: { ...$c.parent.attrs, id: null, caption: null } }]);
+      at = pos + 1;
+    }
+    tr.insert(at, nodes);
     tr.setSelection(nodes[0].isAtom ? NodeSelection.create(tr.doc, at) : TextSelection.near(tr.doc.resolve(at + 1)));
     view.dispatch(tr.scrollIntoView());
     view.focus();

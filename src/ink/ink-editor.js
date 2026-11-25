@@ -3521,6 +3521,45 @@ const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-r
       el.style.top = `${(y / p.h) * 100}%`;
     };
     /** Geste: beim Abheben `run`, nach langem Drücken ohne Bewegen das Menü dieser Stelle. */
+    /**
+     * Link im Blatt unter dem Zeiger: Die Zeichenebene liegt darüber, ein Klick erreicht ihn nie.
+     * Antippen (Finger, Pfeil) zeigt deshalb ein kleines Menü: öffnen oder Adresse kopieren.
+     */
+    const linkAt = (cx, cy) => {
+      if (!p.paper) return null;
+      const a = document.elementsFromPoint(cx, cy).map((el) => el.closest?.('a[href]')).find((el) => el && p.el.contains(el) && !el.closest(LIVE_BLOCK));
+      return a && /^(https?:|mailto:)/i.test(a.getAttribute('href')) ? a : null;
+    };
+    // Links im Blatt (außer in Quizzen) öffnet nur das Menü – kein zweites Fenster durch den Klick selbst.
+    if (p.paper) {
+      p.el.addEventListener('click', (e) => {
+        const a = e.target.closest?.('a[href]');
+        if (a && !a.closest(LIVE_BLOCK)) e.preventDefault();
+      }, true);
+    }
+    const linkMenu = (cx, cy) => {
+      const a = linkAt(cx, cy);
+      if (!a) return false;
+      const href = a.getAttribute('href');
+      const shown = href.length > 60 ? `${href.slice(0, 59)}…` : href;
+      showContextMenu(cx, cy + 8, [
+        { heading: shown },
+        { label: '🔗 Link öffnen', onClick: () => window.open(href, '_blank', 'noopener') },
+        { label: '📋 Adresse kopieren', onClick: () => copyLink(href) },
+      ]);
+      return true;
+    };
+    const copyLink = async (href) => {
+      try { await navigator.clipboard.writeText(href); status('Adresse kopiert'); return; } catch (_) { /* älterer Browser */ }
+      const ta = Object.assign(document.createElement('textarea'), { value: href });
+      ta.style.cssText = 'position:fixed;opacity:0;left:0;top:0';
+      document.body.appendChild(ta);
+      ta.select();
+      let ok = false;
+      try { ok = document.execCommand('copy'); } catch (_) { /* nein */ }
+      ta.remove();
+      status(ok ? 'Adresse kopiert' : `Adresse: ${href}`);
+    };
     const tapWithMenu = (e, x, y, run) => {
       const { clientX, clientY, pointerId } = e;
       const g = { kind: 'tap', id: pointerId, from: [clientX, clientY], run };
@@ -3604,7 +3643,9 @@ const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-r
           if (!penDevice) freeFingers.add(e.pointerId);
           touches.set(e.pointerId, [e.clientX, e.clientY]);
           offerFingerWriting();
+          const { clientX: cx, clientY: cy } = e;
           gesture = tapWithMenu(e, fx, fy, () => {
+            if (linkMenu(cx, cy)) return; // Finger auf einem Link: öffnen oder kopieren
             if (state.tool === 'text') placeText(p, fx, fy);
             else if (selecting()) selectAt(fx, fy);
           });
@@ -3676,6 +3717,10 @@ const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-r
       if (tool === 'laser') {
         gesture = { kind: 'laser', id: e.pointerId, trail: laserStart(p.i, x, y) };
         laserDot(p.i, [x, y]);
+      } else if ((tool === 'pen' || tool === 'marker') && e.pointerType === 'mouse' && linkAt(e.clientX, e.clientY)) {
+        // Maus auf einem Link: Klick öffnet sein Menü – Schreiben mit der Maus beginnt daneben.
+        const { clientX: cx, clientY: cy } = e;
+        gesture = { kind: 'tap', id: e.pointerId, from: [cx, cy], run: () => linkMenu(cx, cy) };
       } else if (tool === 'pen' || tool === 'marker') {
         const marker = tool === 'marker';
         gesture = {
@@ -3733,7 +3778,9 @@ const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-r
           }
         } else {
           clearSelection(); // schon beim Aufsetzen, auch wenn danach gezogen wird
-          gesture = tapWithMenu(e, x, y, () => selectAt(x, y));
+          const { clientX: cx, clientY: cy } = e;
+          // Pfeil auf einem Link: öffnen oder kopieren (statt nichts auszuwählen).
+          gesture = tapWithMenu(e, x, y, () => { if (!(tool === 'select' && linkMenu(cx, cy))) selectAt(x, y); });
           // Pfeil mit dem Stift: Ziehen scrollt das Blatt (wie der Finger) – Antippen wählt weiterhin.
           if (e.pointerType === 'pen' && tool === 'select') gesture.pan = { last: [e.clientX, e.clientY] };
         }

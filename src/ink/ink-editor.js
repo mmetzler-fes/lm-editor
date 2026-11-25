@@ -274,7 +274,7 @@ export async function closeInkEditor() {
 /** Ist gerade ein Stift-Editor offen? */
 export const inkEditorOpen = () => !!currentClose;
 
-export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = null, solutions = false, paper = null, store = null, actions = [], onClose = null, laser = solutions, side = null }) {
+export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = null, solutions = false, paper = null, store = null, actions = [], onClose = null, laser = solutions, side = null, noExport = false }) {
   const storeKey = `ink:${key}`;
   const saved = store ? await store.load() : await dbGet(storeKey);
   const doc = saved?.v === 1 ? saved : { v: 1, bg: paper ? 'paper' : loadPdf ? 'pdf' : 'karo', pages: [{ items: [] }] };
@@ -353,8 +353,8 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
         </select>
         ${btn('ink-add-page', 'page', 'Seite anfügen')}
         ${paper?.headerPdf ? btn('ink-head', 'head', 'Kopfzeile der Vorlage zeigen (Logo, Titel – wie im Druck)') : ''}
-        ${paper ? btn('ink-print', 'print', 'Drucken oder als PDF speichern – Arbeitsblatt oder Lösungsblatt, mit oder ohne Beschriftung') : ''}
-        ${paper?.share && paper?.printPdf ? btn('ink-share', 'share', escapeAttrInk(paper.share.title || 'Als PDF teilen')) : ''}
+        ${paper && !noExport ? btn('ink-print', 'print', 'Drucken oder als PDF speichern – Arbeitsblatt oder Lösungsblatt, mit oder ohne Beschriftung') : ''}
+        ${paper?.share && paper?.printPdf && !noExport ? btn('ink-share', 'share', escapeAttrInk(paper.share.title || 'Als PDF teilen')) : ''}
       </span>
       <span class="ink-group ink-zoom">
         ${btn('ink-zoom-out', 'zoomOut', 'Verkleinern')}
@@ -3004,13 +3004,15 @@ const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-r
   }
   function showArea(pg, rect) {
     clearArea();
+    if (noExport && !hasSelection()) return; // nur das Bildschirmfoto wäre übrig
     const z = state.zoom;
     const has = hasSelection();
     const bar = document.createElement('div');
     bar.className = 'ink-area-bar';
     const b = (act, ico, label, extra = '') => `<button type="button" class="ink-btn" data-area="${act}" title="${label}" aria-label="${label}"${extra}>${icon(ico)}</button>`;
-    bar.innerHTML = b('shot', 'camera', 'Bildschirmfoto des Bereichs – kopieren, teilen, speichern')
-      + (has ? `<span class="ink-sep"></span>${b('cut', 'cut', 'Ausschneiden')}${b('copy', 'copy', 'Kopieren')}${b('delete', 'trash', 'Löschen', ' style="color:#dc2626"')}${b('more', 'more', 'Mehr')}` : '');
+    // `noExport` (Klassenarbeit): kein Bildschirmfoto zum Kopieren, Teilen oder Speichern.
+    bar.innerHTML = (noExport ? '' : b('shot', 'camera', 'Bildschirmfoto des Bereichs – kopieren, teilen, speichern'))
+      + (has ? `${noExport ? '' : '<span class="ink-sep"></span>'}${b('cut', 'cut', 'Ausschneiden')}${b('copy', 'copy', 'Kopieren')}${b('delete', 'trash', 'Löschen', ' style="color:#dc2626"')}${b('more', 'more', 'Mehr')}` : '');
     pg.el.appendChild(bar);
     // Über dem Bereich, sonst darunter; nie über den Rand.
     const top = rect.y * z - bar.offsetHeight - 10;

@@ -98,6 +98,8 @@ function tokenize(src) {
     }
     const two = s.slice(i, i + 2);
     if (two === '||' || two === '/_') { out.push({ t: 'op', v: two === '||' ? '||' : '∠', at: i }); i += 2; continue; }
+    // „<“ statt ∠ (steht auf jeder Tastatur): 10<120 = 10∠120°.
+    if (s[i] === '<') { out.push({ t: 'op', v: '∠', at: i }); i++; continue; }
     if ('+-−*/^()∠°;,·×∥'.includes(ch)) {
       // Ein Komma ohne Ziffer dahinter trennt Werte wie „;“ (polar(10, 30)).
       const v = ch === '−' ? '-' : ch === '·' || ch === '×' ? '*' : ch === '∥' ? '||' : ch === ',' ? ';' : ch;

@@ -324,7 +324,7 @@ export function mount(el, { state, mode, onChange, say = () => {} }) {
       const it = byId(r.id);
       const can = editable(it);
       const polar = it.mode === 'polar';
-      const valueField = field(it.expr ? `= ${it.expr}` : fmtCx(it.value || [0, 0], '', polar ? 'polar' : 'kart'), (v) => setValue(it, v), { class: 'lab-value', disabled: !can, title: '3 + j4 · 5∠30° · = U / Z (Formel bleibt verbunden)' });
+      const valueField = field(it.expr ? `= ${it.expr}` : fmtCx(it.value || [0, 0], '', polar ? 'polar' : 'kart'), (v) => setValue(it, v), { class: 'lab-value', disabled: !can, title: '3 + j4 · 5∠30° oder 5<30 · = U / Z (Formel bleibt verbunden)' });
       const other = r.val ? fmtCx(r.val, it.unit ?? '', polar ? 'kart' : 'polar') : '';
       const start = it.anchor && byId(it.anchor)
         ? h('span', { class: 'lab-anchor' }, `an ${byId(it.anchor).name || '?'} `, can ? h('button', { type: 'button', class: 'lab-mini', title: 'Lösen – der Anfang bleibt, wo er ist', onclick: () => {
@@ -421,7 +421,7 @@ export function mount(el, { state, mode, onChange, say = () => {} }) {
         it.expr ? h('span', { class: 'lab-hint', text: ' (aus Formel – Ändern löst sie)' }) : null);
     })();
     panel.replaceChildren(...(viewRow ? [viewRow] : []), top, ...(props ? [props] : []), table, scales,
-      h('p', { class: 'lab-hint', text: 'Ziehen: Mitte (✥) verschiebt, Spitze ändert den Wert, ⟳ dreht um den Anfang (Alt = ohne Raster). Strg+C/X/V kopiert, schneidet aus, fügt ein. Vorgegebene (🔒) Zeiger ziehen = Kopie herausziehen; ⧉ Kopie, − Gegenzeiger (Taste „-“). Der Anfang rastet an der Spitze eines anderen Zeigers ein und wandert dann mit. Werte: 3 + j4, 5∠30°, 10k, = U2 / Z2.' }));
+      h('p', { class: 'lab-hint', text: 'Ziehen: Mitte (✥) verschiebt, Spitze ändert den Wert, ⟳ dreht um den Anfang (Alt = ohne Raster). Strg+C/X/V kopiert, schneidet aus, fügt ein. Vorgegebene (🔒) Zeiger ziehen = Kopie herausziehen; ⧉ Kopie, − Gegenzeiger (Taste „-“). Der Anfang rastet an der Spitze eines anderen Zeigers ein und wandert dann mit. Werte: 3 + j4, 5∠30° (∠ auch als < tippen: 5<30), 10k, = U2 / Z2.' }));
   }
 
   renderAll();

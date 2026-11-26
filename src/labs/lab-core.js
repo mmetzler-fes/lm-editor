@@ -1381,7 +1381,8 @@ export function spsSvg(state, { active = [], vars = {} } = {}) {
       out += line(SX + SW, sy + SH / 2, AX, sy + SH / 2, ink, 0.03);
       let ay = by;
       for (const a of s.actions) {
-        const val = vars[String(a.var ?? '').trim()];
+        // Nur im aktiven Schritt grün: Dieselbe Variable steht oft in mehreren Schritten.
+        const val = isOn && vars[String(a.var ?? '').trim()];
         const q = `${a.q || ''}${SPS_TIMED.includes(a.q) && a.time ? ` ${a.time}` : ''}`;
         out += `<rect x="${r3(AX)}" y="${r3(ay)}" width="${r3(AW)}" height="${RH}" fill="${val ? '#bbf7d0' : '#ffffff'}" stroke="${ink}" stroke-width="0.03"/>`;
         out += line(AX + w1, ay, AX + w1, ay + RH, ink, 0.03) + line(AX + w1 + w2, ay, AX + w1 + w2, ay + RH, ink, 0.03);

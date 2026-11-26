@@ -28,6 +28,7 @@ export function mount(el, { state, mode, onChange, say = () => {} }) {
   // Rastende Eingänge mit start: true sind zu Beginn betätigt (z. B. Endlage „eingefahren“ ohne Anlage).
   for (const x of st.io || []) if (x.kind === 'in' && x.contact === 'latch' && x.start) pressed[x.id] = true;
   let selStep = null;
+  let listOpen = false; // Liste der Schritte unter der Grafik: zugeklappt
   const changed = () => { onChange(clone(st)); if (rt) restart(); renderAll(); };
   const io = () => (st.io ||= []);
   const steps = () => (st.steps ||= []);
@@ -289,7 +290,8 @@ export function mount(el, { state, mode, onChange, say = () => {} }) {
       changed();
     };
     panel.replaceChildren(ioTable(),
-      h('div', { class: 'sps-section' }, h('div', { class: 'lab-label', text: 'Schrittkette' }), ...list,
+      // Die Kette entsteht in der Grafik – die Liste ist nur noch zum Nachsehen da (zugeklappt).
+      h('details', { class: 'sps-section', open: listOpen, ontoggle: (e) => { listOpen = e.target.open; } }, h('summary', { class: 'lab-label', text: 'Schrittkette als Liste' }), ...list,
         h('div', { class: 'lab-row' }, h('button', { type: 'button', class: 'lab-btn', onclick: addStep }, '+ Schritt'),
           h('label', { class: 'lab-check', title: 'Nach dem letzten Schritt zurück zum Initialschritt' }, h('input', { type: 'checkbox', checked: st.back !== false, onchange: (e) => { st.back = e.target.checked; changed(); } }), ' Kette schließen (zurück zum Initialschritt)'))),
       h('p', { class: 'lab-hint', text: 'Bedingungen: AND (&, *), OR (+), XOR, NOT (/, !), Klammern, Schrittmerker S_2.X, Zeitglied tonT1.Q (im Aktionsblock z. B. D T#3s → tonT1), Schrittzeit S_2.T >= T#3s. Bestimmungszeichen: N S R L D P DS SD SL (L, D, DS, SD, SL mit Zeit T#…).' }));

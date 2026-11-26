@@ -547,10 +547,12 @@ export class H5pRenderer {
         }
         if (tfQuestions.length === 0) { div.textContent = 'Keine Fragen definiert.'; break; }
 
-        if (examRun && tfQuestions.length > 1) {
-          // Klassenarbeit: alle Fragen untereinander, ohne eigenes Blättern und ohne Rückmeldung.
-          // Ausgewertet wird wie sonst über q._userAnswer (answer-eval.js, je Frage ein Teil).
+        // Alle Fragen untereinander: in der Klassenarbeit immer (ohne Rückmeldung), sonst, solange
+        // „Alle Fragen auf einer Seite“ nicht abgeschaltet ist. Ausgewertet wird wie sonst über
+        // q._userAnswer (answer-eval.js, je Frage ein Teil).
+        if (tfQuestions.length > 1 && (examRun || content.onePage !== false)) {
           tfQuestions.forEach((q) => { delete q._userAnswer; });
+          const withCheck = !examRun && !suppressFeedback;
           div.innerHTML = `
             <div class="tf-player tf-all">
               ${this.renderModuleImage(content, { marginBottom: '20px' })}
@@ -561,14 +563,35 @@ export class H5pRenderer {
                     <button type="button" class="btn btn-secondary tf-btn" data-val="true">Wahr</button>
                     <button type="button" class="btn btn-secondary tf-btn" data-val="false">Falsch</button>
                   </div>
+                  ${withCheck ? '<p class="tf-row-fb"></p>' : ''}
                 </li>`).join('')}</ol>
+              ${withCheck ? '<button type="button" class="btn btn-primary btn-sm tf-check-all" style="margin-top:12px;">Überprüfen</button><div class="tf-all-score" style="margin-top:8px;font-weight:600;"></div>' : ''}
             </div>`;
+          const allAnswered = () => tfQuestions.every((q) => q._userAnswer !== undefined);
+          if (withCheck) lockNext(true, 'Erst alle Fragen beantworten');
           div.querySelectorAll('.tf-row').forEach((row) => {
             const q = tfQuestions[Number(row.dataset.i)];
             row.querySelectorAll('.tf-btn').forEach((btn) => btn.addEventListener('click', () => {
               q._userAnswer = btn.dataset.val;
               row.querySelectorAll('.tf-btn').forEach((b) => b.classList.toggle('tf-selected', b === btn));
+              const fb = row.querySelector('.tf-row-fb');
+              if (fb) { fb.textContent = ''; row.classList.remove('tf-ok', 'tf-wrong'); }
+              if (withCheck && allAnswered()) lockNext(false);
             }));
+          });
+          div.querySelector('.tf-check-all')?.addEventListener('click', () => {
+            let ok = 0;
+            div.querySelectorAll('.tf-row').forEach((row) => {
+              const q = tfQuestions[Number(row.dataset.i)];
+              const fb = row.querySelector('.tf-row-fb');
+              if (q._userAnswer === undefined) { fb.textContent = 'Noch nicht beantwortet.'; return; }
+              const right = String(q._userAnswer) === String(q.correctAnswer);
+              if (right) ok++;
+              row.classList.toggle('tf-ok', right);
+              row.classList.toggle('tf-wrong', !right);
+              fb.textContent = right ? (q.feedbackCorrect || 'Richtig!') : (q.feedbackWrong || 'Leider falsch.');
+            });
+            div.querySelector('.tf-all-score').textContent = `${ok} von ${tfQuestions.length} richtig`;
           });
           break;
         }

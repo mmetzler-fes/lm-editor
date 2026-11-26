@@ -1329,7 +1329,7 @@ export function spsCheck(st) {
 }
 
 /** Bild der Kette wie im Arbeitsblatt (Schritt, Transition, Aktionsblock A1–A4); aktive Schritte grün. */
-export function spsSvg(state, { active = [], vars = {} } = {}) {
+export function spsSvg(state, { active = [], vars = {}, edit = false } = {}) {
   const st = { ...spsDefault(), ...(state || {}) };
   const steps = st.steps || [];
   const CH = 0.19; // Breite eines Zeichens bei 0,36
@@ -1352,7 +1352,10 @@ export function spsSvg(state, { active = [], vars = {} } = {}) {
     return r;
   });
   const H = y + 0.6;
-  const W = AX + AW + 0.3;
+  const W = AX + AW + (edit ? 0.9 : 0.3);
+  // Bearbeiten in der Grafik: (+) für Schritt bzw. Aktion, klickbare Bereiche mit data-…
+  const plus = (x, y, attr, title) => (edit ? `<g ${attr} style="cursor:pointer"><title>${escX(title)}</title><circle cx="${r3(x)}" cy="${r3(y)}" r="0.22" fill="#ffffff" stroke="#2563eb" stroke-width="0.03"/>`
+    + `<text x="${r3(x)}" y="${r3(y + 0.11)}" font-size="0.32" text-anchor="middle" fill="#2563eb" ${FONT}>+</text></g>` : '');
   let out = svgOpen(W, H);
   const cx = SX + SW / 2;
   const ink = '#111';
@@ -1370,12 +1373,17 @@ export function spsSvg(state, { active = [], vars = {} } = {}) {
     const nextTop = i + 1 < rows.length ? rows[i + 1].y + (rows[i + 1].h - SH) / 2 : ty + 0.45;
     out += line(cx, sy + SH, cx, nextTop, ink, 0.03);
     out += line(cx - 0.2, ty, cx + 0.2, ty, ink, 0.05);
-    out += text(cx - 0.3, ty + 0.12, String(s.trans ?? ''), { size: 0.34, anchor: 'end' });
+    out += `<g data-trans="${escX(s.id)}"${edit ? ' style="cursor:pointer"' : ''}>`;
+    if (edit) out += `<rect x="0" y="${r3(ty - 0.3)}" width="${r3(cx)}" height="0.6" fill="transparent"/>`;
+    out += text(cx - 0.3, ty + 0.12, String(s.trans ?? '') || (edit ? '(Bedingung)' : ''), { size: 0.34, anchor: 'end', fill: s.trans ? '#222' : '#94a3b8' });
+    out += '</g>';
+    out += plus(cx + 0.55, ty, `data-add-step="${escX(s.id)}"`, 'Schritt danach einfügen');
     if (i + 1 === rows.length && st.back !== false) {
       const init = steps.find((x) => x.initial) || steps[0];
       out += arrow(cx, ty + 0.1, cx, nextTop + 0.05, ink, 0.03, 0.15) + text(cx + 0.15, nextTop + 0.05, init ? String(init.name) : '', { size: 0.3, fill: '#444' });
     }
     // Aktionsblock
+    if (!(s.actions || []).length) out += plus(SX + SW + 0.45, sy + SH / 2, `data-add-act="${escX(s.id)}"`, 'Aktion hinzufügen');
     if ((s.actions || []).length) {
       const by = top + (h - blockH(s)) / 2;
       out += line(SX + SW, sy + SH / 2, AX, sy + SH / 2, ink, 0.03);
@@ -1384,11 +1392,13 @@ export function spsSvg(state, { active = [], vars = {} } = {}) {
         // Nur im aktiven Schritt grün: Dieselbe Variable steht oft in mehreren Schritten.
         const val = isOn && vars[String(a.var ?? '').trim()];
         const q = `${a.q || ''}${SPS_TIMED.includes(a.q) && a.time ? ` ${a.time}` : ''}`;
+        out += `<g data-act="${escX(s.id)}|${escX(a.id)}"${edit ? ' style="cursor:pointer"' : ''}>`;
         out += `<rect x="${r3(AX)}" y="${r3(ay)}" width="${r3(AW)}" height="${RH}" fill="${val ? '#bbf7d0' : '#ffffff'}" stroke="${ink}" stroke-width="0.03"/>`;
         out += line(AX + w1, ay, AX + w1, ay + RH, ink, 0.03) + line(AX + w1 + w2, ay, AX + w1 + w2, ay + RH, ink, 0.03);
         out += text(AX + 0.08, ay + RH / 2 + 0.11, q, { size: q.length > 4 ? 0.24 : 0.32 });
         out += text(AX + w1 + w2 / 2, ay + RH / 2 + 0.12, String(a.text ?? ''), { size: 0.32, anchor: 'middle' });
         out += text(AX + w1 + w2 + w3 / 2, ay + RH / 2 + 0.12, String(a.var ?? ''), { size: 0.32, anchor: 'middle', bold: !!val });
+        out += '</g>';
         ay += RH;
         if (String(a.cond ?? '').trim()) {
           out += `<rect x="${r3(AX)}" y="${r3(ay)}" width="${r3(AW)}" height="${RH}" fill="#ffffff" stroke="${ink}" stroke-width="0.03"/>`;
@@ -1396,6 +1406,7 @@ export function spsSvg(state, { active = [], vars = {} } = {}) {
           ay += RH;
         }
       }
+      out += plus(AX + AW + 0.4, ay - RH / 2, `data-add-act="${escX(s.id)}"`, 'Aktion hinzufügen');
     }
   });
   return `${out}</svg>`;

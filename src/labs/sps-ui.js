@@ -69,11 +69,35 @@ export function mount(el, { state, mode, onChange, say = () => {} }) {
       h('span', { class: 'lab-hint', text: rt ? '' : 'Eingänge in der Zuordnungstabelle betätigen (Taster: drücken, rastend: antippen).' }));
   }
   function renderLive() {
-    canvas.innerHTML = spsSvg(st, rt ? { active: rt.active, vars: rt.vars } : {});
+    canvas.innerHTML = spsSvg(st, { ...(rt ? { active: rt.active, vars: rt.vars } : {}), edit: true });
     canvas.querySelectorAll('[data-step]').forEach((g) => {
       g.style.cursor = 'pointer';
-      g.addEventListener('click', () => { selStep = g.dataset.step; renderPanel(); panel.querySelector(`[data-edit="${CSS.escape(selStep)}"]`)?.scrollIntoView({ block: 'nearest' }); });
+      g.addEventListener('click', (e) => { selStep = g.dataset.step; popStep(byStep(g.dataset.step), e); });
     });
+    canvas.querySelectorAll('[data-trans]').forEach((g) => g.addEventListener('click', (e) => popTrans(byStep(g.dataset.trans), e)));
+    canvas.querySelectorAll('[data-act]').forEach((g) => g.addEventListener('click', (e) => {
+      const [sid, aid] = g.dataset.act.split('|');
+      const s0 = byStep(sid);
+      popAction(s0, (s0?.actions || []).find((a) => a.id === aid), e);
+    }));
+    canvas.querySelectorAll('[data-add-step]').forEach((g) => g.addEventListener('click', (e) => {
+      const i = steps().findIndex((x) => x.id === g.dataset.addStep);
+      const used = new Set(steps().map((x) => x.name));
+      let n = steps().length + 1;
+      while (used.has(`S_${n}`)) n++;
+      const ns = { id: uid('s'), name: `S_${n}`, trans: '', actions: [] };
+      steps().splice(i + 1, 0, ns);
+      changed();
+      popTrans(byStep(g.dataset.addStep), e, true);
+    }));
+    canvas.querySelectorAll('[data-add-act]').forEach((g) => g.addEventListener('click', (e) => {
+      const s0 = byStep(g.dataset.addAct);
+      if (!s0 || !can(s0)) return;
+      const a = { id: uid('a'), q: 'N', time: '', text: '', var: '', cond: '' };
+      (s0.actions ||= []).push(a);
+      changed();
+      popAction(s0, a, e);
+    }));
     if (rt) {
       const act = steps().filter((s) => rt.active.includes(s.id)).map((s) => `${s.name} (${((rt.t - rt.since[s.id]) / 1000).toFixed(1)} s)`);
       status.textContent = rt.error ? `⚠️ ${rt.error}` : `Aktiv: ${act.join(', ') || '–'}`;
@@ -87,6 +111,85 @@ export function mount(el, { state, mode, onChange, say = () => {} }) {
       const v = rt ? rt.vars[l.dataset.lamp] : 0;
       l.classList.toggle('sps-on', !!v);
     });
+  }
+
+  // ---------- Bearbeiten in der Grafik (kleines Feld an der angetippten Stelle) ----------
+  const byStep = (id) => steps().find((x) => x.id === id) || null;
+  let pop = null;
+  const closePop = () => { pop?.remove(); pop = null; };
+  function openPop(e, title, ...rows) {
+    closePop();
+    // Am Labor (nicht in der Zeichnung): Die Zeichnung wird bei jeder Änderung neu aufgebaut.
+    el.style.position = 'relative';
+    const r = el.getBoundingClientRect();
+    pop = h('div', { class: 'sps-pop', style: { left: `${Math.min(Math.max(0, e.clientX - r.left), Math.max(0, r.width - 330))}px`, top: `${e.clientY - r.top + 12}px` } },
+      h('div', { class: 'sps-pop-head' }, h('strong', { text: title }), h('button', { type: 'button', class: 'lab-mini', title: 'Schließen', onclick: closePop }, '✕')),
+      ...rows);
+    pop.addEventListener('pointerdown', (ev) => ev.stopPropagation());
+    el.appendChild(pop);
+    pop.querySelector('input, select')?.focus();
+  }
+  // Vorschläge für Bedingungen: Eingänge, Merker, Zeitglieder (.Q), Schritte (.X)
+  const condWords = () => [...io().filter((x) => x.name).map((x) => (x.kind === 'tim' ? `${x.name}.Q` : x.name)), ...steps().map((x) => `${x.name}.X`), 'AND', 'OR', 'NOT'];
+  function condField(value, onSet, placeholder) {
+    const listId = uid('dl');
+    const inp = field(value ?? '', (v) => onSet(v.trim()), { size: 28, placeholder, list: listId });
+    const chips = h('div', { class: 'sps-chips' }, ...condWords().map((w) => h('button', { type: 'button', class: 'lab-mini', onclick: () => {
+      inp.value = `${inp.value.trim()}${inp.value.trim() ? ' ' : ''}${w}`.trim();
+      inp.focus();
+    } }, w)));
+    const apply = h('button', { type: 'button', class: 'lab-btn', onclick: () => { onSet(inp.value.trim()); closePop(); } }, 'Übernehmen');
+    inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') closePop(); });
+    return [inp, h('datalist', { id: listId }, ...condWords().map((w) => h('option', { value: w }))), chips, apply];
+  }
+  function popTrans(s0, e, fresh = false) {
+    if (!s0) return;
+    const i = steps().indexOf(s0);
+    const next = i + 1 < steps().length ? steps()[i + 1] : (steps().find((x) => x.initial) || steps()[0]);
+    if (!can(s0)) return;
+    openPop(e, `${fresh ? 'Neuer Schritt – ' : ''}Transition ${s0.name} → ${next?.name || ''}`,
+      ...condField(s0.trans, (v) => { s0.trans = v; changed(); }, 'z. B. SF1 AND NOT B2 oder tonT1.Q'));
+  }
+  function popStep(s0, e) {
+    if (!s0) return;
+    const ok = can(s0);
+    const i = steps().indexOf(s0);
+    const move = (d) => { const l = steps(); const j = i + d; if (j < 0 || j >= l.length) return; [l[i], l[j]] = [l[j], l[i]]; changed(); closePop(); };
+    openPop(e, `Schritt ${s0.name}`,
+      h('div', { class: 'lab-row' }, h('span', { text: 'Name ' }), field(s0.name ?? '', (v) => { s0.name = v.trim(); changed(); }, { size: 6, disabled: !ok })),
+      h('label', { class: 'lab-check' }, h('input', { type: 'checkbox', checked: !!s0.initial, disabled: !ok, onchange: (ev) => { steps().forEach((x) => { delete x.initial; }); if (ev.target.checked) s0.initial = true; changed(); } }), ' Initialschritt'),
+      h('div', { class: 'lab-row' },
+        h('button', { type: 'button', class: 'lab-mini', disabled: !ok || i === 0, onclick: () => move(-1) }, '↑ nach oben'),
+        h('button', { type: 'button', class: 'lab-mini', disabled: !ok || i === steps().length - 1, onclick: () => move(1) }, '↓ nach unten'),
+        h('button', { type: 'button', class: 'lab-mini', disabled: !ok, onclick: () => { (s0.actions ||= []).push({ id: uid('a'), q: 'N', time: '', text: '', var: '', cond: '' }); changed(); closePop(); } }, '+ Aktion'),
+        ok && steps().length > 1 ? h('button', { type: 'button', class: 'lab-mini lab-del', onclick: () => { st.steps = steps().filter((x) => x !== s0); changed(); closePop(); } }, '✕ Schritt löschen') : null));
+  }
+  function popAction(s0, a, e) {
+    if (!s0 || !a) return;
+    const ok = can(s0);
+    const vars = [['out', 'Ausgänge'], ['mem', 'Merker'], ['tim', 'Zeitglieder']];
+    const timeRow = h('div', { class: 'lab-row', style: { display: SPS_TIMED.includes(a.q) ? '' : 'none' } }, h('span', { text: 'Zeit ' }),
+      field(a.time ?? '', (v) => { a.time = v.trim(); changed(); }, { size: 8, disabled: !ok, placeholder: 'T#3s' }));
+    openPop(e, `Aktion in ${s0.name}`,
+      h('div', { class: 'lab-row sps-qs' }, ...SPS_QUALIFIERS.map((q) => h('button', { type: 'button', class: `lab-mini${a.q === q ? ' lab-on' : ''}`, title: Q_HELP[q], disabled: !ok, onclick: () => {
+        a.q = q;
+        if (SPS_TIMED.includes(q) && !a.time) a.time = 'T#3s';
+        changed();
+        popAction(s0, a, e);
+      } }, q))),
+      h('div', { class: 'lab-hint', text: Q_HELP[a.q] || '' }),
+      timeRow,
+      h('div', { class: 'lab-row' }, h('span', { text: 'Aktion ' }), field(a.text ?? '', (v) => { a.text = v; changed(); }, { size: 22, disabled: !ok, placeholder: 'z. B. Schütz QA1 ein' })),
+      h('div', { class: 'lab-row' }, h('span', { text: 'Variable ' }), h('select', { disabled: !ok, onchange: (ev) => { a.var = ev.target.value; changed(); } },
+        h('option', { value: '', selected: !a.var }, '–'),
+        ...vars.map(([k, label]) => {
+          const names = io().filter((x) => x.kind === k && x.name).map((x) => String(x.name).trim());
+          return names.length ? h('optgroup', { label }, ...names.map((v) => h('option', { value: v, selected: a.var === v }, v))) : null;
+        }))),
+      h('div', { class: 'lab-row' }, h('span', { text: 'Bedingung (A4) ' }), field(a.cond ?? '', (v) => { a.cond = v.trim(); changed(); }, { size: 16, disabled: !ok, placeholder: 'leer = immer' })),
+      h('div', { class: 'lab-row' },
+        h('button', { type: 'button', class: 'lab-btn', onclick: closePop }, 'Fertig'),
+        ok ? h('button', { type: 'button', class: 'lab-mini lab-del', onclick: () => { s0.actions = s0.actions.filter((x) => x !== a); changed(); closePop(); } }, '✕ Aktion löschen') : null));
   }
 
   // ---------- Zuordnungstabelle ----------

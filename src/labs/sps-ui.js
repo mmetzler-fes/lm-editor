@@ -152,7 +152,12 @@ export function mount(el, { state, mode, onChange, say = () => {} }) {
         h('td', {}, field(a.text ?? '', (v) => { a.text = v; changed(); }, { size: 14, disabled: !ok, placeholder: 'Aktionsname' })),
         h('td', {}, h('select', { disabled: !ok, onchange: (e) => { a.var = e.target.value; changed(); } },
           h('option', { value: '', selected: !a.var }, '–'),
-          ...[...new Set([...varList, ...(a.var && !varList.includes(a.var) ? [a.var] : [])])].map((v) => h('option', { value: v, selected: a.var === v }, v)))),
+          // Nach Art gruppiert: Ausgänge, Merker, Zeitglieder (z. B. tonT1 mit D T#3s)
+          ...[['out', 'Ausgänge'], ['mem', 'Merker'], ['tim', 'Zeitglieder']].map(([k, label]) => {
+            const names = io().filter((x) => x.kind === k && x.name).map((x) => String(x.name).trim());
+            return names.length ? h('optgroup', { label }, ...names.map((v) => h('option', { value: v, selected: a.var === v }, v))) : null;
+          }),
+          ...(a.var && !varList.includes(a.var) ? [h('option', { value: a.var, selected: true }, `${a.var} (nicht in der Tabelle)`)] : []))),
         h('td', {}, field(a.cond ?? '', (v) => { a.cond = v.trim(); changed(); }, { size: 10, disabled: !ok, placeholder: '(Bedingung)', title: 'Zuweisungsbedingung (A4) – leer: immer' })),
         h('td', {}, ok ? h('button', { type: 'button', class: 'lab-mini lab-del', title: 'Aktion löschen', onclick: () => { s.actions = s.actions.filter((x) => x !== a); changed(); } }, '✕') : null));
     });

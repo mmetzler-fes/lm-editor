@@ -11,7 +11,7 @@ import { h, field } from './labs.js';
 
 const clone = (v) => JSON.parse(JSON.stringify(v));
 const CYCLE_MS = 50;
-const KINDS = [['in', 'IN'], ['out', 'OUT'], ['mem', 'Merker']];
+const KINDS = [['in', 'IN'], ['out', 'OUT'], ['mem', 'Merker'], ['tim', 'Zeitglied']];
 const CONTACTS = [['NO', 'Schließer'], ['NC', 'Öffner'], ['latch', 'rastend']];
 const Q_HELP = {
   N: 'nicht speichernd – solange der Schritt aktiv ist', S: 'speichernd setzen', R: 'vorrangig rücksetzen',
@@ -122,8 +122,8 @@ export function mount(el, { state, mode, onChange, say = () => {} }) {
     });
     const add = (kind) => () => {
       const n = io().filter((x) => x.kind === kind).length;
-      const name = { in: 'S', out: 'Y', mem: 'M' }[kind] + (n + 1);
-      io().push({ id: uid('io'), kind, name, addr: kind === 'in' ? `%I0.${n}` : kind === 'out' ? `%Q0.${n}` : `%M0.${n}`, desc: '', ...(kind === 'in' ? { contact: 'NO' } : {}) });
+      const name = { in: 'S', out: 'Y', mem: 'M', tim: 'tonT' }[kind] + (n + 1);
+      io().push({ id: uid('io'), kind, name, addr: kind === 'in' ? `%I0.${n}` : kind === 'out' ? `%Q0.${n}` : kind === 'tim' ? '' : `%M0.${n}`, desc: '', ...(kind === 'in' ? { contact: 'NO' } : {}) });
       changed();
     };
     return h('div', { class: 'sps-section' },
@@ -134,7 +134,8 @@ export function mount(el, { state, mode, onChange, say = () => {} }) {
       h('div', { class: 'lab-row' },
         h('button', { type: 'button', class: 'lab-btn', onclick: add('in') }, '+ Eingang'),
         h('button', { type: 'button', class: 'lab-btn', onclick: add('out') }, '+ Ausgang'),
-        h('button', { type: 'button', class: 'lab-btn', onclick: add('mem') }, '+ Merker')));
+        h('button', { type: 'button', class: 'lab-btn', onclick: add('mem') }, '+ Merker'),
+        h('button', { type: 'button', class: 'lab-btn', onclick: add('tim'), title: 'Zeitglied: im Aktionsblock mit D/L T#… ansteuern, in der Transition tonT1.Q abfragen' }, '+ Zeitglied')));
   }
 
   // ---------- Schritte ----------
@@ -183,7 +184,7 @@ export function mount(el, { state, mode, onChange, say = () => {} }) {
       h('div', { class: 'sps-section' }, h('div', { class: 'lab-label', text: 'Schrittkette' }), ...list,
         h('div', { class: 'lab-row' }, h('button', { type: 'button', class: 'lab-btn', onclick: addStep }, '+ Schritt'),
           h('label', { class: 'lab-check', title: 'Nach dem letzten Schritt zurück zum Initialschritt' }, h('input', { type: 'checkbox', checked: st.back !== false, onchange: (e) => { st.back = e.target.checked; changed(); } }), ' Kette schließen (zurück zum Initialschritt)'))),
-      h('p', { class: 'lab-hint', text: 'Bedingungen: AND (&, *), OR (+), XOR, NOT (/, !), Klammern, Schrittmerker S_2.X, Schrittzeit S_2.T >= T#3s. Bestimmungszeichen: N S R L D P DS SD SL (L, D, DS, SD, SL mit Zeit T#…).' }));
+      h('p', { class: 'lab-hint', text: 'Bedingungen: AND (&, *), OR (+), XOR, NOT (/, !), Klammern, Schrittmerker S_2.X, Zeitglied tonT1.Q (im Aktionsblock z. B. D T#3s → tonT1), Schrittzeit S_2.T >= T#3s. Bestimmungszeichen: N S R L D P DS SD SL (L, D, DS, SD, SL mit Zeit T#…).' }));
     renderLive();
   }
   function renderAll() { renderBar(); renderPanel(); }

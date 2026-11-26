@@ -1223,6 +1223,8 @@ export function spsCycle(st, rt, inputs, dt) {
       if (step && what === 'T') return rt.active.includes(step.id) ? rt.t - (rt.since[step.id] ?? rt.t) : 0;
     }
     if (byName.has(name)) return rt.active.includes(byName.get(name).id) ? 1 : 0;
+    // Zeitglied (oder jede Variable) mit .Q: ihr Ausgang – z. B. tonT1.Q nach „D T#3s tonT1“.
+    if (/\.Q$/i.test(name) && known.has(name.slice(0, -2))) return rt.vars[name.slice(0, -2)] ? 1 : 0;
     if (name in inputs) return inputs[name] ? 1 : 0;
     if (known.has(name)) return rt.vars[name] ? 1 : 0;
     throw new LabError(`„${name}“ steht nicht in der Zuordnungstabelle`);
@@ -1308,7 +1310,7 @@ export function spsCheck(st) {
     try {
       const walk = (t) => {
         if ('id' in t) {
-          const base = t.id.includes('.') ? t.id.slice(0, t.id.lastIndexOf('.')) : t.id;
+          const base = t.id.includes('.') ? t.id.slice(0, t.id.lastIndexOf('.')) : t.id; // S_2.T, tonT1.Q
           if (!known.has(base)) out.push(`${where}: „${t.id}“ steht nicht in der Zuordnungstabelle`);
         } else if (t.a) { walk(t.a); if (t.b) walk(t.b); }
       };

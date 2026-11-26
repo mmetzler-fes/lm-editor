@@ -264,6 +264,9 @@ const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<
  *   [{ label, run(afterBid) }] (z. B. Quiz, PDF).
  * - `store`: woanders speichern als auf diesem Gerät – { load() → Stand | null,
  *   save(stand) → true/false, label }; der Stand ist { v, bg, pages, layer, ruler }.
+ *   Wahlweise `watch(fn)` → Abmelden: fn(text) zeigt den Stand der Übertragung in der
+ *   Statuszeile (z. B. „wartet aufs WLAN“), `refresh()` fragt ihn neu ab, `flush()`
+ *   sendet beim Schließen sofort.
  * - `actions`: weitere Knöpfe in der Leiste – [{ label, title, onClick({ close }) }]; beginnt `label` mit einem Symbol, steht nur dieses da. Vorher wird gespeichert.
  * - `onClose`: nach dem Schließen (der Stand ist dann gespeichert).
  * - `laser`: Leuchtstift zum Zeigen am Beamer (Spur verblasst, wird nicht gespeichert) – Vorgabe: wie `solutions` (Lehrkräfte).
@@ -308,6 +311,7 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
   const pdfs = {};            // variant → PDFDocumentProxy | Promise
   let pages = [];             // [{ w, h, el, svg, canvas, texts }]
   let saveTimer = null;
+  const SAVE_IDLE_MS = 1000; // Ruhe nach dem letzten Strich, bevor gespeichert wird
   let penEraseAt = 0;         // zuletzt mit der Radiertaste des Stifts radiert (Kontextmenü danach schlucken)
 
   // ---------- Gerüst ----------
@@ -514,6 +518,8 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     el.title = text || '';
     el.setAttribute('aria-label', text || '');
   };
+  // Übertragung des Speichers (z. B. Schüler ohne WLAN) in der Statuszeile.
+  const unwatch = store?.watch?.((text) => status(text)) || null;
 
   // Fassung: Arbeitsblatt oder Lösung – derselbe Umschalter wie in der Dokument-Ansicht.
   const solSwitch = solutionSwitch({
@@ -1378,7 +1384,13 @@ const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-r
     status('…');
     $('.ink-save').classList.add('ink-dirty');
     clearTimeout(saveTimer);
-    saveTimer = setTimeout(persist, 700);
+    saveTimer = setTimeout(persistWhenIdle, SAVE_IDLE_MS);
+  }
+  // Nicht mitten im Schreiben speichern (Formulare einlesen und den Stand kopieren
+  // kostet auf dem iPad spürbar Zeit): erst, wenn der Stift abgesetzt ist.
+  function persistWhenIdle() {
+    if (penDown) { saveTimer = setTimeout(persistWhenIdle, 400); return; }
+    void persist();
   }
   function captureForms() {
     if (!paperView || !paper?.capture) return;
@@ -1398,6 +1410,7 @@ const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-r
     if (ok && !saveTimer) $('.ink-save').classList.remove('ink-dirty');
     const where = store?.label || 'auf diesem Gerät';
     status(ok ? `💾 ${where[0].toUpperCase()}${where.slice(1)} gespeichert` : `⚠️ Speichern ${where} nicht möglich`);
+    if (ok && unwatch) void store.refresh?.();
   }
 
   // ---------- Seiten ----------
@@ -4584,6 +4597,8 @@ const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-r
     undockBank();
     if (document.activeElement?.classList?.contains('ink-text')) document.activeElement.blur();
     await persist();
+    void store?.flush?.();
+    unwatch?.();
     leavePaper();
     if (paper) { try { paper.unmount?.(); } catch (_) { /* Blatt bleibt im Editor */ } }
     document.removeEventListener('keydown', onKey);

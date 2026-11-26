@@ -113,6 +113,7 @@ export const SLASH_COMMANDS = {
   bode: { what: 'lab', build: () => ({ type: 'lab', lab: 'bode' }) },
   ortskurve: { what: 'lab', build: () => ({ type: 'lab', lab: 'ortskurve' }) },
   logik: { what: 'lab', build: () => ({ type: 'lab', lab: 'logik' }) },
+  sps: { what: 'lab', build: () => ({ type: 'lab', lab: 'sps' }) },
 };
 
 /**
@@ -997,7 +998,7 @@ export function hasLatexEngine() {
 // Labore: Prüfen und Bild kommen aus src/labs/lab-core.js – angemeldet von src/labs/register.js im
 // Browser bzw. vom Server (docspec.ts). Ohne Anmeldung nur eine grobe Prüfung und ein Platzhalter.
 let labEngine = null;
-const LAB_NAMES_FALLBACK = ['zeiger', 'bode', 'ortskurve', 'logik'];
+const LAB_NAMES_FALLBACK = ['zeiger', 'bode', 'ortskurve', 'logik', 'sps'];
 export function useLabEngine(engine) {
   labEngine = engine && typeof engine.labSvg === 'function' ? engine : null;
 }
@@ -1360,7 +1361,7 @@ function renderBlockHtml(block, ctx) {
       const data = encodeURIComponent(JSON.stringify({ lab: block.lab, preset: block.preset || {} }));
       let svg = '';
       if (labEngine) { try { svg = labEngine.labSvg(block); } catch (_) { svg = ''; } }
-      const label = { zeiger: 'Zeigerlabor', bode: 'Bode-Diagramm', ortskurve: 'Ortskurve', logik: 'Logikschaltung' }[block.lab] || 'Labor';
+      const label = { zeiger: 'Zeigerlabor', bode: 'Bode-Diagramm', ortskurve: 'Ortskurve', logik: 'Logikschaltung', sps: 'SPS-Labor' }[block.lab] || 'Labor';
       return `<div class="ds-lab" data-lab="${esc(block.lab ?? '')}" data-block="${data}">${svg || `<p class="ds-lab-hint">🧪 ${esc(label)}</p>`}`
         + `<p class="ds-lab-hint">🧪 ${esc(label)} – beim Bearbeiten des Lernthemas zum Ausprobieren, im Druck als Bild.</p></div>`;
     }

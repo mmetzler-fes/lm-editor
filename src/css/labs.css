@@ -75,3 +75,16 @@
   .lab-table tr { display: flex; flex-wrap: wrap; gap: 0.2em; border-top: 1px solid #e2e8f0; padding: 0.2em 0; }
   .lab-table td { border: 0; }
 }
+
+/* SPS-Labor (lm-editor/src/labs/sps-ui.js) */
+.sps-canvas svg { width: auto !important; max-width: 100%; height: auto; }
+.sps-status { min-height: 1.4em; font-size: 0.9rem; margin: 4px 0 8px; color: var(--text-secondary); }
+.sps-status.sps-err { color: var(--danger, #dc2626); }
+.sps-section { margin: 10px 0; }
+.sps-step { border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; margin: 6px 0; }
+.sps-step.lab-sel { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 25%, transparent); }
+.sps-trans { margin-top: 4px; }
+.sps-lamp { display: inline-block; width: 16px; height: 16px; border-radius: 50%; border: 1px solid #64748b; background: #e2e8f0; vertical-align: middle; }
+.sps-lamp.sps-on { background: #22c55e; border-color: #15803d; box-shadow: 0 0 6px #22c55e; }
+.sps-key { touch-action: none; user-select: none; -webkit-user-select: none; min-width: 2.6em; }
+.lab-bad { border-color: var(--danger, #dc2626) !important; }

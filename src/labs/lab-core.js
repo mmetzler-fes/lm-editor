@@ -14,6 +14,7 @@ export const LABS = [
   { name: 'bode', label: 'Bode-Diagramm', icon: '〽', what: 'Amplituden- und Phasengang einer Übertragungsfunktion H(jω)' },
   { name: 'ortskurve', label: 'Ortskurve', icon: '⤿', what: 'Ortskurve Z(f) oder H(ω) in der komplexen Ebene' },
   { name: 'logik', label: 'Logikschaltung', icon: '&', what: 'Gatter verbinden, Eingänge schalten, Wahrheitstabelle' },
+  { name: 'sps', label: 'SPS-Labor', icon: '⏭', what: 'Ablaufkette (IEC 61131-3) mit Zuordnungstabelle erstellen und simulieren' },
 ];
 export const LAB_NAMES = LABS.map((l) => l.name);
 export const LAB_MAX_JSON = 200000;
@@ -1054,11 +1055,354 @@ export function logikSvg(state, { selected = null, pending = null } = {}) {
   return `${s}</svg>`;
 }
 
+// ==================== SPS-Labor: Ablaufkette nach IEC 61131-3 ====================
+//
+// Stand: { io: [{ id, kind: 'in'|'out'|'mem', name, addr, desc, contact: 'NO'|'NC'|'latch' }],
+//          steps: [{ id, name, initial, trans, actions: [{ id, q, time, text, var, cond }] }], back }
+// Die Kette ist (vorerst) linear: auf jeden Schritt folgt seine Transition, nach dem letzten Schritt
+// geht es (back) zum Initialschritt zurück. Bestimmungszeichen: N, S, R, L, D, P, DS, SD, SL.
+
+export const SPS_QUALIFIERS = ['N', 'S', 'R', 'L', 'D', 'P', 'DS', 'SD', 'SL'];
+export const SPS_TIMED = ['L', 'D', 'DS', 'SD', 'SL'];
+
+export function spsDefault() {
+  return {
+    io: [
+      { id: 'i1', kind: 'in', name: 'S1', addr: '%I0.0', desc: 'Start-Taster', contact: 'NO' },
+      { id: 'i2', kind: 'in', name: 'B1', addr: '%I0.1', desc: 'Zylinder ausgefahren', contact: 'NO' },
+      { id: 'i3', kind: 'in', name: 'B0', addr: '%I0.2', desc: 'Zylinder eingefahren', contact: 'NO' },
+      { id: 'o1', kind: 'out', name: 'Y1', addr: '%Q0.0', desc: 'Zylinder ausfahren' },
+      { id: 'o2', kind: 'out', name: 'H1', addr: '%Q0.1', desc: 'Meldeleuchte' },
+    ],
+    steps: [
+      { id: 's1', name: 'S_1', initial: true, trans: 'S1', actions: [] },
+      { id: 's2', name: 'S_2', trans: 'B1', actions: [{ id: 'a1', q: 'N', time: '', text: 'Zylinder ausfahren', var: 'Y1', cond: '' }] },
+      { id: 's3', name: 'S_3', trans: 'S_3.T >= T#3s', actions: [{ id: 'a2', q: 'L', time: 'T#2s', text: 'Leuchte an', var: 'H1', cond: '' }] },
+    ],
+    back: true,
+  };
+}
+
+/** T#2s, T#500ms, T#1m30s, T#1,5s → Millisekunden (oder NaN). */
+export function spsTime(src) {
+  const m = /^\s*(?:T|TIME)#(.+)$/i.exec(String(src ?? ''));
+  if (!m) return NaN;
+  const re = /(\d+(?:[.,]\d+)?)\s*(ms|h|m|s)/gi;
+  let total = 0;
+  let any = false;
+  let rest = m[1].replace(/_/g, '');
+  for (const p of rest.matchAll(re)) {
+    any = true;
+    const v = Number(p[1].replace(',', '.'));
+    total += v * { ms: 1, s: 1000, m: 60000, h: 3600000 }[p[2].toLowerCase()];
+  }
+  rest = rest.replace(re, '').trim();
+  return any && !rest ? total : NaN;
+}
+
+/**
+ * Bedingung → Baum. Erlaubt: AND/&/*, OR/+/|, XOR, NOT/!/ / (Strich vor dem Namen), Klammern, TRUE/FALSE, 1/0,
+ * Vergleiche (=, <>, <, <=, >, >=), Zeiten (T#2s), Schrittmerker S_2.X und Schrittzeit S_2.T.
+ */
+export function spsParse(src) {
+  const s = String(src ?? '');
+  const toks = [];
+  for (let i = 0; i < s.length;) {
+    const c = s[i];
+    if (/\s/.test(c)) { i++; continue; }
+    const time = /^(?:T|TIME)#[0-9a-z_.,]+/i.exec(s.slice(i));
+    if (time) { const v = spsTime(time[0]); if (!Number.isFinite(v)) throw new LabError(`Zeit „${time[0]}“ unklar (z. B. T#2s, T#500ms)`); toks.push({ t: 'num', v }); i += time[0].length; continue; }
+    const id = /^[A-Za-z_ÄÖÜäöüß][A-Za-z0-9_ÄÖÜäöüß]*(?:\.[A-Za-z]+)?/.exec(s.slice(i));
+    if (id) {
+      const w = id[0];
+      const up = w.toUpperCase();
+      if (['AND', 'OR', 'XOR', 'NOT'].includes(up)) toks.push({ t: 'op', v: up });
+      else if (up === 'TRUE' || up === 'FALSE') toks.push({ t: 'num', v: up === 'TRUE' ? 1 : 0 });
+      else toks.push({ t: 'id', v: w });
+      i += w.length;
+      continue;
+    }
+    const n = /^\d+(?:[.,]\d+)?/.exec(s.slice(i));
+    if (n) { toks.push({ t: 'num', v: Number(n[0].replace(',', '.')) }); i += n[0].length; continue; }
+    const two = s.slice(i, i + 2);
+    if (['<=', '>=', '<>'].includes(two)) { toks.push({ t: 'op', v: two }); i += 2; continue; }
+    const one = { '&': 'AND', '*': 'AND', '·': 'AND', '∧': 'AND', '+': 'OR', '|': 'OR', '∨': 'OR', '!': 'NOT', '/': 'NOT', '¬': 'NOT', '(': '(', ')': ')', '<': '<', '>': '>', '=': '=' }[c];
+    if (!one) throw new LabError(`Unbekanntes Zeichen „${c}“`);
+    toks.push({ t: 'op', v: one });
+    i++;
+  }
+  let k = 0;
+  const peek = () => toks[k];
+  const take = (v) => { if (peek()?.t === 'op' && peek().v === v) { k++; return true; } return false; };
+  const bin = (next, ops) => () => {
+    let a = next();
+    for (;;) {
+      const op = ops.find((o) => peek()?.t === 'op' && peek().v === o);
+      if (!op) return a;
+      k++;
+      a = { op, a, b: next() };
+    }
+  };
+  const atom = () => {
+    if (take('NOT')) return { op: 'NOT', a: atom() };
+    if (take('(')) { const e = orE(); if (!take(')')) throw new LabError('Klammer „)“ fehlt'); return e; }
+    const tk = toks[k++];
+    if (!tk) throw new LabError('Bedingung endet zu früh');
+    if (tk.t === 'num') return { num: tk.v };
+    if (tk.t === 'id') return { id: tk.v };
+    throw new LabError(`„${tk.v}“ an dieser Stelle unerwartet`);
+  };
+  const cmp = () => {
+    const a = atom();
+    const op = ['<=', '>=', '<>', '<', '>', '='].find((o) => peek()?.t === 'op' && peek().v === o);
+    if (!op) return a;
+    k++;
+    return { op, a, b: atom() };
+  };
+  const andE = bin(cmp, ['AND']);
+  const xorE = bin(andE, ['XOR']);
+  const orE = bin(xorE, ['OR']);
+  if (!toks.length) return { num: 1 };
+  const tree = orE();
+  if (k < toks.length) throw new LabError(`„${toks[k].v}“ an dieser Stelle unerwartet`);
+  return tree;
+}
+
+/** Baum auswerten; `get(name)` liefert Zahl/Wahrheitswert (unbekannt: Fehler). */
+export function spsEval(tree, get) {
+  if ('num' in tree) return tree.num;
+  if ('id' in tree) return get(tree.id);
+  const a = spsEval(tree.a, get);
+  if (tree.op === 'NOT') return a ? 0 : 1;
+  const b = spsEval(tree.b, get);
+  switch (tree.op) {
+    case 'AND': return a && b ? 1 : 0;
+    case 'OR': return a || b ? 1 : 0;
+    case 'XOR': return !a !== !b ? 1 : 0;
+    case '=': return a === b ? 1 : 0;
+    case '<>': return a !== b ? 1 : 0;
+    case '<': return a < b ? 1 : 0;
+    case '<=': return a <= b ? 1 : 0;
+    case '>': return a > b ? 1 : 0;
+    case '>=': return a >= b ? 1 : 0;
+    default: return 0;
+  }
+}
+
+/** Signal eines Eingangs aus dem Zustand des Bedienelements: Öffner liefert unbetätigt 1. */
+export function spsInputSignal(io, pressed) {
+  return io?.contact === 'NC' ? (pressed ? 0 : 1) : pressed ? 1 : 0;
+}
+
+/** Laufzeit neu: Initialschritt(e) aktiv. */
+export function spsInit(st) {
+  const steps = st.steps || [];
+  const init = steps.filter((s) => s.initial);
+  const active = (init.length ? init : steps.slice(0, 1)).map((s) => s.id);
+  return { t: 0, cycle: 0, active, since: Object.fromEntries(active.map((id) => [id, 0])), entered: new Set(active), stored: {}, timers: {}, vars: {}, error: null };
+}
+
+/**
+ * Ein Programmzyklus (dt ms): Transitionen schalten, dann Aktionen nach Bestimmungszeichen.
+ * `inputs`: Name → Signal (0/1). Ergebnis: rt (verändert) mit vars (alle Variablen), active, error.
+ */
+export function spsCycle(st, rt, inputs, dt) {
+  const steps = st.steps || [];
+  const byId = new Map(steps.map((s) => [s.id, s]));
+  const byName = new Map(steps.map((s) => [String(s.name ?? '').trim(), s]));
+  rt.t += dt;
+  rt.cycle++;
+  rt.error = null;
+  const known = new Set((st.io || []).map((io) => String(io.name ?? '').trim()).filter(Boolean));
+  const get = (name) => {
+    const dot = name.lastIndexOf('.');
+    if (dot > 0) {
+      const step = byName.get(name.slice(0, dot));
+      const what = name.slice(dot + 1).toUpperCase();
+      if (step && what === 'X') return rt.active.includes(step.id) ? 1 : 0;
+      if (step && what === 'T') return rt.active.includes(step.id) ? rt.t - (rt.since[step.id] ?? rt.t) : 0;
+    }
+    if (byName.has(name)) return rt.active.includes(byName.get(name).id) ? 1 : 0;
+    if (name in inputs) return inputs[name] ? 1 : 0;
+    if (known.has(name)) return rt.vars[name] ? 1 : 0;
+    throw new LabError(`„${name}“ steht nicht in der Zuordnungstabelle`);
+  };
+  const cond = (src, where) => {
+    try { return spsEval(spsParse(src), get); } catch (e) {
+      if (!rt.error) rt.error = `${where}: ${e.message}`;
+      return 0;
+    }
+  };
+  // 1. Transitionen der aktiven Schritte (alle mit dem Stand vom Anfang des Zyklus)
+  const fire = [];
+  if (rt.cycle > 1) {
+    for (const id of rt.active) {
+      const i = steps.findIndex((s) => s.id === id);
+      if (i < 0) continue;
+      const nextStep = i + 1 < steps.length ? steps[i + 1] : st.back !== false ? (steps.find((s) => s.initial) || steps[0]) : null;
+      if (!nextStep) continue;
+      if (cond(steps[i].trans, `Transition nach ${steps[i].name}`)) fire.push([id, nextStep.id]);
+    }
+  }
+  rt.entered = rt.cycle === 1 ? new Set(rt.active) : new Set();
+  // Die Schrittzeit beginnt im Zyklus, in dem der Schritt aktiv wird (beim Start der Initialschritt).
+  if (rt.cycle === 1) for (const id of rt.active) rt.since[id] = rt.t;
+  if (fire.length) {
+    const off = new Set(fire.map(([a]) => a));
+    const on = fire.map(([, b]) => b);
+    rt.active = [...rt.active.filter((id) => !off.has(id)), ...on.filter((b, i, l) => l.indexOf(b) === i)];
+    for (const b of on) { rt.since[b] = rt.t; rt.entered.add(b); }
+  }
+  // 2. Aktionen
+  const on = {};
+  const reset = {};
+  for (const step of steps) {
+    const act = rt.active.includes(step.id);
+    const el = act ? rt.t - (rt.since[step.id] ?? rt.t) : 0;
+    const entered = rt.entered.has(step.id);
+    for (const a of step.actions || []) {
+      const v = String(a.var ?? '').trim();
+      if (!v) continue;
+      const key = `${step.id}:${a.id}`;
+      const T = SPS_TIMED.includes(a.q) ? spsTime(a.time) : 0;
+      if (SPS_TIMED.includes(a.q) && !Number.isFinite(T)) { if (act && !rt.error) rt.error = `${step.name}: Zeit fehlt bei ${a.q} (z. B. T#2s)`; continue; }
+      const ok = () => !String(a.cond ?? '').trim() || cond(a.cond, `${step.name}, Bedingung zu ${v}`);
+      switch (a.q) {
+        case 'N': if (act && ok()) on[v] = 1; break;
+        case 'S': if (act && ok()) rt.stored[v] = 1; break;
+        case 'R': if (act && ok()) { reset[v] = 1; rt.stored[v] = 0; for (const [tk, tm] of Object.entries(rt.timers)) if (tm.var === v) delete rt.timers[tk]; } break;
+        case 'L': if (act && el < T && ok()) on[v] = 1; break;
+        case 'D': if (act && el >= T && ok()) on[v] = 1; break;
+        case 'P': if (act && entered && ok()) on[v] = 1; break;
+        case 'DS': if (act && el >= T && ok()) rt.stored[v] = 1; break;
+        case 'SD': if (entered && ok()) rt.timers[key] = { var: v, start: rt.t, kind: 'SD', T }; break;
+        case 'SL': if (entered && ok()) rt.timers[key] = { var: v, start: rt.t, kind: 'SL', T }; break;
+        default: break;
+      }
+    }
+  }
+  for (const [tk, tm] of Object.entries(rt.timers)) {
+    if (reset[tm.var]) { delete rt.timers[tk]; continue; }
+    if (tm.kind === 'SD' && rt.t - tm.start >= tm.T) { rt.stored[tm.var] = 1; delete rt.timers[tk]; }
+    else if (tm.kind === 'SL') { if (rt.t - tm.start < tm.T) on[tm.var] = 1; else delete rt.timers[tk]; }
+  }
+  const vars = { ...inputs };
+  for (const io of st.io || []) {
+    const n = String(io.name ?? '').trim();
+    if (!n || io.kind === 'in') continue;
+    vars[n] = !reset[n] && (on[n] || rt.stored[n]) ? 1 : 0;
+  }
+  rt.vars = vars;
+  return rt;
+}
+
+/** Prüfen ohne Ausführen: Fehler in Bedingungen, unbekannte Namen, doppelte Symbole. */
+export function spsCheck(st) {
+  const out = [];
+  const names = (st.io || []).map((io) => String(io.name ?? '').trim()).filter(Boolean);
+  const dup = names.filter((n, i) => names.indexOf(n) !== i);
+  if (dup.length) out.push(`Symbol doppelt: ${[...new Set(dup)].join(', ')}`);
+  const stepNames = new Set((st.steps || []).map((s) => String(s.name ?? '').trim()));
+  const known = new Set([...names, ...stepNames]);
+  const check = (src, where) => {
+    try {
+      const walk = (t) => {
+        if ('id' in t) {
+          const base = t.id.includes('.') ? t.id.slice(0, t.id.lastIndexOf('.')) : t.id;
+          if (!known.has(base)) out.push(`${where}: „${t.id}“ steht nicht in der Zuordnungstabelle`);
+        } else if (t.a) { walk(t.a); if (t.b) walk(t.b); }
+      };
+      walk(spsParse(src));
+    } catch (e) { out.push(`${where}: ${e.message}`); }
+  };
+  for (const s of st.steps || []) {
+    check(s.trans, `Transition nach ${s.name}`);
+    for (const a of s.actions || []) {
+      if (String(a.cond ?? '').trim()) check(a.cond, `${s.name}, Bedingung`);
+      if (SPS_TIMED.includes(a.q) && !Number.isFinite(spsTime(a.time))) out.push(`${s.name}: ${a.q} braucht eine Zeit (T#2s)`);
+      if (a.var && !names.includes(String(a.var).trim())) out.push(`${s.name}: „${a.var}“ steht nicht in der Zuordnungstabelle`);
+    }
+  }
+  return out;
+}
+
+/** Bild der Kette wie im Arbeitsblatt (Schritt, Transition, Aktionsblock A1–A4); aktive Schritte grün. */
+export function spsSvg(state, { active = [], vars = {} } = {}) {
+  const st = { ...spsDefault(), ...(state || {}) };
+  const steps = st.steps || [];
+  const CH = 0.19; // Breite eines Zeichens bei 0,36
+  const condW = Math.max(2.2, ...steps.map((s) => String(s.trans ?? '').length * CH + 0.5));
+  const SX = condW + 0.2; // linke Kante der Schritte
+  const SW = 1.3;
+  const SH = 0.95;
+  const AX = SX + SW + 0.45;
+  const RH = 0.55; // Zeile im Aktionsblock
+  const w1 = 0.95;
+  const w2 = Math.max(2.4, ...steps.flatMap((s) => (s.actions || []).map((a) => String(a.text ?? '').length * CH + 0.4)));
+  const w3 = Math.max(1.2, ...steps.flatMap((s) => (s.actions || []).map((a) => String(a.var ?? '').length * CH + 0.4)));
+  const AW = w1 + w2 + w3;
+  const blockH = (s) => (s.actions || []).reduce((h, a) => h + RH * (String(a.cond ?? '').trim() ? 2 : 1), 0);
+  let y = 0.4;
+  const rows = steps.map((s) => {
+    const h = Math.max(SH, blockH(s));
+    const r = { s, y, h };
+    y += h + 1.1; // Schritt + Verbindung mit Transition
+    return r;
+  });
+  const H = y + 0.6;
+  const W = AX + AW + 0.3;
+  let out = svgOpen(W, H);
+  const cx = SX + SW / 2;
+  const ink = '#111';
+  rows.forEach(({ s, y: top, h }, i) => {
+    const sy = top + (h - SH) / 2;
+    const isOn = active.includes(s.id);
+    out += `<g data-step="${escX(s.id)}">`;
+    out += `<rect x="${r3(SX)}" y="${r3(sy)}" width="${SW}" height="${SH}" fill="${isOn ? '#bbf7d0' : '#ffffff'}" stroke="${ink}" stroke-width="0.04"/>`;
+    if (s.initial) out += `<rect x="${r3(SX + 0.1)}" y="${r3(sy + 0.1)}" width="${r3(SW - 0.2)}" height="${r3(SH - 0.2)}" fill="none" stroke="${ink}" stroke-width="0.03"/>`;
+    out += text(cx, sy + SH / 2 + 0.13, String(s.name ?? ''), { size: 0.36, anchor: 'middle' });
+    out += '</g>';
+    // Verbindung von oben (außer beim ersten) und nach unten mit Transition
+    if (i > 0) out += line(cx, top - 1.1 + rows[i - 1].h, cx, sy, ink, 0.03);
+    const ty = top + h + 0.55;
+    const nextTop = i + 1 < rows.length ? rows[i + 1].y + (rows[i + 1].h - SH) / 2 : ty + 0.45;
+    out += line(cx, sy + SH, cx, nextTop, ink, 0.03);
+    out += line(cx - 0.2, ty, cx + 0.2, ty, ink, 0.05);
+    out += text(cx - 0.3, ty + 0.12, String(s.trans ?? ''), { size: 0.34, anchor: 'end' });
+    if (i + 1 === rows.length && st.back !== false) {
+      const init = steps.find((x) => x.initial) || steps[0];
+      out += arrow(cx, ty + 0.1, cx, nextTop + 0.05, ink, 0.03, 0.15) + text(cx + 0.15, nextTop + 0.05, init ? String(init.name) : '', { size: 0.3, fill: '#444' });
+    }
+    // Aktionsblock
+    if ((s.actions || []).length) {
+      const by = top + (h - blockH(s)) / 2;
+      out += line(SX + SW, sy + SH / 2, AX, sy + SH / 2, ink, 0.03);
+      let ay = by;
+      for (const a of s.actions) {
+        const val = vars[String(a.var ?? '').trim()];
+        const q = `${a.q || ''}${SPS_TIMED.includes(a.q) && a.time ? ` ${a.time}` : ''}`;
+        out += `<rect x="${r3(AX)}" y="${r3(ay)}" width="${r3(AW)}" height="${RH}" fill="${val ? '#bbf7d0' : '#ffffff'}" stroke="${ink}" stroke-width="0.03"/>`;
+        out += line(AX + w1, ay, AX + w1, ay + RH, ink, 0.03) + line(AX + w1 + w2, ay, AX + w1 + w2, ay + RH, ink, 0.03);
+        out += text(AX + 0.08, ay + RH / 2 + 0.11, q, { size: q.length > 4 ? 0.24 : 0.32 });
+        out += text(AX + w1 + w2 / 2, ay + RH / 2 + 0.12, String(a.text ?? ''), { size: 0.32, anchor: 'middle' });
+        out += text(AX + w1 + w2 + w3 / 2, ay + RH / 2 + 0.12, String(a.var ?? ''), { size: 0.32, anchor: 'middle', bold: !!val });
+        ay += RH;
+        if (String(a.cond ?? '').trim()) {
+          out += `<rect x="${r3(AX)}" y="${r3(ay)}" width="${r3(AW)}" height="${RH}" fill="#ffffff" stroke="${ink}" stroke-width="0.03"/>`;
+          out += text(AX + AW / 2, ay + RH / 2 + 0.12, String(a.cond), { size: 0.3, anchor: 'middle' });
+          ay += RH;
+        }
+      }
+    }
+  });
+  return `${out}</svg>`;
+}
+
 // ==================== Vorgabe + Schülerstand, Prüfen, Zeichnen ====================
 
-const DEFAULTS = { zeiger: zeigerDefault, bode: bodeDefault, ortskurve: ortskurveDefault, logik: logikDefault };
+const DEFAULTS = { zeiger: zeigerDefault, bode: bodeDefault, ortskurve: ortskurveDefault, logik: logikDefault, sps: spsDefault };
 /** Listen, deren Einträge die Lehrkraft einzeln mit locked: true festlegen kann. */
-const LOCKABLE = { zeiger: ['items'], bode: ['params', 'curves'], ortskurve: ['params', 'curves'], logik: ['parts', 'wires'] };
+const LOCKABLE = { zeiger: ['items'], bode: ['params', 'curves'], ortskurve: ['params', 'curves'], logik: ['parts', 'wires'], sps: ['io', 'steps'] };
 
 export function labDefault(name) {
   return DEFAULTS[name] ? DEFAULTS[name]() : {};
@@ -1101,7 +1445,7 @@ export function labValidate(block) {
     else if (JSON.stringify(block.preset).length > LAB_MAX_JSON) errors.push('preset: zu groß.');
     else {
       const p = block.preset;
-      const listMax = { items: 80, params: 30, curves: 10, parts: 200, wires: 400 };
+      const listMax = { items: 80, params: 30, curves: 10, parts: 200, wires: 400, io: 120, steps: 80 };
       for (const [k, max] of Object.entries(listMax)) {
         if (p[k] !== undefined && (!Array.isArray(p[k]) || p[k].length > max)) errors.push(`preset.${k}: Liste mit höchstens ${max} Einträgen.`);
       }
@@ -1127,6 +1471,7 @@ export function labSvg(block, state = null, opts = {}) {
       case 'bode': return bodeSvg(st, opts);
       case 'ortskurve': return ortskurveSvg(st, opts);
       case 'logik': return logikSvg(st, opts);
+      case 'sps': return spsSvg(st, opts);
       default: return '';
     }
   } catch (e) {

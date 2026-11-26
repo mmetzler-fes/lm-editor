@@ -19,6 +19,7 @@ const LOADERS = {
   bode: () => import('./curves-ui.js').then((m) => ({ mount: m.mountBode })),
   ortskurve: () => import('./curves-ui.js').then((m) => ({ mount: m.mountOrtskurve })),
   logik: () => import('./logik-ui.js'),
+  sps: () => import('./sps-ui.js'),
 };
 
 /** Weiteres Labor anmelden (Name, Lader des Moduls mit mount()). */

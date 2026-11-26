@@ -4590,11 +4590,12 @@ const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-r
   // Verschieben die Finger dabei (zwei Finger scrollen, bindInput), läuft das weiter: Der Fixpunkt
   // ist eine Stelle des Blatts (c), beim Loslassen kommt sie dorthin, wo sie gerade zu sehen ist.
   let pinch = null;
+  let fingersMid = null; // Mitte der zwei Finger beim Aufsetzen – Safaris Geste nennt keine Stelle
   const pinchStart = (e) => {
     if (!scroller.contains(e.target) || state.editing) return;
     const r = scroller.getBoundingClientRect();
-    const x = Number.isFinite(e.clientX) ? e.clientX : r.left + r.width / 2;
-    const y = Number.isFinite(e.clientY) ? e.clientY : r.top + r.height / 2;
+    const mid = Number.isFinite(e.clientX) ? [e.clientX, e.clientY] : fingersMid || [r.left + r.width / 2, r.top + r.height / 2];
+    const [x, y] = mid;
     pinch = { z0: state.zoom, s: 1, c: [scroller.scrollLeft + x - r.left, scroller.scrollTop + y - r.top] };
     pagesEl.style.transformOrigin = `${pinch.c[0]}px ${pinch.c[1]}px`;
   };
@@ -4628,6 +4629,7 @@ const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-r
     return { d: Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY) || 1, x: (a.clientX + b.clientX) / 2, y: (a.clientY + b.clientY) / 2 };
   };
   const touchStart = (e) => {
+    if (e.touches.length === 2) { const t = twoOf(e); fingersMid = [t.x, t.y]; } else if (e.touches.length < 2) fingersMid = null;
     if (safariGestures || e.touches.length !== 2 || !scroller.contains(e.target)) return;
     const t = twoOf(e);
     touchPinch = { d0: t.d };

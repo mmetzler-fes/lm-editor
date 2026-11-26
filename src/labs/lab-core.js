@@ -121,6 +121,12 @@ const FUNCS = {
   cos: [1, (a) => [Math.cos((realOf(a, 'cos') * Math.PI) / 180), 0]],
   tan: [1, (a) => [Math.tan((realOf(a, 'tan') * Math.PI) / 180), 0]],
   atan: [1, (a) => [(Math.atan(realOf(a, 'atan')) * 180) / Math.PI, 0]],
+  // Umkehrfunktionen in Grad (wie sin/cos): asin(0,5) = 30.
+  asin: [1, (a) => [(Math.asin(Math.max(-1, Math.min(1, realOf(a, 'asin')))) * 180) / Math.PI, 0]],
+  acos: [1, (a) => [(Math.acos(Math.max(-1, Math.min(1, realOf(a, 'acos')))) * 180) / Math.PI, 0]],
+  arcsin: [1, (a) => [(Math.asin(Math.max(-1, Math.min(1, realOf(a, 'arcsin')))) * 180) / Math.PI, 0]],
+  arccos: [1, (a) => [(Math.acos(Math.max(-1, Math.min(1, realOf(a, 'arccos')))) * 180) / Math.PI, 0]],
+  arctan: [1, (a) => [(Math.atan(realOf(a, 'arctan')) * 180) / Math.PI, 0]],
   polar: [2, (r, p) => cPolar(realOf(r, 'polar'), realOf(p, 'polar'))],
   par: [-1, (...xs) => cDiv([1, 0], xs.reduce((s, x) => cAdd(s, cDiv([1, 0], x)), [0, 0]))],
   db: [1, (a) => [20 * Math.log10(cAbs(a)), 0]],
@@ -445,7 +451,18 @@ export function zeigerResolve(state) {
   });
 }
 
-export function zeigerSvg(state, { selected = null } = {}) {
+/**
+ * Griffe eines gewählten Zeigers (in cm wie start/tip): ✥ in der Mitte verschiebt, ⟳ hinter der
+ * Spitze dreht um den Anfang (der Betrag bleibt).
+ */
+export function zeigerHandles(r) {
+  const dx = r.tip[0] - r.start[0];
+  const dy = r.tip[1] - r.start[1];
+  const len = Math.hypot(dx, dy) || 1;
+  return { move: [r.start[0] + dx / 2, r.start[1] + dy / 2], rotate: [r.tip[0] + (dx / len) * 0.55, r.tip[1] + (dy / len) * 0.55] };
+}
+
+export function zeigerSvg(state, { selected = null, handles = false } = {}) {
   const st = { ...zeigerDefault(), ...(state || {}) };
   const xmin = num(st.xmin, -1);
   const xmax = Math.max(num(st.xmax, 13), xmin + 2);
@@ -470,6 +487,12 @@ export function zeigerSvg(state, { selected = null } = {}) {
     const [x2, y2] = [X(it.tip[0]), Y(it.tip[1])];
     if (selected === it.id) s += line(x1, y1, x2, y2, '#ffd54f', w + 0.16, ' stroke-linecap="round" opacity="0.7"');
     s += arrow(x1, y1, x2, y2, c, w);
+    if (selected === it.id && handles) {
+      const hd = zeigerHandles(it);
+      const knob = ([hx, hy], sym, title) => `<g class="lab-handle"><title>${title}</title><circle cx="${r3(X(hx))}" cy="${r3(Y(hy))}" r="0.2" fill="#ffffff" stroke="#1d4ed8" stroke-width="0.03"/>`
+        + `<text x="${r3(X(hx))}" y="${r3(Y(hy) + 0.1)}" font-size="0.28" text-anchor="middle" fill="#1d4ed8">${sym}</text></g>`;
+      s += knob(hd.move, '✥', 'Verschieben') + knob(hd.rotate, '⟳', 'Drehen um den Anfang');
+    }
     // Name an der Spitze, etwas seitlich (unterstrichen wie komplexe Größen in der E-Technik).
     const dx = x2 - x1;
     const dy = y2 - y1;

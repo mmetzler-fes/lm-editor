@@ -4,7 +4,7 @@
 // Zeigers ein (Zeigeraddition) oder am Karo. Liste darunter: Name, Wert (3 + j4, 5∠30°, = U2 / Z2),
 // Einheit, Anfang, Farbe, Dicke. Rechnen und Zeichnen: lab-core.js.
 
-import { zeigerSvg, zeigerResolve, evalExpr, fmtCx, fmtNum, guessUnit, ZEIGER_UNITS, LAB_COLORS, LabError } from './lab-core.js';
+import { zeigerSvg, zeigerResolve, zeigerHandles, evalExpr, fmtCx, fmtNum, guessUnit, cAbs, cArg, cPolar, ZEIGER_UNITS, LAB_COLORS, LabError } from './lab-core.js';
 import { h, svgPoint, field } from './labs.js';
 
 const clone = (v) => JSON.parse(JSON.stringify(v));
@@ -12,6 +12,8 @@ const uid = () => `p${Math.random().toString(36).slice(2, 8)}`;
 const SNAP = 0.3;
 const round = (v) => Math.round(v * 1e6) / 1e6;
 const WIDTHS = [['f', 'dünn'], ['m', 'mittel'], ['d', 'dick']];
+// Zwischenablage für Strg+C/X/V – über alle Zeigerlabore der Seite.
+let clip = null;
 
 export function mount(el, { state, mode, onChange, say = () => {} }) {
   let st = clone(state);
@@ -28,8 +30,10 @@ export function mount(el, { state, mode, onChange, say = () => {} }) {
   const byId = (id) => items().find((it) => it.id === id);
   const view = () => ({ xmin: Number(st.xmin ?? -1), xmax: Number(st.xmax ?? 13), ymin: Number(st.ymin ?? -4.5), ymax: Number(st.ymax ?? 4.5), grid: Number(st.grid ?? 0.5) || 0.5 });
 
+  /** Griffe nur am gewählten, änderbaren Zeiger mit eigenem Wert (eine Formel bestimmt ihn sonst). */
+  const handlesFor = (id) => { const it = id ? byId(id) : null; return !!it && editable(it) && !it.expr; };
   function renderCanvas() {
-    canvas.innerHTML = zeigerSvg(st, { selected: sel });
+    canvas.innerHTML = zeigerSvg(st, { selected: sel, handles: handlesFor(sel) });
   }
   function renderAll() {
     renderCanvas();
@@ -73,8 +77,17 @@ export function mount(el, { state, mode, onChange, say = () => {} }) {
     const p = toMath(e);
     const res = zeigerResolve(st).filter((r) => r.show !== false && r.val);
     let hit = null;
+    // Griffe des gewählten Zeigers zuerst: ⟳ dreht, ✥ verschiebt.
+    if (handlesFor(sel)) {
+      const r = res.find((x) => x.id === sel);
+      if (r) {
+        const hd = zeigerHandles(r);
+        if (dist(p, hd.rotate) < 0.3) hit = { r, kind: 'rotate', d: 0 };
+        else if (dist(p, hd.move) < 0.3) hit = { r, kind: 'move', d: 0 };
+      }
+    }
     // Spitzen zuerst (die liegen oft auf anderen Zeigern), dann die Strecken.
-    for (const r of res) if (!r.expr && dist(p, r.tip) < SNAP && (!hit || dist(p, r.tip) < hit.d)) hit = { r, kind: 'tip', d: dist(p, r.tip) };
+    if (!hit) for (const r of res) if (!r.expr && dist(p, r.tip) < SNAP && (!hit || dist(p, r.tip) < hit.d)) hit = { r, kind: 'tip', d: dist(p, r.tip) };
     if (!hit) for (const r of res) { const d = segDist(p, r.start, r.tip); if (d < 0.25 && (!hit || d < hit.d)) hit = { r, kind: 'move', d }; }
     if (!hit) {
       if (sel) { sel = null; renderAll(); }
@@ -121,6 +134,12 @@ export function mount(el, { state, mode, onChange, say = () => {} }) {
         it.x0 = round(pt[0]);
         it.y0 = round(pt[1]);
       }
+    } else if (drag.kind === 'rotate') {
+      // Drehen um den Anfang: der Betrag bleibt, der Winkel rastet auf 5° (Alt/Umschalt: frei).
+      const mag = cAbs(it.value || [0, 0]);
+      let deg = (Math.atan2(p[1] - me.start[1], p[0] - me.start[0]) * 180) / Math.PI;
+      if (!(e.altKey || e.shiftKey)) deg = Math.round(deg / 5) * 5;
+      it.value = cPolar(mag, deg).map(round);
     } else {
       let tip = gridSnap(p, e);
       for (const r of others) for (const pt of [r.tip, r.start]) if (dist(p, pt) < SNAP * 0.7) tip = pt;
@@ -146,6 +165,28 @@ export function mount(el, { state, mode, onChange, say = () => {} }) {
     if ((e.key === 'Delete' || e.key === 'Backspace') && sel && editable(byId(sel) || {})) { e.preventDefault(); e.stopPropagation(); remove(sel); }
     else if ((e.key === 'Delete' || e.key === 'Backspace') && sel) say('🔒 Dieser Zeiger ist vorgegeben.');
     if (e.key === '-' && sel && byId(sel)) { e.preventDefault(); e.stopPropagation(); copyOf(sel, true); }
+    // Strg/⌘ + C, X, V: Zeiger kopieren, ausschneiden, einfügen.
+    const k = (e.ctrlKey || e.metaKey) && !e.altKey ? e.key.toLowerCase() : '';
+    if ((k === 'c' || k === 'x') && sel && byId(sel)) {
+      e.preventDefault();
+      e.stopPropagation();
+      const r = zeigerResolve(st).find((x) => x.id === sel);
+      clip = { ...clone(byId(sel)), value: (r?.val || byId(sel).value || [0, 0]).map(round), x0: round(r?.start[0] ?? 0), y0: round(r?.start[1] ?? 0) };
+      delete clip.expr;
+      delete clip.anchor;
+      delete clip.locked;
+      if (k === 'x') {
+        if (editable(byId(sel))) remove(sel); else say('🔒 Dieser Zeiger ist vorgegeben – kopiert, nicht ausgeschnitten.');
+      } else say(`${clip.name || 'Zeiger'} kopiert – Strg+V fügt ein.`);
+    } else if (k === 'v' && clip) {
+      e.preventDefault();
+      e.stopPropagation();
+      const it = { ...clone(clip), id: uid(), name: freeName(String(clip.name ?? '').trim() || 'Z'), x0: round(clip.x0 + 0.5), y0: round(clip.y0 - 0.5) };
+      items().push(it);
+      sel = it.id;
+      changed();
+      renderAll();
+    }
   });
 
   // ---------- Kopie / Gegenzeiger ----------
@@ -278,8 +319,7 @@ export function mount(el, { state, mode, onChange, say = () => {} }) {
           changed();
           renderAll();
         } catch (err) { say(`⚠️ ${err.message}`); }
-      }, { size: 5, disabled: !teacher && st.lockScales }), u ? ` ${u}` : '')),
-      teacher ? h('label', { class: 'lab-check', title: 'Schüler können den Maßstab nicht ändern' }, h('input', { type: 'checkbox', checked: !!st.lockScales, onchange: (e) => { st.lockScales = e.target.checked; changed(); } }), ' fest') : null);
+      }, { size: 5 }), u ? ` ${u}` : '')));
     const rows = res.map((r) => {
       const it = byId(r.id);
       const can = editable(it);
@@ -354,8 +394,34 @@ export function mount(el, { state, mode, onChange, say = () => {} }) {
         h('label', { title: 'Kästchengröße' }, ' Raster ', h('select', { onchange: (e) => { st.grid = Number(e.target.value); changed(); renderAll(); } },
           ...[0.25, 0.5, 1].map((g) => h('option', { value: String(g), selected: Math.abs(v.grid - g) < 1e-9 }, `${fmtNum(g)} cm`)))));
     })() : null;
-    panel.replaceChildren(...(viewRow ? [viewRow] : []), top, table, scales,
-      h('p', { class: 'lab-hint', text: 'Ziehen: Mitte verschiebt, Spitze ändert den Wert (Alt = ohne Raster). Vorgegebene (🔒) Zeiger ziehen = Kopie herausziehen; ⧉ Kopie, − Gegenzeiger (Taste „-“). Der Anfang rastet an der Spitze eines anderen Zeigers ein und wandert dann mit. Werte: 3 + j4, 5∠30°, 10k, = U2 / Z2.' }));
+    // Eigenschaften des gewählten Zeigers: Re, Im, Betrag, Winkel – jeweils mit Rechnen (30+120, 5*cos(30), asin(0,5)).
+    const props = (() => {
+      const it = sel ? byId(sel) : null;
+      const r = it ? res.find((x) => x.id === it.id) : null;
+      if (!it || !r) return null;
+      const can = editable(it);
+      const v = r.val || [0, 0];
+      const u = it.unit ?? '';
+      const set = (fn) => (text) => {
+        try {
+          const x = evalExpr(text, envFor(it.id))[0];
+          if (!Number.isFinite(x)) throw new LabError('Keine Zahl');
+          it.value = fn(x).map(round);
+          delete it.expr;
+          changed();
+          renderAll();
+        } catch (err) { say(`⚠️ ${err.message}`); renderAll(); }
+      };
+      const box = (label, value, fn, unit, title) => h('label', { class: 'lab-prop', title }, `${label} `, field(fmtNum(round(value)), set(fn), { size: 6, disabled: !can }), unit ? ` ${unit}` : '');
+      return h('div', { class: 'lab-row lab-props' }, h('span', { class: 'lab-label', text: `${it.name || 'Zeiger'}:` }),
+        box('Re', v[0], (x) => [x, v[1]], u, 'Realteil – Rechnen erlaubt, z. B. 5*cos(30)'),
+        box('Im', v[1], (x) => [v[0], x], u, 'Imaginärteil – Rechnen erlaubt, z. B. 5*sin(30)'),
+        box('|r|', cAbs(v), (x) => cPolar(x, cArg(v)), u, 'Betrag (Winkel bleibt)'),
+        box('φ', cArg(v), (x) => cPolar(cAbs(v), x), '°', 'Winkel in Grad (Betrag bleibt) – z. B. 30+120, asin(0,5)'),
+        it.expr ? h('span', { class: 'lab-hint', text: ' (aus Formel – Ändern löst sie)' }) : null);
+    })();
+    panel.replaceChildren(...(viewRow ? [viewRow] : []), top, ...(props ? [props] : []), table, scales,
+      h('p', { class: 'lab-hint', text: 'Ziehen: Mitte (✥) verschiebt, Spitze ändert den Wert, ⟳ dreht um den Anfang (Alt = ohne Raster). Strg+C/X/V kopiert, schneidet aus, fügt ein. Vorgegebene (🔒) Zeiger ziehen = Kopie herausziehen; ⧉ Kopie, − Gegenzeiger (Taste „-“). Der Anfang rastet an der Spitze eines anderen Zeigers ein und wandert dann mit. Werte: 3 + j4, 5∠30°, 10k, = U2 / Z2.' }));
   }
 
   renderAll();

@@ -402,9 +402,11 @@ export function mount(el, { state, mode, onChange, say = () => {} }) {
       const can = editable(it);
       const v = r.val || [0, 0];
       const u = it.unit ?? '';
-      const set = (fn) => (text) => {
+      // „+…“ rechnet zum bisherigen Wert dazu (φ +120 dreht um 120°, +(-30) zurück); sonst gilt der Wert.
+      const set = (fn, now) => (text) => {
         try {
-          const x = evalExpr(text, envFor(it.id))[0];
+          const t = String(text).trim();
+          const x = t.startsWith('+') ? now + evalExpr(t.slice(1), envFor(it.id))[0] : evalExpr(t, envFor(it.id))[0];
           if (!Number.isFinite(x)) throw new LabError('Keine Zahl');
           it.value = fn(x).map(round);
           delete it.expr;
@@ -412,7 +414,7 @@ export function mount(el, { state, mode, onChange, say = () => {} }) {
           renderAll();
         } catch (err) { say(`⚠️ ${err.message}`); renderAll(); }
       };
-      const box = (label, value, fn, unit, title) => h('label', { class: 'lab-prop', title }, `${label} `, field(fmtNum(round(value)), set(fn), { size: 6, disabled: !can }), unit ? ` ${unit}` : '');
+      const box = (label, value, fn, unit, title) => h('label', { class: 'lab-prop', title: `${title} · „+120“ rechnet dazu` }, `${label} `, field(fmtNum(round(value)), set(fn, value), { size: 6, disabled: !can }), unit ? ` ${unit}` : '');
       return h('div', { class: 'lab-row lab-props' }, h('span', { class: 'lab-label', text: `${it.name || 'Zeiger'}:` }),
         box('Re', v[0], (x) => [x, v[1]], u, 'Realteil – Rechnen erlaubt, z. B. 5*cos(30)'),
         box('Im', v[1], (x) => [v[0], x], u, 'Imaginärteil – Rechnen erlaubt, z. B. 5*sin(30)'),

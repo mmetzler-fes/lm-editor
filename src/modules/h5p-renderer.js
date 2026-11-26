@@ -1,6 +1,6 @@
 import { videoSourceOf } from './video.js';
 import { normalizeBranching } from './branching.js';
-import { dtwAlternatives, dtwMatches, dndExpectedMappings, dndIsPairs } from './answer-eval.js';
+import { dtwAlternatives, dtwMatches, dndExpectedMappings, dndIsPairs, dndIsTable, dndTableGrid } from './answer-eval.js';
 import { audioSourceOf, scoreDictation, dictationOptions } from './dictation.js';
 import { generateValues, fillPlaceholders, evaluate, parseUserNumber, isWithinTolerance, formatNumber, checkFormulaTask } from './formula.js';
 import { renderSorting, renderMemory, renderCrossword } from './puzzle-views.js';
@@ -1515,6 +1515,8 @@ export class H5pRenderer {
       case 'dragAndDrop': {
         const hasImage = !!content.backgroundImage;
         const pairs    = dndIsPairs(content);
+        const table    = dndIsTable(content);
+        const grid     = table ? dndTableGrid(content) : null;
         const zones    = content.dropZones   || [];
         const drags    = content.draggables  || [];
         const colors   = ['#3b82f6','#ef4444','#10b981','#f59e0b','#8b5cf6','#ec4899','#06b6d4','#84cc16'];
@@ -1529,7 +1531,7 @@ export class H5pRenderer {
         };
 
         div.innerHTML = `
-          <div class="dnd-player${hasImage ? '' : ' dnd-player-list'}${pairs ? ' dnd-player-pairs' : ''}">
+          <div class="dnd-player${hasImage ? '' : table ? ' dnd-player-table' : ' dnd-player-list'}${pairs ? ' dnd-player-pairs' : ''}">
             ${content.taskDescription ? `<div class="dnd-player-desc" style="margin-bottom:16px;">${sanitizeModuleDescriptionHtml(content.taskDescription)}</div>` : ''}
             ${hasImage ? `<div class="dnd-view-bar">
               <div class="dnd-bank-size" role="group" aria-label="Größe der Ablage">
@@ -1579,8 +1581,8 @@ export class H5pRenderer {
         };
 
         const placeInZone = (dragBtn, zoneEl) => {
-          // Paare: ein Platz je Zeile – was dort lag, geht zurück in die Ablage.
-          if (pairs) {
+          // Paare und Tabelle: ein Platz je Zeile bzw. Zelle – was dort lag, geht zurück in die Ablage.
+          if (pairs || table) {
             zoneEl.querySelectorAll('.dnd-player-drag.placed').forEach((old) => { if (old !== dragBtn) returnToBank(old); });
           }
           let elToPlace = dragBtn;
@@ -1633,28 +1635,46 @@ export class H5pRenderer {
           }
           return out;
         };
-        const zoneOrder = content.randomOrder && !hasImage ? mixed(zones) : zones;
+        // Tabelle: Zeilen und Spalten bleiben fest, gemischt wird nur die Ablage.
+        const zoneOrder = content.randomOrder && !hasImage && !table ? mixed(zones) : zones;
+        // Tabelle: Gerüst mit Kopfzeile und festen Zeilen; die Zonen kommen in die Zellen.
+        const tableCell = new Map();
+        if (table) {
+          const tbl = document.createElement('table');
+          tbl.className = 'dnd-table';
+          tbl.innerHTML = `<thead><tr><th>${escapeHtml(grid.head)}</th>${grid.cols.map((c) => `<th>${escapeHtml(c)}</th>`).join('')}</tr></thead>`
+            + `<tbody>${grid.rows.map((r) => `<tr><th scope="row">${escapeHtml(r)}</th>${grid.cols.map(() => '<td></td>').join('')}</tr>`).join('')}</tbody>`;
+          const trs = tbl.querySelectorAll('tbody tr');
+          grid.cells.forEach((row, ri) => row.forEach((z, ci) => { if (z) tableCell.set(z, trs[ri].children[ci + 1]); }));
+          div.querySelector('#dndZonesLegacy').appendChild(tbl);
+        }
         const dragOrder = content.randomOrder ? mixed(drags) : drags;
 
         zoneOrder.forEach((z, i) => {
           const zoneEl = document.createElement('div');
           zoneEl.className = 'dnd-player-zone';
           const color = colors[i % colors.length];
-          if (hasImage && z.x !== undefined) {
+          if (table) {
+            zoneEl.classList.add('dnd-table-zone');
+            zoneEl.dataset.zone = z.label;
+            zoneEl.innerHTML = `<div class="dnd-player-zone-items" data-zone="${escapeAttr(z.label)}"></div>`;
+          } else if (hasImage && z.x !== undefined) {
             zoneEl.style.left = z.x + '%'; zoneEl.style.top = z.y + '%';
             zoneEl.style.width = (z.width || 20) + '%'; zoneEl.style.height = (z.height || 15) + '%';
           } else {
             zoneEl.style.position = 'relative'; zoneEl.style.minHeight = '50px'; zoneEl.style.marginBottom = '8px';
           }
-          zoneEl.style.borderColor = color;
-          zoneEl.style.color = color;
-          // Deckend, nicht transparent: Die Zonen liegen ueber dem Diagramm,
-          // und dort steht die Loesung oft schon angeschrieben. Durchscheinen
-          // wuerde die Aufgabe verraten.
-          zoneEl.style.background = hexTint(color, 0.25);
-          zoneEl.dataset.zone = z.label;
-          const face = hasImage ? escapeHtml(z.label) : faceHtml(z.label, z.imageUrl, z.hideText);
-          zoneEl.innerHTML = `<span class="dnd-player-zone-label${!hasImage && z.imageUrl ? ' dnd-has-img' : ''}" style="background:${color}">${face}</span><div class="dnd-player-zone-items" data-zone="${escapeAttr(z.label)}"></div>`;
+          if (!table) {
+            zoneEl.style.borderColor = color;
+            zoneEl.style.color = color;
+            // Deckend, nicht transparent: Die Zonen liegen ueber dem Diagramm,
+            // und dort steht die Loesung oft schon angeschrieben. Durchscheinen
+            // wuerde die Aufgabe verraten.
+            zoneEl.style.background = hexTint(color, 0.25);
+            zoneEl.dataset.zone = z.label;
+            const face = hasImage ? escapeHtml(z.label) : faceHtml(z.label, z.imageUrl, z.hideText);
+            zoneEl.innerHTML = `<span class="dnd-player-zone-label${!hasImage && z.imageUrl ? ' dnd-has-img' : ''}" style="background:${color}">${face}</span><div class="dnd-player-zone-items" data-zone="${escapeAttr(z.label)}"></div>`;
+          }
           // Die ganze belegte Zone ist Anfasser fuer ihr Element: Abgelegte
           // Elemente sind klein und ragen oft ueber die Zone hinaus, mit dem
           // Finger trifft man sonst leicht nur die Zone. Das Antippen wird als
@@ -1677,6 +1697,7 @@ export class H5pRenderer {
             openRemoveMenu(item, e.clientX, e.clientY);
           });
           if (hasImage) canvasEl.appendChild(zoneEl);
+          else if (table) tableCell.get(z)?.appendChild(zoneEl);
           else div.querySelector('#dndZonesLegacy').appendChild(zoneEl);
         });
 
@@ -1755,7 +1776,7 @@ export class H5pRenderer {
                 const zoneLabel = z.dataset.zone;
                 const group = zoneGroup.get(zoneLabel) || '';
                 const items = z.querySelectorAll('.dnd-player-drag.placed');
-                const defaultColor = colors[idx % colors.length];
+                const defaultColor = table ? '' : colors[idx % colors.length];
                 let hasCorrect = false; let anyWrong = false;
                 if (items.length === 0) {
                   // Eine leere Zone einer Gruppe kann in Ordnung sein, wenn das

@@ -36,6 +36,36 @@ export function dndIsPairs(content) {
 }
 
 /**
+ * Drag and Drop als Tabelle: feste Zeilen (links) und Spalten (oben), jede
+ * Zelle ist eine Zone mit genau einem Platz. Zeile und Spalte stehen an der
+ * Zone (`row`, `col`); die Reihenfolge ergibt sich aus dem ersten Auftreten.
+ */
+export function dndIsTable(content) {
+  return !!content && content.layout === 'table' && !content.backgroundImage;
+}
+
+/** Zeilen, Spalten und die Zone je Zelle (`cells[r][c]`, sonst null). */
+export function dndTableGrid(content) {
+  const name = (v) => String(v ?? '').trim();
+  const zones = ((content && content.dropZones) || []).filter((z) => z && name(z.label));
+  const rows = [];
+  const cols = [];
+  for (const z of zones) {
+    const r = name(z.row) || name(z.label);
+    const c = name(z.col);
+    if (!rows.includes(r)) rows.push(r);
+    if (!cols.includes(c)) cols.push(c);
+  }
+  const cells = rows.map(() => cols.map(() => null));
+  for (const z of zones) {
+    const r = rows.indexOf(name(z.row) || name(z.label));
+    const c = cols.indexOf(name(z.col));
+    if (!cells[r][c]) cells[r][c] = z;
+  }
+  return { head: name(content && content.tableHead), rows, cols, cells };
+}
+
+/**
  * Aufgabentypen, die sich automatisch bewerten lassen. Nur sie taugen für
  * die Lernbegleitung (mehrere Versuche) und die Quiz-Arena; Freitext,
  * Audio-Aufnahme und reine Informationen bewertet kein Automat.

@@ -25,6 +25,8 @@ export function mount(el, { state, mode, onChange, say = () => {} }) {
   let rt = null;          // Laufzeit (spsInit), null = gestoppt
   let timer = 0;
   const pressed = {};     // Eingang → betätigt (Taster gedrückt bzw. Rastschalter eingerastet)
+  // Rastende Eingänge mit start: true sind zu Beginn betätigt (z. B. Endlage „eingefahren“ ohne Anlage).
+  for (const x of st.io || []) if (x.kind === 'in' && x.contact === 'latch' && x.start) pressed[x.id] = true;
   let selStep = null;
   const changed = () => { onChange(clone(st)); if (rt) restart(); renderAll(); };
   const io = () => (st.io ||= []);

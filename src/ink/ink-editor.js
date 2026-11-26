@@ -174,6 +174,20 @@ const BAR_PALM_MS = 1500;     // so lange nach dem Stift nimmt die Scrollleiste 
 const PALM_SIZE = 90;         // größere Auflage (CSS-Pixel) ist ein Handballen – ein Finger meldet auf dem iPad oft 40–60
 const PEN_NEAR_MS = 400;      // so lange nach einer Bewegung des Stifts auf dem Blatt zählt kein Finger
 const PAGES_KEY = 'lm_ink_pages';   // Seitenleiste offen (Gerät)
+const PEN_KEY = 'lm_ink_pen';       // zuletzt gewählter Stift (Werkzeug, Farbe, Breite) – gilt je Gerät für jedes Blatt
+/** Gemerkter Stift: { tool, color, marker, widthIdx } – nur, was es (noch) gibt. */
+function storedPen() {
+  try {
+    const v = JSON.parse(stored(PEN_KEY) || 'null');
+    if (!v || typeof v !== 'object') return {};
+    const out = {};
+    if (['pen', 'marker', 'select'].includes(v.tool)) out.tool = v.tool;
+    if (typeof v.color === 'string' && /^#[0-9a-f]{3,8}$/i.test(v.color)) out.color = v.color;
+    if (typeof v.marker === 'string' && /^#[0-9a-f]{3,8}$/i.test(v.marker)) out.marker = v.marker;
+    if ([0, 1, 2].includes(v.widthIdx)) out.widthIdx = v.widthIdx;
+    return out;
+  } catch (_) { return {}; }
+}
 const FINGER_STEP = 400;      // Stift-Gerät: Schutz vor Sprüngen (verpasste Ereignisse) – sonst folgt das Blatt dem Finger genau
 const GLIDE_DECAY = 0.95;     // Nachgleiten nach dem Loslassen: Geschwindigkeit je 16 ms
 const GLIDE_MIN = 0.05;       // darunter (px/ms) gleitet nichts nach
@@ -304,6 +318,8 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
     tool: doc.bg === 'paper' ? 'select' : 'pen', color: COLORS[0], marker: MARKERS[0], widthIdx: 1, textSize: NEW_TEXT_SIZE, fieldPattern: 'karo',
     shapeKind: 'rect', shapeDash: 'solid', shapeFill: null, shapeOpacity: 1,
     zoom: 1, variant: 'blatt',
+    // Wie zuletzt auf diesem Gerät: Wer mit Stift, Farbe und Breite geschrieben hat, schreibt im nächsten Blatt gleich weiter.
+    ...storedPen(),
     selection: null,          // { page, ids: Set }
     undo: [], redo: [],
   };
@@ -578,8 +594,15 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
   let area = null;         // Bereich mit Leiste (📷 …): { p, rect: { x, y, w, h } in Punkten der Seite, bar }
   let fitLater = null;     // Werkzeugleiste einpassen (fitToolbar, weiter unten)
   let fitSubLater = null;  // Einstellungsleiste einpassen (fitSubbar)
+  let penSaved = '';
   const paintToolbar = () => {
     overlay.querySelectorAll('[data-tool]').forEach((b) => b.classList.toggle('active', b.dataset.tool === state.tool));
+    {
+      // Stift merken (Werkzeug nur Pfeil, Stift, Marker – Radierer, Formen & Co. nicht).
+      const prev = storedPen();
+      const pen = JSON.stringify({ tool: ['pen', 'marker', 'select'].includes(state.tool) ? state.tool : prev.tool, color: state.color, marker: state.marker, widthIdx: state.widthIdx });
+      if (pen !== penSaved) { penSaved = pen; store1(PEN_KEY, pen); }
+    }
     if (state.tool !== 'laser') laserDot(-1, null);
     // Ein begonnenes Vieleck endet, sobald ein anderes Werkzeug (oder eine andere Form) gewählt ist.
     if (state.poly && (state.tool !== 'shape' || state.shapeKind !== 'polygon')) finishPolygon();
@@ -1589,6 +1612,7 @@ const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-r
     const page = { i: 0, w: 0, h: 0, el, svg: el.querySelector('.ink-svg'), top: el.querySelector('.ink-top'), texts: el.querySelector('.ink-texts'), paper: true };
     pages = [page];
     measurePaper();
+    if (fitFieldsToInk()) measurePaper();
     const firstFit = !state.zoomSet;
     if (!state.zoomSet) { state.zoom = fitZoom(page.w); state.zoomSet = true; }
     showZoomPct();
@@ -1747,6 +1771,39 @@ const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-r
     }
   }
 
+  /**
+   * Schreibfeld so lang wie seine Schrift: Ragt, was in einem Feld steht, unten heraus (etwa weil eine
+   * Verlängerung verloren ging), wird das Feld länger – sonst stünde die Schrift über dem nächsten Abschnitt.
+   * Gespeichert wird das mit der nächsten Änderung. Ergebnis: true, wenn sich ein Feld geändert hat.
+   */
+  function fitFieldsToInk() {
+    if (!paperView || paper.karoResize === false || paper.setField) return false;
+    const lineH = (0.5 / 2.54) * 72; // eine Zeile (0,5 cm) in pt
+    let grew = false;
+    for (const [bid, entry] of Object.entries(layer?.blocks || {})) {
+      if (bid === '_' || !entry.items?.length) continue;
+      const b = findBlock(bid);
+      if (!b || b.el.dataset.btype !== 'karo') continue;
+      const karo = b.el.querySelector('.ds-karo');
+      if (!karo) continue;
+      let bottom = 0;
+      for (const it of entry.items) {
+        if (it.points) for (const pt of it.points) bottom = Math.max(bottom, pt[1] + (it.width || 0) / 2);
+        else if (Number.isFinite(it.y)) bottom = Math.max(bottom, it.y + (Number(it.h) || 0));
+      }
+      const over = bottom - (b.bottom - b.top);
+      if (over <= 2) continue;
+      const now = fieldNow(b.el, karo);
+      const lines = Math.min(KARO_MAX, now.lines + Math.ceil(over / lineH) + 1);
+      if (lines <= now.lines) continue;
+      delete karoMap[`p:${b.el.dataset.bpath}`];
+      karoMap[b.el.dataset.bid] = { ...fieldOf(b.el), lines };
+      paintField(karo, fieldNow(b.el, karo));
+      grew = true;
+    }
+    return grew;
+  }
+
   /** Änderung eines Felds übernehmen – nur, was vom Dokument abweicht, steht in der Ebene. */
   function setField(el, karo, next, before) {
     // Lehrkraft: Größe und Muster gehören ins Dokument (der Gastgeber speichert es).
@@ -1812,7 +1869,10 @@ const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-r
     if (paper.karoResize === false) return;
     for (const el of paperView.el.querySelectorAll('[data-btype="karo"]')) {
       const karo = el.querySelector('.ds-karo');
-      if (!karo || karo.querySelector('.ink-karo-handle')) continue;
+      if (!karo) continue;
+      // Anfasser eines früheren Editors (Durchlauf: dasselbe Blatt nach Weiter/Zurück) hängen noch am
+      // alten, geschlossenen Editor – ihr Ziehen käme hier nie an. Deshalb immer neu.
+      karo.querySelectorAll(':scope > .ink-karo-handle').forEach((h) => h.remove());
       const handle = (cls, title) => {
         const h = document.createElement('div');
         h.className = `ink-karo-handle ${cls}`;
@@ -2140,8 +2200,13 @@ const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-r
   }
 
   function setZoom(z, at = null) {
-    const keep = scroller.scrollTop / (scroller.scrollHeight || 1);
     const before = state.zoom;
+    // Ohne Fixpunkt (Knöpfe, Klick auf die Prozentzahl): die Mitte des Bildes. Sonst bliebe nur der
+    // Anteil oben stehen, und die Aufgabe in der Mitte rutschte beim Vergrößern aus dem Bild.
+    if (!at) {
+      const v = scroller.getBoundingClientRect();
+      at = { x: v.left + v.width / 2, y: v.top + v.height / 2 };
+    }
     state.zoom = Math.max(0.3, Math.min(MAX_ZOOM, z));
     state.zoomSet = true;
     showZoomPct();
@@ -2151,7 +2216,6 @@ const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-r
     const cx = scroller.scrollLeft + ax;
     const cy = scroller.scrollTop + ay;
     const place = () => {
-      if (!at) { scroller.scrollTop = keep * scroller.scrollHeight; return; }
       const f = state.zoom / before;
       scroller.scrollLeft = cx * f - ax;
       scroller.scrollTop = cy * f - ay;
@@ -3899,7 +3963,13 @@ const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-r
       if (!gesture && state.poly?.page === p.i) { polygonPreview(toPage(e)); return; }
       if (!gesture && state.tool === 'laser') { laserDot(p.i, toPage(e)); return; }
       if (!gesture || e.pointerId !== gesture.id) return;
-      const events = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
+      let events = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
+      // Zusammengefasste Bewegungen nur, wenn sie zum Ereignis passen: Safari meldet im Blatt (CSS zoom)
+      // manche Koordinaten umgerechnet – abwechselnd mit den richtigen ergäbe das einen Zickzack-Strich.
+      if (events.length) {
+        const lastEv = events[events.length - 1];
+        if (Math.abs(lastEv.clientX - e.clientX) > 2 || Math.abs(lastEv.clientY - e.clientY) > 2) events = [e];
+      }
       if (gesture.kind === 'stroke') {
         // Bewegt sich der Stift, beginnt das Warten aufs Stillhalten neu.
         if (Math.hypot(e.clientX - gesture.anchor[0], e.clientY - gesture.anchor[1]) > HOLD_SLACK) {
@@ -4582,8 +4652,10 @@ const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-r
     if (!e.ctrlKey) return;
     e.preventDefault();
     wheelZoom *= Math.exp(-e.deltaY / 300);
+    // Strg+Mausrad: die Stelle unter der Maus bleibt stehen.
+    const at = { x: e.clientX, y: e.clientY };
     clearTimeout(wheelTimer);
-    wheelTimer = setTimeout(() => { const f = wheelZoom; wheelZoom = 1; setZoom(state.zoom * f); }, 120);
+    wheelTimer = setTimeout(() => { const f = wheelZoom; wheelZoom = 1; setZoom(state.zoom * f, at); }, 120);
   };
   overlay.addEventListener('wheel', onWheel, { passive: false });
 

@@ -32,7 +32,7 @@
 .lm-landscape .docspec .ds-group-full > .ds-group-box { width: 100% !important; }
 /* Schreibfeld in einer Zelle: Die Tabelle hat sonst nichts, woran sie ihre Breite misst. */
 .lm-paper .docspec .ds-table:has(.ds-karo):not([style*="width"]) { width: 100%; }
-.lm-paper .docspec { line-height: 1.15; overflow-wrap: break-word; }
+.lm-paper .docspec { line-height: 1.15; overflow-wrap: break-word; display: flow-root; } /* umschließt ein schwebendes Bild am Ende */
 .lm-paper code, .lm-paper pre, .lm-paper kbd { font-family: 'LM Mono', 'Liberation Mono', 'Courier New', monospace; }
 .lm-paper .ds-karo { position: relative; }
 /* Auf dem festen Blatt kein Bildlauf in Formeln (overflow-x: auto erzwänge bei 1,15 Zeilenhöhe eine senkrechte Leiste). */

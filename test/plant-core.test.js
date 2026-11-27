@@ -138,3 +138,16 @@ test('Zylinder bleibt stehen, wenn er ein Teil gegen eine feste Fläche drückt'
   assert.ok(Math.abs(w.cyl.c - 5.6) < 0.05, `Hub ${w.cyl.c}`); // 3 + 0,4 + 5,6 = 9 (Oberkante des Teils)
   assert.deepEqual(plantInputs(plant, w), { E: 0 });
 });
+
+test('Symbole: x-Namen erkennen (xSF1 für SF1), in der ganzen Anlage umbenennen', async () => {
+  const { symbolAlias, plantRename, plantSymbols, plantBending } = await import('../src/labs/plant-core.js');
+  assert.equal(symbolAlias('SF1', ['xSF1', 'xBG11']), 'xSF1');
+  assert.equal(symbolAlias('SF1', ['sf1', 'xSF1']), 'sf1');
+  assert.equal(symbolAlias('xQM11', ['QM11']), 'QM11');
+  assert.equal(symbolAlias('BG99', ['xBG11']), null);
+  const plant = plantBending();
+  plantRename(plant, 'BG11', 'xBG11');
+  assert.equal(plant.items.find((i) => i.id === 'mm1').home, 'xBG11');
+  assert.ok(plantSymbols(plant).has('xBG11') && !plantSymbols(plant).has('BG11'));
+  assert.equal(plantSymbols(plant).get('QM11').kind, 'out');
+});

@@ -4,7 +4,8 @@
 // Steuerung läuft; aufbauen (Elemente aus der Leiste, ziehen, antippen → Eigenschaften) geht, solange
 // sie steht. Taster und Sensoren hängen über ihr Symbol an der Zuordnungstabelle.
 
-import { PLANT_MATERIALS, PLANT_EXAMPLES, plantSize, cylinderHead, plantInputs, plantDefault } from './plant-core.js';
+import { PLANT_MATERIALS, PLANT_EXAMPLES, plantSize, cylinderHead, plantInputs, plantDefault, plantSymbols, plantRename, symbolAlias } from './plant-core.js';
+import { spsWalk, spsIsStep } from './lab-core.js';
 import { h, field, svgPoint } from './labs.js';
 
 const r3 = (v) => Math.round(v * 1000) / 1000;
@@ -212,13 +213,19 @@ export function mountPlant(host, ctx) {
     const st = getSt();
     const io = (st.io ||= []);
     const count = (k) => io.filter((x) => x.kind === k).length;
+    // Vorhandene Namen nehmen (xSF1 für SF1), nur Fehlendes neu in die Tabelle.
+    const map = {};
     for (const [kind, name, desc] of ex.io) {
-      if (io.some((x) => String(x.name ?? '').trim() === name)) continue;
+      const have = symbolAlias(name, io.filter((x) => x.kind === kind).map((x) => x.name));
+      if (have) { map[name] = have; continue; }
       const n = count(kind);
       io.push({ id: uid('io'), kind, name, addr: kind === 'in' ? `%I${Math.floor(n / 8)}.${n % 8}` : `%Q${Math.floor(n / 8)}.${n % 8}`, desc, ...(kind === 'in' ? { contact: 'NO' } : {}) });
     }
     st.plant = ex.make();
+    for (const [from, to] of Object.entries(map)) if (from !== to) plantRename(st.plant, from, to);
     changed();
+    const used = Object.entries(map).filter(([a, b]) => a !== b);
+    if (used.length) say(`Vorhandene Symbole verwendet: ${used.map(([a, b]) => `${b} für ${a}`).join(', ')}.`);
   }
 
   // ---------- Aufbauen ----------
@@ -305,9 +312,11 @@ export function mountPlant(host, ctx) {
   }
 
   function popPlant(e) {
+    popPlant.last = e;
     const p = plant();
     openPop(e, '🏭 Anlage',
       row('Größe', numF(p.w, (v) => { p.w = Math.max(6, Math.min(60, v)); changed(); }), ' × ', numF(p.h, (v) => { p.h = Math.max(4, Math.min(40, v)); changed(); }), ' Einheiten'),
+      ...symbolRows(),
       teacher ? h('label', { class: 'lab-check' }, h('input', { type: 'checkbox', checked: !!p.locked, onchange: (ev) => { if (ev.target.checked) p.locked = true; else delete p.locked; changed(); } }), ' 🔒 Für Schüler fest (sie bedienen sie nur)') : null,
       h('div', { class: 'lab-row' }, h('button', { type: 'button', class: 'lab-mini lab-del', onclick: () => {
         if (!confirm('Die ganze Anlage entfernen?')) return;
@@ -315,6 +324,42 @@ export function mountPlant(host, ctx) {
         changed();
         closePop();
       } }, '✕ Anlage entfernen')));
+  }
+
+  /** Namen, die die Ablaufkette verwendet (Transitionen, Bedingungen, Aktorvariablen). */
+  function chainNames() {
+    const set = new Set();
+    const add = (src) => { for (const m of String(src ?? '').matchAll(/[A-Za-z_ÄÖÜäöüß][A-Za-z0-9_ÄÖÜäöüß]*/g)) set.add(m[0]); };
+    spsWalk(getSt().steps, (el) => {
+      if (spsIsStep(el)) { add(el.trans); for (const a of el.actions || []) { add(a.var); add(a.cond); } } else { add(el.trans); for (const b of el.branches || []) add(b.trans); }
+    });
+    return set;
+  }
+  /**
+   * Symbole der Anlage mit Auswahl (für alle Elemente zugleich umstellen). ⚠: kommt in der Kette nicht vor –
+   * z. B. SF1 in der Anlage, xSF1 in der Kette. „Auf x-Namen umstellen“ macht das für alle passenden.
+   */
+  function symbolRows() {
+    const p = plant();
+    const syms = plantSymbols(p);
+    if (!syms.size) return [];
+    const inChain = chainNames();
+    const io = getSt().io || [];
+    const kinds = (k) => (k === 'in' ? ['in'] : k === 'out' ? ['out', 'mem'] : ['in', 'out', 'mem']);
+    const fixes = [...syms.entries()].map(([n, s]) => [n, symbolAlias(`x${n}`, io.filter((x) => kinds(s.kind).includes(x.kind)).map((x) => x.name))])
+      .filter(([n, to]) => to && to !== n && !inChain.has(n) && inChain.has(to));
+    return [
+      h('div', { class: 'lab-label', text: 'Symbole der Anlage' }),
+      ...[...syms.entries()].map(([n, s]) => row(`${inChain.has(n) ? '' : '⚠ '}${n}`,
+        pick(n, kinds(s.kind), (v) => { if (v) { plantRename(p, n, v); changed(); popPlant.last && popPlant(popPlant.last); } }),
+        h('span', { class: 'lab-hint', text: `${s.uses.length}×${inChain.has(n) ? '' : ' – nicht in der Kette'}` }))),
+      fixes.length ? h('button', { type: 'button', class: 'lab-mini', title: fixes.map(([a, b]) => `${a} → ${b}`).join(', '), onclick: () => {
+        for (const [a, b] of fixes) plantRename(p, a, b);
+        changed();
+        say(`Umgestellt: ${fixes.map(([a, b]) => `${a} → ${b}`).join(', ')}. Nicht mehr gebrauchte Zeilen in der Tabelle kannst du löschen (✕).`);
+        closePop();
+      } }, `Auf Namen der Kette umstellen (${fixes.map(([, b]) => b).join(', ')})`) : null,
+    ].filter(Boolean);
   }
 
   // ---------- Zeiger: Taster drücken, Elemente ziehen oder antippen ----------

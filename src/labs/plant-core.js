@@ -360,3 +360,48 @@ export const PLANT_EXAMPLES = [
     ['in', 'BG21', 'MM2 eingefahren (oben)'], ['in', 'BG22', 'MM2 ausgefahren (Blech gebogen)'],
     ['out', 'QM11', 'MM1 ausfahren (Ventil 1 Spule 1)'], ['out', 'QM12', 'MM1 einfahren (Ventil 1 Spule 2)'], ['out', 'QM21', 'MM2 ausfahren (Ventil 2 Spule 1)']] },
 ];
+
+/** Welche Felder eines Elements Symbole der Zuordnungstabelle tragen (und welcher Art). */
+export const PLANT_SIGNALS = {
+  button: [['in', 'in'], ['lamp', 'out']],
+  lamp: [['out', 'out']],
+  conveyor: [['out', 'out'], ['rev', 'out']],
+  cylinder: [['out', 'out'], ['ret', 'out'], ['ext', 'in'], ['home', 'in']],
+  sensor: [['in', 'in']],
+  creator: [['out', 'any']],
+};
+
+/** Symbole, die die Anlage verwendet: Name → { kind: 'in'|'out'|'any', uses: [{ it, key }] }. */
+export function plantSymbols(plant) {
+  const out = new Map();
+  for (const it of plant?.items || []) {
+    for (const [key, kind] of PLANT_SIGNALS[it.type] || []) {
+      const n = String(it[key] ?? '').trim();
+      if (!n) continue;
+      if (!out.has(n)) out.set(n, { kind, uses: [] });
+      out.get(n).uses.push({ it, key });
+    }
+  }
+  return out;
+}
+
+/** Ein Symbol in der ganzen Anlage umbenennen (z. B. SF1 → xSF1). */
+export function plantRename(plant, from, to) {
+  for (const { it, key } of plantSymbols(plant).get(String(from).trim())?.uses || []) it[key] = to;
+}
+
+/**
+ * Vorhandener Name in der Tabelle, der zu `name` passt: gleich, mit vorangestelltem x (xSF1 für SF1,
+ * wie in TIA/IEC üblich für BOOL) oder ohne es; Groß-/Kleinschreibung egal. Sonst null.
+ */
+export function symbolAlias(name, names) {
+  const n = String(name ?? '').trim();
+  if (!n) return null;
+  const low = n.toLowerCase();
+  const list = [...names].map((x) => String(x ?? '').trim()).filter(Boolean);
+  return list.find((x) => x === n)
+    || list.find((x) => x.toLowerCase() === low)
+    || list.find((x) => x.toLowerCase() === `x${low}`)
+    || (low.startsWith('x') ? list.find((x) => x.toLowerCase() === low.slice(1)) : null)
+    || null;
+}

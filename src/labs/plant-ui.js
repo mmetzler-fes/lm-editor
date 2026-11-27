@@ -251,7 +251,10 @@ export function mountPlant(host, ctx) {
         break;
       case 'conveyor':
         rows.push(row('Vorwärts', pick(it.out, ['out', 'mem'], set(it, 'out'))), row('Rückwärts', pick(it.rev, ['out', 'mem'], set(it, 'rev'), 'ohne')),
-          row('Länge', numF(it.w, set(it, 'w'))), row('Tempo', numF(it.speed, set(it, 'speed')), ' E/s'));
+          row('Länge', numF(it.w, set(it, 'w'))), row('Tempo', numF(it.speed, set(it, 'speed')), ' E/s'),
+          row('Laufrichtung', h('select', { title: 'Draufsicht: Band als Fläche, Teile darauf fahren in diese Richtung', onchange: (ev) => set(it, 'dir')(ev.target.value) },
+            ...[['', 'Seitenansicht (Oberkante)'], ['down', '↓ Draufsicht'], ['up', '↑ Draufsicht'], ['right', '→ Draufsicht'], ['left', '← Draufsicht']].map(([k, l]) => h('option', { value: k, selected: (it.dir || '') === k }, l)))),
+          it.dir ? row('Breite', numF(it.h ?? 3, set(it, 'h')), ' (quer zur Länge: Höhe im Bild)') : null);
         break;
       case 'cylinder':
         rows.push(row('Richtung', h('select', { onchange: (ev) => set(it, 'dir')(ev.target.value) }, ...[['right', '→ rechts'], ['left', '← links'], ['up', '↑ oben'], ['down', '↓ unten']].map(([k, l]) => h('option', { value: k, selected: (it.dir || 'right') === k }, l)))),
@@ -260,6 +263,8 @@ export function mountPlant(host, ctx) {
           row('Endlage aus', pick(it.ext, ['in'], set(it, 'ext'), 'ohne')), row('Endlage ein', pick(it.home, ['in'], set(it, 'home'), 'ohne')),
           row('Hub', numF(it.stroke, (v) => { cylinderSetStroke(it, v); changed(); }), ' Tempo ', numF(it.speed, set(it, 'speed'))),
           h('label', { class: 'lab-check' }, h('input', { type: 'checkbox', checked: !!it.startExt, onchange: (ev) => set(it, 'startExt')(ev.target.checked || '') }), ' Grundstellung ausgefahren'),
+          h('label', { class: 'lab-check', title: 'z. B. Prüf- oder Presszylinder, der von oben wirkt (Draufsicht)' }, h('input', { type: 'checkbox', checked: !!it.ghost, onchange: (ev) => set(it, 'ghost')(ev.target.checked || '') }), ' wirkt nicht auf Teile'),
+          row('Druck erreicht', pick(it.press, ['in'], set(it, 'press'), 'ohne'), ' nach ', numF(it.pressDelay ?? 2, set(it, 'pressDelay')), ' s'),
           row('Platte', numF(it.plate ?? 1.6, set(it, 'plate'), { title: 'quer zur Stange' }), ' × ', numF(it.plateThick ?? 0.4, set(it, 'plateThick'), { title: 'längs der Stange' }), ' (quer × längs)'),
           row('Fährt mit', h('select', { title: 'Sitzt auf einem anderen Zylinder und fährt mit ihm', onchange: (ev) => set(it, 'mount')(ev.target.value) },
             h('option', { value: '', selected: !it.mount }, '– fest –'),
@@ -278,6 +283,9 @@ export function mountPlant(host, ctx) {
           row('Werkstoff', matSel(it.material, set(it, 'material'))),
           row('Form', h('select', { onchange: (ev) => set(it, 'shape')(ev.target.value === 'box' ? '' : ev.target.value) }, h('option', { value: 'box', selected: it.shape !== 'round' }, 'eckig'), h('option', { value: 'round', selected: it.shape === 'round' }, 'rund'))),
           row('Farbe', h('input', { type: 'color', value: it.color || MAT_COLOR[it.material] || '#f59e0b', onchange: (ev) => set(it, 'color')(ev.target.value) })),
+          row('Beschriftung', field(it.label ?? '', set(it, 'label'), { size: 12 })),
+          it.fixed ? h('label', { class: 'lab-check', title: 'Teile fahren darüber (z. B. Prüfstation, Bedienfeld)' }, h('input', { type: 'checkbox', checked: !!it.deco, onchange: (ev) => set(it, 'deco')(ev.target.checked || '') }), ' nur Fläche (kein Hindernis)') : null,
+          !it.fixed ? h('label', { class: 'lab-check' }, h('input', { type: 'checkbox', checked: it.look === 'rim', onchange: (ev) => set(it, 'look')(ev.target.checked ? 'rim' : '') }), ' als Felge zeichnen') : null,
           it.fixed ? h('label', { class: 'lab-check' }, h('input', { type: 'checkbox', checked: it.look === 'wall', onchange: (ev) => set(it, 'look')(ev.target.checked ? 'wall' : '') }), ' als Mauer zeichnen')
             : h('label', { class: 'lab-check' }, h('input', { type: 'checkbox', checked: !!it.pick, onchange: (ev) => set(it, 'pick')(ev.target.checked || '') }), ' im Lauf antippen = entnehmen'));
         break;
@@ -318,6 +326,8 @@ export function mountPlant(host, ctx) {
     const p = plant();
     openPop(e, '🏭 Anlage',
       row('Größe', numF(p.w, (v) => { p.w = Math.max(6, Math.min(60, v)); changed(); }), ' × ', numF(p.h, (v) => { p.h = Math.max(4, Math.min(40, v)); changed(); }), ' Einheiten'),
+      row('Ansicht', h('select', { title: 'Draufsicht: keine Schwerkraft, Bänder als Flächen mit Laufrichtung', onchange: (ev) => { if (ev.target.value) p.view = ev.target.value; else delete p.view; changed(); } },
+        h('option', { value: '', selected: p.view !== 'top' }, 'Seitenansicht (mit Schwerkraft)'), h('option', { value: 'top', selected: p.view === 'top' }, 'Draufsicht'))),
       ...symbolRows(),
       teacher ? h('label', { class: 'lab-check' }, h('input', { type: 'checkbox', checked: !!p.locked, onchange: (ev) => { if (ev.target.checked) p.locked = true; else delete p.locked; changed(); } }), ' 🔒 Für Schüler fest (sie bedienen sie nur)') : null,
       h('div', { class: 'lab-row' },

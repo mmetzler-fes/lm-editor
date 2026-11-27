@@ -216,3 +216,25 @@ test('Werkstück entnehmen und mit dem Erzeuger einlegen (nur wenn Platz)', asyn
   assert.equal(plantInputs(plant, w).BG1, 1);
   assert.equal(w.bodies[0].pick, true);
 });
+
+test('Draufsicht: Band trägt in Laufrichtung, daneben bleibt die Felge liegen; Prüfdruck nach Wartezeit', async () => {
+  const { plantRimTest } = await import('../src/labs/plant-core.js');
+  const plant = plantRimTest();
+  const w = plantInit(plant);
+  const f = w.bodies[0];
+  run(plant, w, { QA1: 1 }, 1);
+  assert.ok(Math.abs(f.y - 2.8) < 0.1 && f.x === 11.2, `Band nach unten: y=${f.y}`);
+  run(plant, w, { QA1: 1 }, 2.5);
+  assert.equal(plantInputs(plant, w).BG7, 1, 'Lichtschranke unterbrochen');
+  run(plant, w, { MB1: 1 }, 2);
+  assert.ok(Math.abs(f.x - 6.6) < 0.01, `auf der Prüfstation: x=${f.x}`);
+  const y = f.y;
+  run(plant, w, { QA1: 1 }, 1);
+  assert.equal(f.y, y, 'neben dem Band bewegt sie sich nicht');
+  assert.deepEqual([plantInputs(plant, w).BG8, plantInputs(plant, w).BG9], [1, 1]);
+  run(plant, w, { MB3: 1 }, 1.4);
+  assert.deepEqual([plantInputs(plant, w).BG4, plantInputs(plant, w).BG10], [1, 0]);
+  run(plant, w, { MB3: 1 }, 2.1);
+  assert.equal(plantInputs(plant, w).BG10, 1, 'Prüfdruck nach 2 s in der Endlage');
+  assert.equal(f.x, 6.6, 'MM2 wirkt nicht auf die Felge (von oben)');
+});

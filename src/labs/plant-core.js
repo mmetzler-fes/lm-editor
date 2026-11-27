@@ -23,6 +23,11 @@
 //   { type: 'sensor', x, y, w, h, in: 'B2', kind: 'light'|'prox', material?: ''|'metal'|…, nc?: true }
 //   { type: 'creator', x, y, out?: 'Y3', every?: 0, object: { w, h, material, color, shape } }
 //   { type: 'destroyer', x, y, w, h }
+// plant.view: 'top' – Draufsicht: keine Schwerkraft; ein Band mit dir ('up'|'down'|'left'|'right', Maß w × h)
+//   nimmt mit, was mit der Mitte darauf liegt; daneben bleibt ein Teil liegen.
+// Objekte: deco (Fläche ohne Widerstand, z. B. Prüfstation, Bedienfeld), label, look: 'rim' (Felge).
+// Zylinder: ghost (wirkt nicht auf Teile – z. B. Prüfzylinder von oben), press: 'BG10' mit pressDelay (s):
+//   meldet nach dieser Zeit in der vorderen Endlage (bei anliegendem Signal) „Druck erreicht“.
 //   { type: 'gate', x, y, w, h, travel: 8, speed: 2, open: 'QM1', close: 'QM2', isOpen: 'BG1', isClosed: 'BG2',
 //     bar?: 'BG3', start?: 'closed'|'open' }                       – Schiebetor mit Motor, Druckleiste vorn
 // Zylinder zusätzlich: startExt (Grundstellung ausgefahren), plate/plateThick (Kolbenplatte quer/längs),
@@ -86,7 +91,7 @@ export function plantSize(it) {
   switch (it?.type) {
     case 'button': return { w: 1.4, h: 1.4 };
     case 'lamp': return { w: 1.2, h: 1.2 };
-    case 'conveyor': return { w: num(it.w, 8), h: BELT_H };
+    case 'conveyor': return { w: num(it.w, 8), h: it.dir ? num(it.h, 3) : BELT_H };
     case 'cylinder': return /^(up|down)$/.test(it.dir) ? { w: CYL.thick, h: cylinderLen(it) } : { w: cylinderLen(it), h: CYL.thick };
     case 'creator': return { w: num(it.object?.w, 1.5) + 0.6, h: 0.6 };
     case 'gate': return { w: num(it.w, 6), h: num(it.h, 3) };
@@ -147,7 +152,7 @@ const overlap = (a, b, eps = EPS) => a.x < b.x + b.w - eps && a.x + a.w > b.x + 
 
 /** Laufzeit neu: bewegliche Objekte als Körper, Zylinder eingefahren. */
 export function plantInit(plant) {
-  const world = { t: 0, bodies: [], cyl: {}, gate: {}, prev: {}, spawnAt: {}, next: 1 };
+  const world = { t: 0, bodies: [], cyl: {}, gate: {}, press: {}, prev: {}, spawnAt: {}, next: 1 };
   for (const it of plant?.items || []) {
     if (it.type === 'cylinder') world.cyl[it.id] = cylinderStart(it);
     if (it.type === 'gate') world.gate[it.id] = gateStart(it);
@@ -165,6 +170,7 @@ function newBody(world, o, x, y) {
     material: o.material || 'plastic', color: o.color || '', shape: o.shape || 'box', on: null,
     ...(o.bendable ? { bendable: true } : {}),
     ...(o.pick ? { pick: true } : {}),
+    ...(o.look ? { look: o.look } : {}),
   };
 }
 
@@ -181,13 +187,15 @@ function solids(plant, world, out, placed = plantPlaced(plant, world)) {
   for (const it of placed) {
     const x = num(it.x, 0);
     const y = num(it.y, 0);
-    if (it.type === 'object' && it.fixed) list.push({ x, y, w: num(it.w, 1.5), h: num(it.h, 1.5), vx: 0, kind: 'fixed' });
+    if (it.type === 'object' && it.fixed) { if (!it.deco) list.push({ x, y, w: num(it.w, 1.5), h: num(it.h, 1.5), vx: 0, kind: 'fixed' }); }
+    else if (it.type === 'conveyor' && it.dir) continue; // Band in der Draufsicht: Fläche, kein Hindernis
     else if (it.type === 'conveyor') {
       const s = Math.abs(num(it.speed, 3));
       const v = sig(out, it.out) ? s : sig(out, it.rev) ? -s : 0;
       list.push({ x, y, w: num(it.w, 8), h: BELT_H, vx: 0, belt: v, kind: 'conveyor' });
     } else if (it.type === 'cylinder') {
       const { w, h } = plantSize(it);
+      if (it.ghost) continue;
       list.push({ x, y, w, h, vx: 0, kind: 'cylinder' });
       list.push({ ...cylinderHead(it, cylPos(it, world)), vx: 0, kind: 'head', cyl: it.id });
     }
@@ -320,8 +328,10 @@ function substep(plant, world, out, h) {
     if (ext && !(it.ret && sig(out, it.ret))) pos = Math.min(stroke, pos + num(it.speed, 4) * h);
     else if (ret) pos = Math.max(0, pos - num(it.speed, 4) * h);
     world.cyl[it.id] = pos;
+    // Druck: Zeit in der vorderen Endlage bei anliegendem Signal
+    if (it.press) world.press[it.id] = ext && pos >= stroke - 0.02 ? (world.press[it.id] || 0) + h : 0;
     const d = pos - before;
-    if (Math.abs(d) < EPS) continue;
+    if (Math.abs(d) < EPS || it.ghost) continue;
     const [ux, uy] = unit(it.dir);
     const head = cylinderHead(it, pos);
     const keep = world.bodies.map((b) => [b.x, b.y]);
@@ -351,6 +361,7 @@ function substep(plant, world, out, h) {
     }
   }
   const fixed = solids(plant, world, out);
+  if (plant?.view === 'top') { topStep(plant, world, out, h, fixed); return; }
   // 2. Körper, von unten nach oben (wer oben liegt, fährt mit dem darunter mit)
   const bodies = [...world.bodies].sort((a, b) => b.y + b.h - (a.y + a.h));
   for (const b of bodies) {
@@ -384,6 +395,36 @@ function substep(plant, world, out, h) {
   }
 }
 
+/** Draufsicht: Bänder schieben, was mit der Mitte auf ihnen liegt; sonst Stillstand; nichts fällt. */
+function topStep(plant, world, out, h, fixed) {
+  const belts = plantPlaced(plant, world).filter((it) => it.type === 'conveyor' && it.dir);
+  for (const b of world.bodies) {
+    const cx = b.x + b.w / 2;
+    const cy = b.y + b.h / 2;
+    const belt = belts.find((c) => cx >= c.x && cx <= c.x + num(c.w, 8) && cy >= c.y && cy <= c.y + num(c.h, 3));
+    let vx = 0;
+    let vy = 0;
+    if (belt) {
+      const s = Math.abs(num(belt.speed, 3));
+      const v = sig(out, belt.out) ? s : sig(out, belt.rev) ? -s : 0;
+      const [ux, uy] = unit(belt.dir);
+      vx = ux * v;
+      vy = uy * v;
+    }
+    b.vx = vx;
+    b.vy = vy;
+    const others = [...fixed, ...world.bodies.filter((o) => o !== b)];
+    if (vx) {
+      b.x += vx * h;
+      for (const s of others) if (overlap(b, s)) b.x = vx > 0 ? s.x - b.w : s.x + s.w;
+    }
+    if (vy) {
+      b.y += vy * h;
+      for (const s of others) if (overlap(b, s)) b.y = vy > 0 ? s.y - b.h : s.y + s.h;
+    }
+  }
+}
+
 /** Eingänge aus der Anlage: Sensoren (mit Werkstoff, Öffner) und Endlagen der Zylinder. */
 export function plantInputs(plant, world) {
   const inp = {};
@@ -401,6 +442,7 @@ export function plantInputs(plant, world) {
       const stroke = Math.max(0.2, num(it.stroke, 4));
       if (it.home) set(it.home, pos <= 0.02);
       if (it.ext) set(it.ext, pos >= stroke - 0.02);
+      if (it.press) set(it.press, (world?.press?.[it.id] || 0) >= Math.max(0, num(it.pressDelay, 2)) - 1e-9);
     } else if (it.type === 'gate') {
       const pos = gatePos(it, world);
       if (it.isClosed) set(it.isClosed, pos <= 0.02);
@@ -415,7 +457,7 @@ export function plantInputNames(plant) {
   const names = new Set();
   for (const it of plant?.items || []) {
     if (it.type === 'sensor' && it.in) names.add(String(it.in).trim());
-    if (it.type === 'cylinder') { if (it.home) names.add(String(it.home).trim()); if (it.ext) names.add(String(it.ext).trim()); }
+    if (it.type === 'cylinder') { for (const k of ['home', 'ext', 'press']) if (it[k]) names.add(String(it[k]).trim()); }
     if (it.type === 'gate') { if (it.isOpen) names.add(String(it.isOpen).trim()); if (it.isClosed) names.add(String(it.isClosed).trim()); }
   }
   return names;
@@ -509,6 +551,39 @@ export function plantFlanging() {
 }
 
 /**
+ * Härteprüfanlage für Felgen (Abitur Mechatronik 2021/22, Aufgabe 3) in der Draufsicht: Band MA1 (QA1)
+ * bringt Felgen von oben; Lichtschranke BG7 (Öffner, 0 = Felge auf Höhe der Prüfstation); MM1 schiebt die
+ * Felge auf die Prüfstation (BG1/BG2, MB1/MB2), Stifte BG8/BG9 erkennen sie dort; Prüfzylinder MM2
+ * (BG3/BG4, MB3/MB4) drückt von oben, BG10 meldet nach 2 s den Prüfdruck; MM3 schiebt zurück (BG5/BG6,
+ * MB5 mit Feder). Bedienfeld: SF0 Hauptschalter (rastend), SF1 Start, Ampel PF1 rot, PF2 gelb, PF3 grün.
+ */
+export function plantRimTest() {
+  const rim = { w: 3.6, h: 3.6, material: 'metal', look: 'rim', color: '#cbd5e1', pick: true };
+  return {
+    v: 2, view: 'top', w: 24, h: 18,
+    items: [
+      { id: 'station', type: 'object', x: 5.4, y: 6.8, w: 5.4, h: 5.4, fixed: true, deco: true, color: '#e2e8f0', label: 'Prüfstation' },
+      { id: 'pult', type: 'object', x: 17.4, y: 0.6, w: 6.2, h: 6.6, fixed: true, deco: true, color: '#f1f5f9', label: 'Bedienfeld' },
+      { id: 'band', type: 'conveyor', dir: 'down', x: 11, y: 0.4, w: 4, h: 17.2, out: 'QA1', speed: 2, label: 'MA1' },
+      { id: 'felge', type: 'object', x: 11.2, y: 0.8, ...rim },
+      { id: 'bg7', type: 'sensor', kind: 'light', x: 10.8, y: 11.25, w: 4.4, h: 0.15, in: 'BG7' },
+      { id: 'bg8', type: 'sensor', kind: 'prox', x: 6.5, y: 8.1, w: 0.5, h: 0.5, in: 'BG8' },
+      { id: 'bg9', type: 'sensor', kind: 'prox', x: 6.5, y: 10.4, w: 0.5, h: 0.5, in: 'BG9' },
+      { id: 'mm1', type: 'cylinder', x: 15.6, y: 9, dir: 'left', stroke: 5, speed: 3, out: 'MB1', ret: 'MB2', home: 'BG1', ext: 'BG2', label: 'MM1' },
+      { id: 'mm3', type: 'cylinder', x: 0.4, y: 9, dir: 'right', stroke: 4.8, speed: 3, out: 'MB5', home: 'BG5', ext: 'BG6', label: 'MM3' },
+      { id: 'mm2', type: 'cylinder', x: 4.4, y: 1.4, dir: 'down', stroke: 2, speed: 1.5, ghost: true, out: 'MB3', ret: 'MB4', home: 'BG3', ext: 'BG4', press: 'BG10', pressDelay: 2, label: 'MM2 Prüfzylinder' },
+      { id: 'sf0', type: 'button', x: 17.9, y: 1.6, in: 'SF0', label: 'SF0 EIN' },
+      { id: 'sf1', type: 'button', x: 20, y: 1.6, in: 'SF1', label: 'SF1 Start' },
+      { id: 'pf1', type: 'lamp', x: 22.1, y: 1.2, out: 'PF1', color: 'red', label: 'PF1' },
+      { id: 'pf2', type: 'lamp', x: 22.1, y: 3, out: 'PF2', color: 'yellow', label: 'PF2' },
+      { id: 'pf3', type: 'lamp', x: 22.1, y: 4.8, out: 'PF3', color: 'green', label: 'PF3' },
+      { id: 'auflegen', type: 'creator', x: 6.8, y: 2.4, manual: true, label: 'Felge auflegen', place: { x: 11.2, y: 0.8 }, object: rim },
+      { id: 'ab', type: 'destroyer', x: 11, y: 16.2, w: 4, h: 1.4 },
+    ],
+  };
+}
+
+/**
  * Beispielanlagen mit den Einträgen der Zuordnungstabelle, die sie brauchen:
  * [Art, Symbol, Beschreibung, Kontakt (NO/NC/latch), Adresse].
  */
@@ -535,6 +610,18 @@ export const PLANT_EXAMPLES = [
     ['out', 'QM21', 'MM2 zurück (Anschlag weg)', '', '%Q0.3'], ['out', 'QM22', 'MM2 vor (Anschlag)', '', '%Q0.4'], ['out', 'QM31', 'MM3 vor (bördeln)', '', '%Q0.5'],
     ['out', 'QM41', 'MM4 vor (Formwechsel)', '', '%Q0.6'], ['out', 'QM42', 'MM4 zurück', '', '%Q0.7'],
     ['tim', 'tonT1', 'Bördelzeit 1 (T#3s)'], ['tim', 'tonT2', 'Bördelzeit 2 (T#5s)']], init: 'INIT' },
+  { key: 'rimtest', label: 'Härteprüfanlage für Felgen', make: plantRimTest, io: [
+    ['in', 'SF0', 'Hauptschalter EIN (SF0 = 1)', 'latch', '%I0.0'], ['in', 'SF1', 'Startschalter Felgenhärteprüfung (SF1 = 1)', 'NO', '%I0.1'],
+    ['in', 'BG1', 'MM1 ist eingefahren (BG1 = 1)', 'NO', '%I0.2'], ['in', 'BG2', 'MM1 ist ausgefahren (BG2 = 1)', 'NO', '%I0.3'],
+    ['in', 'BG3', 'Prüfzylinder MM2 ist eingefahren (BG3 = 1)', 'NO', '%I0.4'], ['in', 'BG4', 'Prüfzylinder MM2 ist ausgefahren (BG4 = 1)', 'NO', '%I0.5'],
+    ['in', 'BG5', 'MM3 ist eingefahren (BG5 = 1)', 'NO', '%I0.6'], ['in', 'BG6', 'MM3 ist ausgefahren (BG6 = 1)', 'NO', '%I0.7'],
+    ['in', 'BG7', 'Felge auf Höhe der Prüfstation (BG7 = 0)', 'NC', '%I1.0'], ['in', 'BG8', 'Stift 1 erkennt Felge auf Prüfposition (BG8 = 1)', 'NO', '%I1.1'],
+    ['in', 'BG9', 'Stift 2 erkennt Felge auf Prüfposition (BG9 = 1)', 'NO', '%I1.2'], ['in', 'BG10', 'Prüfdruck erreicht (BG10 = 1)', 'NO', '%I1.3'],
+    ['out', 'PF1', 'Meldeleuchte ROT', '', '%Q0.0'], ['out', 'PF2', 'Meldeleuchte GELB', '', '%Q0.1'], ['out', 'PF3', 'Meldeleuchte GRÜN', '', '%Q0.2'],
+    ['out', 'QA1', 'Schütz Förderband MA1 ein', '', '%Q0.3'], ['out', 'MB1', 'MM1 fährt aus', '', '%Q0.4'], ['out', 'MB2', 'MM1 fährt ein', '', '%Q0.5'],
+    ['out', 'MB3', 'Prüfzylinder MM2 fährt aus', '', '%Q0.6'], ['out', 'MB4', 'Prüfzylinder MM2 fährt ein', '', '%Q0.7'],
+    ['out', 'MB5', 'MM3 fährt aus (Federrückstellung)', '', '%Q1.0'],
+    ['tim', 'tonT1', 'Prüfzeit (T#30s)']] },
 ];
 
 /** Welche Felder eines Elements Symbole der Zuordnungstabelle tragen (und welcher Art). */
@@ -542,7 +629,7 @@ export const PLANT_SIGNALS = {
   button: [['in', 'in'], ['lamp', 'out']],
   lamp: [['out', 'out']],
   conveyor: [['out', 'out'], ['rev', 'out']],
-  cylinder: [['out', 'out'], ['ret', 'out'], ['ext', 'in'], ['home', 'in']],
+  cylinder: [['out', 'out'], ['ret', 'out'], ['ext', 'in'], ['home', 'in'], ['press', 'in']],
   sensor: [['in', 'in']],
   creator: [['out', 'any']],
   gate: [['open', 'out'], ['close', 'out'], ['isOpen', 'in'], ['isClosed', 'in'], ['bar', 'in']],
@@ -610,7 +697,8 @@ export function plantSvgParts(p, { world = null, vars = {}, io = [], pressed = {
   const items = plantPlaced(p, world);
   // Zuerst Flächen und Geräte, dann Werkstücke, dann Sensoren (Strahl über allem)
   const order = { destroyer: 0, creator: 1, gate: 1.5, object: 2, conveyor: 3, cylinder: 4, lamp: 5, button: 6, sensor: 8 };
-  for (const it of [...items].sort((a, b) => (order[a.type] ?? 5) - (order[b.type] ?? 5))) {
+  const rank = (it) => (it.type === 'object' && it.deco ? -1 : it.type === 'conveyor' && it.dir ? -0.5 : order[it.type] ?? 5);
+  for (const it of [...items].sort((a, b) => rank(a) - rank(b))) {
     if (it.type === 'object' && !it.fixed && world) continue; // beweglich: während des Laufs aus der Physik
     if (it.type === 'sensor') continue;
     const { w, h: hh } = plantSize(it);
@@ -639,6 +727,21 @@ export function plantSvgParts(p, { world = null, vars = {}, io = [], pressed = {
       case 'conveyor': {
         const v = on(it.out) ? 1 : on(it.rev) ? -1 : 0;
         const shift = world ? -(world.t * Math.abs(it.speed || 3) * v) % 0.8 : 0;
+        if (it.dir) {
+          // Draufsicht: Bandfläche mit Querleisten, die in Laufrichtung wandern
+          const vert = it.dir === 'up' || it.dir === 'down';
+          const sgn = it.dir === 'up' || it.dir === 'left' ? -1 : 1;
+          const off = world ? ((world.t * Math.abs(it.speed || 3) * v * sgn) % 1 + 1) % 1 : 0;
+          g += `<rect x="${x}" y="${y}" width="${w}" height="${hh}" fill="#64748b" stroke="#334155" stroke-width="0.05"/>`;
+          const len = vert ? hh : w;
+          for (let k = off; k < len; k += 1) {
+            g += vert ? `<line x1="${r3(x + 0.1)}" y1="${r3(y + k)}" x2="${r3(x + w - 0.1)}" y2="${r3(y + k)}" stroke="${v ? '#86efac' : '#94a3b8'}" stroke-width="0.06"/>`
+              : `<line x1="${r3(x + k)}" y1="${r3(y + 0.1)}" x2="${r3(x + k)}" y2="${r3(y + hh - 0.1)}" stroke="${v ? '#86efac' : '#94a3b8'}" stroke-width="0.06"/>`;
+          }
+          const ar = { down: '↓', up: '↑', left: '←', right: '→' }[it.dir];
+          g += txt(vert ? x + w + 0.2 : x + w / 2, vert ? y + 0.6 : y - 0.2, `${it.label || it.out || 'Band'} ${ar}`, 0.36, v ? '#15803d' : '#334155', vert ? 'start' : 'middle');
+          break;
+        }
         g += `<rect x="${x}" y="${y}" width="${w}" height="${hh}" rx="${hh / 2}" fill="#475569"/>`;
         g += `<line x1="${r3(x + hh / 2)}" y1="${r3(y + 0.06)}" x2="${r3(x + w - hh / 2)}" y2="${r3(y + 0.06)}" stroke="${v ? '#22c55e' : '#cbd5e1'}" stroke-width="0.1" stroke-dasharray="0.4 0.4" stroke-dashoffset="${r3(shift)}"/>`;
         for (const cx of [x + hh / 2, x + w - hh / 2]) g += `<circle cx="${r3(cx)}" cy="${r3(y + hh / 2)}" r="${r3(hh / 2 - 0.1)}" fill="#94a3b8"/>`;
@@ -687,12 +790,23 @@ export function plantSvgParts(p, { world = null, vars = {}, io = [], pressed = {
             + (horiz ? txt(px, py + 0.55, name, 0.3) : txt(px + 0.3, py + 0.11, name, 0.3, '#334155', 'start'));
         };
         g += dot(it.home, pist(0)) + dot(it.ext, pist(stroke));
+        // Druck (z. B. Prüfdruck erreicht): Anzeige am Gehäuse
+        if (it.press) {
+          const okP = !!inp2[String(it.press).trim()];
+          // Manometer: waagrecht über dem Gehäuse, senkrecht links oben (Beschriftung links daneben)
+          const [gx, gy] = horiz ? [cx, y - 0.9] : [x - 0.45, y + 0.35];
+          g += `<circle cx="${r3(gx)}" cy="${r3(gy)}" r="0.32" fill="${okP ? '#22c55e' : '#f8fafc'}" stroke="#334155" stroke-width="0.04"/>`;
+          g += `<line x1="${r3(gx)}" y1="${r3(gy)}" x2="${r3(gx + (okP ? 0.22 : -0.18))}" y2="${r3(gy - 0.18)}" stroke="#334155" stroke-width="0.05"/>`;
+          g += horiz ? txt(gx, gy - 0.45, `${it.press} p`, 0.28) : txt(gx - 0.42, gy + 0.1, `${it.press} p`, 0.28, '#334155', 'end');
+        }
         break;
       }
       case 'object':
-        g += `<rect x="${x}" y="${y}" width="${w}" height="${hh}" rx="${it.shape === 'round' ? Math.min(w, hh) / 2 : 0.08}" fill="${it.color || (it.fixed ? '#cbd5e1' : MAT_COLOR[it.material] || '#f59e0b')}" stroke="#334155" stroke-width="0.04"/>`;
-        if (it.fixed && !it.color && !print && it.look !== 'wall') g += `<rect x="${x}" y="${y}" width="${w}" height="${hh}" fill="url(#ph)" opacity="0.5"/>`;
+        if (it.look === 'rim') { g += rimSvg(x, y, w, hh, it.color); break; }
+        g += `<rect x="${x}" y="${y}" width="${w}" height="${hh}" rx="${it.shape === 'round' ? Math.min(w, hh) / 2 : 0.08}" fill="${it.color || (it.fixed ? '#cbd5e1' : MAT_COLOR[it.material] || '#f59e0b')}" stroke="#334155" stroke-width="0.04"${it.deco ? ' stroke-dasharray="0.2 0.1"' : ''}/>`;
+        if (it.fixed && !it.color && !print && it.look !== 'wall' && !it.deco) g += `<rect x="${x}" y="${y}" width="${w}" height="${hh}" fill="url(#ph)" opacity="0.5"/>`;
         if (it.look === 'wall') g += brickLines(x, y, w, hh);
+        if (it.label) g += txt(x + w / 2, y + 0.5, it.label, 0.36, '#334155');
         break;
       case 'gate': {
         // Schiebetor: Platte fährt zum Öffnen nach links (pos = wie weit offen), Motor links an der Schiene
@@ -734,6 +848,7 @@ export function plantSvgParts(p, { world = null, vars = {}, io = [], pressed = {
   // Werkstücke aus der Physik (pick: antippen = entnehmen)
   for (const b of world?.bodies || []) {
     if (b.bend > 0.01) { o += bentSheet(b); continue; }
+    if (b.look === 'rim') { o += `<g${b.pick ? ` data-body="${esc(b.id)}" style="cursor:pointer"` : ''}>${rimSvg(b.x, b.y, b.w, b.h, b.color)}</g>`; continue; }
     o += `<rect${b.pick ? ` data-body="${esc(b.id)}" style="cursor:pointer"` : ''} x="${r3(b.x)}" y="${r3(b.y)}" width="${r3(b.w)}" height="${r3(b.h)}" rx="${b.shape === 'round' ? r3(Math.min(b.w, b.h) / 2) : 0.08}" fill="${b.color || MAT_COLOR[b.material] || '#f59e0b'}" stroke="#334155" stroke-width="0.04"/>`;
   }
   for (const it of items.filter((x) => x.type === 'sensor')) {
@@ -761,6 +876,21 @@ export function plantSvg(p, opts = {}) {
   const { w, h, defs, body } = plantSvgParts(p, opts);
   const cls = opts.cls ? ` class="plant-svg${opts.edit ? ' plant-edit' : ''}"` : '';
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}"${opts.cls ? '' : ` width="${w}cm" height="${h}cm"`}${cls}>${defs ? `<defs>${defs}</defs>` : ''}${body}</svg>`;
+}
+
+/** Felge von oben: Reifenring, Felgenbett, fünf Speichen. */
+function rimSvg(x, y, w, h, color) {
+  const cx = x + w / 2;
+  const cy = y + h / 2;
+  const r = Math.min(w, h) / 2;
+  let o = `<circle cx="${r3(cx)}" cy="${r3(cy)}" r="${r3(r)}" fill="${color || '#cbd5e1'}" stroke="#334155" stroke-width="0.05"/>`;
+  o += `<circle cx="${r3(cx)}" cy="${r3(cy)}" r="${r3(r * 0.78)}" fill="#f1f5f9" stroke="#334155" stroke-width="0.04"/>`;
+  for (let k = 0; k < 5; k++) {
+    const a = (k * 2 * Math.PI) / 5 - Math.PI / 2;
+    o += `<line x1="${r3(cx + Math.cos(a) * r * 0.18)}" y1="${r3(cy + Math.sin(a) * r * 0.18)}" x2="${r3(cx + Math.cos(a) * r * 0.76)}" y2="${r3(cy + Math.sin(a) * r * 0.76)}" stroke="#475569" stroke-width="${r3(r * 0.12)}" stroke-linecap="round"/>`;
+  }
+  o += `<circle cx="${r3(cx)}" cy="${r3(cy)}" r="${r3(r * 0.16)}" fill="#e2e8f0" stroke="#334155" stroke-width="0.04"/>`;
+  return o;
 }
 
 /** Mauerwerk: Fugen im Verband (Objekt mit look: 'wall'). */

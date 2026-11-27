@@ -6,10 +6,13 @@
 // Aktionsblöcken (Bestimmungszeichen, Zeit, Aktionsname, Aktorvariable, Zuweisungsbedingung) und
 // Transitionen. Verzweigungen (alternativ, parallel) und Sprünge entstehen in der Grafik: Schritt antippen →
 // „⑂ Alternativ danach“ / „⫴ Parallel danach“; Linie der Verzweigung antippen → Zweige, Sprungziel.
-// Rechnen und Zeichnen: lab-core.js (spsGraph, spsCycle, spsSvg). Später rechts: die Anlage (Physik).
+// Rechnen und Zeichnen: lab-core.js (spsGraph, spsCycle, spsSvg). Rechts die Anlage (plant-core.js, plant-ui.js):
+// Sensoren und Endlagen liefern dort ihre Eingänge selbst, Ausgänge bewegen Bänder und Zylinder.
 
 import { spsSvg, spsInit, spsCycle, spsCheck, spsInputSignal, spsFlat, spsLocate, spsGraph, SPS_QUALIFIERS, SPS_TIMED } from './lab-core.js';
 import { h, field } from './labs.js';
+import { plantInit, plantStep, plantInputs, plantInputNames } from './plant-core.js';
+import { mountPlant } from './plant-ui.js';
 
 const clone = (v) => JSON.parse(JSON.stringify(v));
 const CYCLE_MS = 50;
@@ -25,6 +28,7 @@ export function mount(el, { state, mode, onChange, say = () => {} }) {
   let st = clone(state);
   const teacher = mode === 'teacher';
   let rt = null;          // Laufzeit (spsInit), null = gestoppt
+  let world = null;       // Anlage während des Laufs (plantInit)
   let timer = 0;
   const pressed = {};     // Eingang → betätigt (Taster gedrückt bzw. Rastschalter eingerastet)
   // Rastende Eingänge mit start: true sind zu Beginn betätigt (z. B. Endlage „eingefahren“ ohne Anlage).
@@ -48,30 +52,44 @@ export function mount(el, { state, mode, onChange, say = () => {} }) {
 
   const bar = h('div', { class: 'lab-row lab-tools sps-run' });
   const canvas = h('div', { class: 'lab-canvas sps-canvas', title: 'Schritt antippen: unten bearbeiten' });
+  const plantHost = h('div', { class: 'plant-host' });
   const status = h('div', { class: 'sps-status' });
   const panel = h('div', { class: 'lab-panel' });
-  el.append(bar, canvas, status, panel);
+  el.append(bar, h('div', { class: 'sps-main' }, canvas, plantHost), status, panel);
 
   // ---------- Simulation ----------
-  const inputs = () => Object.fromEntries(io().filter((x) => x.kind === 'in' && x.name).map((x) => [String(x.name).trim(), spsInputSignal(x, !!pressed[x.id])]));
+  // Eingänge: Sensoren und Endlagen aus der Anlage, alles andere von den Tastern (Tabelle oder Anlage).
+  const inputs = () => {
+    const fromPlant = st.plant && world ? plantInputs(st.plant, world) : {};
+    const byPlant = st.plant ? plantInputNames(st.plant) : new Set();
+    return Object.fromEntries(io().filter((x) => x.kind === 'in' && x.name).map((x) => {
+      const n = String(x.name).trim();
+      return [n, byPlant.has(n) ? (fromPlant[n] ? 1 : 0) : spsInputSignal(x, !!pressed[x.id])];
+    }));
+  };
   function tick() {
     if (!rt) return;
     spsCycle(st, rt, inputs(), CYCLE_MS);
+    if (st.plant) {
+      world ||= plantInit(st.plant);
+      plantStep(st.plant, world, rt.vars, CYCLE_MS / 1000);
+    }
     renderLive();
   }
   function start() {
     const problems = spsCheck(st);
     if (problems.length) say(`⚠️ ${problems[0]}`);
     rt = spsInit(st);
+    world = st.plant ? plantInit(st.plant) : null;
     tick();
     clearInterval(timer);
     timer = setInterval(tick, CYCLE_MS);
     renderBar();
   }
-  function restart() { if (rt) { rt = spsInit(st); } }
+  function restart() { if (rt) { rt = spsInit(st); world = st.plant ? plantInit(st.plant) : null; } }
   function pause() { clearInterval(timer); timer = 0; renderBar(); }
   function resume() { if (!rt) return start(); clearInterval(timer); timer = setInterval(tick, CYCLE_MS); renderBar(); }
-  function stop() { clearInterval(timer); timer = 0; rt = null; renderAll(); }
+  function stop() { clearInterval(timer); timer = 0; rt = null; world = null; renderAll(); }
 
   function renderBar() {
     const running = !!timer;
@@ -141,6 +159,7 @@ export function mount(el, { state, mode, onChange, say = () => {} }) {
       status.textContent = problems.length ? `⚠️ ${problems.join(' · ')}` : '';
       status.classList.toggle('sps-err', problems.length > 0);
     }
+    plant.render(world, rt ? rt.vars : {});
     panel.querySelectorAll('[data-lamp]').forEach((l) => {
       const v = rt ? rt.vars[l.dataset.lamp] : 0;
       l.classList.toggle('sps-on', !!v);
@@ -296,9 +315,12 @@ export function mount(el, { state, mode, onChange, say = () => {} }) {
       const dup = name && names.has(name);
       names.add(name);
       let control;
-      if (x.kind === 'in') {
+      if (x.kind === 'in' && st.plant && plantInputNames(st.plant).has(name)) {
+        control = h('span', { class: 'sps-lamp', 'data-lamp': name, title: 'Kommt von der Anlage (Sensor bzw. Endlage)' });
+      } else if (x.kind === 'in') {
         control = h('button', { type: 'button', class: `lab-mini sps-key${pressed[x.id] ? ' lab-on' : ''}`, title: x.contact === 'latch' ? 'Antippen: einrasten / lösen' : 'Gedrückt halten = betätigt' }, x.contact === 'NC' ? '⊣/⊢' : x.contact === 'latch' ? '⇅' : '⊣⊢');
-        const set = (v) => { pressed[x.id] = v; control.classList.toggle('lab-on', v); if (rt) tick(); };
+        const set = (v) => press(x, v);
+        control.dataset.key = x.id;
         if (x.contact === 'latch') control.addEventListener('click', () => set(!pressed[x.id]));
         else {
           control.addEventListener('pointerdown', (e) => { e.preventDefault(); control.setPointerCapture?.(e.pointerId); set(true); });
@@ -395,6 +417,19 @@ export function mount(el, { state, mode, onChange, say = () => {} }) {
       h('p', { class: 'lab-hint', text: 'Bedingungen: AND (&, *), OR (+), XOR, NOT (/, !), Klammern, Schrittmerker S_2.X, Zeitglied tonT1.Q (im Aktionsblock z. B. D T#3s → tonT1), Schrittzeit S_2.T >= T#3s. Bestimmungszeichen: N S R L D P DS SD SL (L, D, DS, SD, SL mit Zeit T#…).' }));
     renderLive();
   }
+  /** Taster betätigen (Tabelle oder Anlage): beide zeigen es. */
+  function press(x, v) {
+    pressed[x.id] = v;
+    panel.querySelectorAll(`[data-key="${x.id}"]`).forEach((k) => k.classList.toggle('lab-on', v));
+    if (rt) tick(); else renderLive();
+  }
+  const plant = mountPlant(plantHost, {
+    getSt: () => st, changed, pressed, teacher, say, uid,
+    ioByName: (n) => io().find((x) => n && String(x.name ?? '').trim() === String(n).trim()) || null,
+    openPop: (e, title, ...rows) => openPop(e, title, ...rows), closePop: () => closePop(),
+    running: () => !!rt,
+    onPress: press,
+  });
   function renderAll() { renderBar(); renderPanel(); }
 
   renderAll();

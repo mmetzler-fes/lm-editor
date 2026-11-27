@@ -96,3 +96,14 @@
 .sps-pop-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .sps-chips { display: flex; flex-wrap: wrap; gap: 4px; max-height: 7.5em; overflow: auto; }
 .sps-qs .lab-mini { min-width: 2.4em; }
+/* SPS-Labor: Anlage neben der Kette (plant-ui.js) */
+.sps-main { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-start; }
+.sps-main > .sps-canvas { flex: 0 1 auto; min-width: 0; }
+.plant-host { flex: 1 1 340px; min-width: 260px; }
+.plant-bar { flex-wrap: wrap; gap: 4px; }
+.plant-stage { position: relative; }
+.plant-svg { display: block; width: 100%; height: auto; max-height: 62vh; border: 1px solid var(--border, #cbd5e1); border-radius: 6px; user-select: none; -webkit-user-select: none; }
+.plant-svg [data-pbtn] { cursor: pointer; }
+.plant-svg.plant-edit [data-pit] { cursor: move; }
+.plant-svg.plant-edit, .plant-svg [data-pbtn] { touch-action: none; }
+.plant-lbl { min-width: 6.5em; color: var(--text-secondary, #475569); font-size: 0.9em; }

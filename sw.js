@@ -22,6 +22,8 @@ const CORE = [
   'src/labs/curves-ui.js',
   'src/labs/logik-ui.js',
   'src/labs/sps-ui.js',
+  'src/labs/plant-core.js',
+  'src/labs/plant-ui.js',
   'src/doc/docspec.js',
   'src/doc/ids.js',
   'src/doc/image-group.js',

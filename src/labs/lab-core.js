@@ -1691,6 +1691,8 @@ export function labMerge(name, preset, state) {
     const on = new Map((Array.isArray(state.parts) ? state.parts : []).map((p) => [p?.id, p?.on]));
     out.parts = (out.parts || []).map((p) => (p.type === 'in' && on.has(p.id) ? { ...p, on: on.get(p.id) } : p));
   }
+  // SPS: vorgegebene Anlage (🔒) gilt, wie die Lehrkraft sie gebaut hat – Schüler bedienen sie nur.
+  if (name === 'sps' && base.plant?.locked) out.plant = JSON.parse(JSON.stringify(base.plant));
   if (name === 'logik' && base.lockAll) {
     const ids = new Set((base.parts || []).map((p) => p.id));
     out.parts = [...(base.parts || []).map((p) => ({ ...p, locked: true, on: (state.parts || []).find((q) => q.id === p.id)?.on ?? p.on })),
@@ -1711,6 +1713,9 @@ export function labValidate(block) {
       const listMax = { items: 80, params: 30, curves: 10, parts: 200, wires: 400, io: 120, steps: 80 };
       for (const [k, max] of Object.entries(listMax)) {
         if (p[k] !== undefined && (!Array.isArray(p[k]) || p[k].length > max)) errors.push(`preset.${k}: Liste mit höchstens ${max} Einträgen.`);
+      }
+      if (block.lab === 'sps' && p.plant !== undefined && (!p.plant || typeof p.plant !== 'object' || !Array.isArray(p.plant.items) || p.plant.items.length > 200)) {
+        errors.push('preset.plant: { w, h, items: [...] } mit höchstens 200 Elementen.');
       }
       if (block.lab === 'logik' && Array.isArray(p.parts)) {
         for (const part of p.parts) if (!LOGIK_TYPES[part?.type]) { errors.push(`preset.parts: unbekannter Typ „${part?.type}“ (${Object.keys(LOGIK_TYPES).join(', ')}).`); break; }

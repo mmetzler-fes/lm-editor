@@ -175,12 +175,24 @@ export function mount(el, { state, mode, onChange, say = () => {} }) {
     // Am Labor (nicht in der Zeichnung): Die Zeichnung wird bei jeder Änderung neu aufgebaut.
     el.style.position = 'relative';
     const r = el.getBoundingClientRect();
-    pop = h('div', { class: 'sps-pop', style: { left: `${Math.min(Math.max(0, e.clientX - r.left), Math.max(0, r.width - 330))}px`, top: `${e.clientY - r.top + 12}px` } },
+    const k = r.width / (el.offsetWidth || r.width || 1) || 1; // Zoom des Blatts (Stift-Editor)
+    const left = (e.clientX - r.left) / k;
+    const top = (e.clientY - r.top) / k + 12;
+    pop = h('div', { class: 'sps-pop', style: { left: `${Math.max(0, left)}px`, top: `${top}px` } },
       h('div', { class: 'sps-pop-head' }, h('strong', { text: title }), h('button', { type: 'button', class: 'lab-mini', title: 'Schließen', onclick: closePop }, '✕')),
-      ...rows);
+      ...rows.filter(Boolean));
     pop.addEventListener('pointerdown', (ev) => ev.stopPropagation());
     el.appendChild(pop);
-    pop.querySelector('input, select')?.focus();
+    // Ganz sichtbar halten: nicht über den Rand des Fensters oder des Blatts (das abschneidet) hinaus.
+    const clip = el.closest('.ink-scroll, .lm-paper, .lab-dialog')?.getBoundingClientRect();
+    const minX = Math.max(0, clip?.left ?? 0) + 8;
+    const maxX = Math.min(window.innerWidth, clip?.right ?? window.innerWidth) - 8;
+    const pr = pop.getBoundingClientRect();
+    let dx = 0;
+    if (pr.right > maxX) dx = maxX - pr.right;
+    if (pr.left + dx < minX) dx = minX - pr.left;
+    if (dx) pop.style.left = `${left + dx / k}px`;
+    pop.querySelector('input, select')?.focus({ preventScroll: true });
   }
   // Vorschläge für Bedingungen: Eingänge, Merker, Zeitglieder (.Q), Schritte (.X)
   const condWords = () => [...io().filter((x) => x.name).map((x) => (x.kind === 'tim' ? `${x.name}.Q` : x.name)), ...allSteps().map((x) => `${x.name}.X`), 'AND', 'OR', 'NOT'];

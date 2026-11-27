@@ -96,10 +96,13 @@
 .sps-pop-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .sps-chips { display: flex; flex-wrap: wrap; gap: 4px; max-height: 7.5em; overflow: auto; }
 .sps-qs .lab-mini { min-width: 2.4em; }
-/* SPS-Labor: Anlage neben der Kette (plant-ui.js) */
-.sps-main { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-start; }
-.sps-main > .sps-canvas { flex: 0 1 auto; min-width: 0; }
-.plant-host { flex: 1 1 340px; min-width: 260px; }
+/* SPS-Labor: Kette und Anlage (plant-ui.js) – Blatt hoch (A4 längs): untereinander, Blatt quer: nebeneinander */
+.sps-main { display: flex; flex-direction: column; gap: 12px; align-items: stretch; }
+.sps-main > .sps-canvas, .plant-host { min-width: 0; }
+.lm-landscape .sps-main, .lab-dialog .sps-main { flex-direction: row; align-items: flex-start; }
+.lm-landscape .sps-main > .sps-canvas, .lab-dialog .sps-main > .sps-canvas,
+.lm-landscape .sps-main > .plant-host, .lab-dialog .sps-main > .plant-host { flex: 1 1 0; }
+.lm-landscape .sps-main > .sps-canvas svg, .lab-dialog .sps-main > .sps-canvas svg { width: 100% !important; }
 .plant-bar { flex-wrap: wrap; gap: 4px; }
 .plant-stage { position: relative; }
 .plant-svg { display: block; width: 100%; height: auto; max-height: 62vh; border: 1px solid var(--border, #cbd5e1); border-radius: 6px; user-select: none; -webkit-user-select: none; }

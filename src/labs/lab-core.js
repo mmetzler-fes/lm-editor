@@ -1362,6 +1362,27 @@ export function spsGraph(st) {
   return { flat, trans, uses, problems };
 }
 
+/**
+ * Schritte linear nummerieren (S_1, S_2, … in Lesereihenfolge), wenn alle Schritte so heißen – nach
+ * Einfügen, Löschen, Verschieben. Verweise in Transitionen, Bedingungen (S_4.X, S_4.T) und Sprünge
+ * werden mit umbenannt. Ändert `st`; liefert true, wenn sich etwas geändert hat.
+ */
+export function spsRenumber(st) {
+  const flat = spsFlat(st);
+  if (!flat.length || !flat.every((s) => /^S_\d+$/.test(String(s.name ?? '').trim()))) return false;
+  const map = {};
+  flat.forEach((s, i) => { const to = `S_${i + 1}`; if (s.name !== to) map[s.name] = to; });
+  if (!Object.keys(map).length) return false;
+  // Zweistufig, damit S_4 → S_5 und S_5 → S_6 sich nicht in die Quere kommen
+  const swap = (src) => String(src ?? '').replace(/\bS_\d+\b/g, (w) => map[w] ?? w);
+  spsWalk(st.steps, (el) => {
+    el.trans = swap(el.trans);
+    if (spsIsStep(el)) { el.name = map[el.name] ?? el.name; for (const a of el.actions || []) a.cond = swap(a.cond); }
+    else for (const b of el.branches || []) { b.trans = swap(b.trans); if (b.jump) b.jump = map[b.jump] ?? b.jump; }
+  });
+  return true;
+}
+
 /** Laufzeit neu: Initialschritt(e) aktiv. */
 export function spsInit(st) {
   const steps = spsFlat(st);
@@ -1571,8 +1592,8 @@ export function spsSvg(state, { active = [], vars = {}, edit = false } = {}) {
         if (own) {
           const ty = oy + hh + TR / 2;
           o += transMark(cx, ty, s.trans, `data-trans="${escX(s.id)}"`);
-          o += plus(cx + 0.55, ty, `data-add-step="${escX(s.id)}"`, 'Schritt danach einfügen');
-        } else o += plus(cx + 0.55, oy + hh + 0.22, `data-add-step="${escX(s.id)}"`, 'Schritt danach einfügen');
+          o += plus(cx + 0.55, ty, `data-add-step="${escX(s.id)}"`, 'Einfügen: Schritt danach oder Verzweigung');
+        } else o += plus(cx + 0.55, oy + hh + 0.22, `data-add-step="${escX(s.id)}"`, 'Einfügen: Schritt danach oder Verzweigung');
         // Aktionsblock
         const AX = SX + SW + 0.45;
         if (!(s.actions || []).length) o += plus(AX, sy + SH / 2, `data-add-act="${escX(s.id)}"`, 'Aktion hinzufügen');

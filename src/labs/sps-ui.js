@@ -9,7 +9,7 @@
 // Rechnen und Zeichnen: lab-core.js (spsGraph, spsCycle, spsSvg). Rechts die Anlage (plant-core.js, plant-ui.js):
 // Sensoren und Endlagen liefern dort ihre Eingänge selbst, Ausgänge bewegen Bänder und Zylinder.
 
-import { spsSvg, spsInit, spsCycle, spsCheck, spsInputSignal, spsFlat, spsLocate, spsGraph, spsSortIo, spsNextAddr, spsInsertIo, SPS_QUALIFIERS, SPS_TIMED } from './lab-core.js';
+import { spsSvg, spsInit, spsCycle, spsCheck, spsInputSignal, spsFlat, spsLocate, spsGraph, spsSortIo, spsNextAddr, spsInsertIo, spsRenumber, SPS_QUALIFIERS, SPS_TIMED } from './lab-core.js';
 import { h, field } from './labs.js';
 import { plantInit, plantStep, plantInputs, plantInputNames, plantUpgrade } from './plant-core.js';
 import { mountPlant } from './plant-ui.js';
@@ -36,7 +36,8 @@ export function mount(el, { state, mode, onChange, say = () => {} }) {
   for (const x of st.io || []) if (x.kind === 'in' && x.contact === 'latch' && x.start) pressed[x.id] = true;
   let selStep = null;
   let listOpen = false; // Liste der Schritte unter der Grafik: zugeklappt
-  const changed = () => { onChange(clone(st)); if (rt) restart(); renderAll(); };
+  // Lineare Nummerierung (S_1, S_2, …), solange alle Schritte so heißen – nach jeder Änderung.
+  const changed = () => { spsRenumber(st); onChange(clone(st)); if (rt) restart(); renderAll(); };
   const io = () => (st.io ||= []);
   const steps = () => (st.steps ||= []);
   const allSteps = () => spsFlat(st);
@@ -112,14 +113,8 @@ export function mount(el, { state, mode, onChange, say = () => {} }) {
       const s0 = byStep(sid);
       popAction(s0, (s0?.actions || []).find((a) => a.id === aid), e);
     }));
-    canvas.querySelectorAll('[data-add-step]').forEach((g) => g.addEventListener('click', (e) => {
-      const loc = spsLocate(st, g.dataset.addStep);
-      if (!loc?.list || !can(loc.el)) return;
-      loc.list.splice(loc.index + 1, 0, newStep());
-      changed();
-      const s0 = byStep(g.dataset.addStep);
-      if (spsGraph(st).uses.has(s0?.id)) popTrans(s0, e, true);
-    }));
+    // (+) an der Transition: Menü – Schritt danach (Regelfall), Alternativ- oder Parallelverzweigung
+    canvas.querySelectorAll('[data-add-step]').forEach((g) => g.addEventListener('click', (e) => popInsert(g.dataset.addStep, e)));
     // Verzweigungen: Linie antippen, Transition eines Zweigs, Synchronisation, Zweig dazu, erster Schritt
     canvas.querySelectorAll('[data-fork]').forEach((g) => g.addEventListener('click', (e) => popFork(spsLocate(st, g.dataset.fork)?.el, e)));
     canvas.querySelectorAll('[data-btrans]').forEach((g) => g.addEventListener('click', (e) => {
@@ -227,19 +222,6 @@ export function mount(el, { state, mode, onChange, say = () => {} }) {
     const list = loc?.list || steps();
     const i = list.indexOf(s0);
     const move = (d) => { const j = i + d; if (j < 0 || j >= list.length) return; [list[i], list[j]] = [list[j], list[i]]; changed(); closePop(); };
-    // Verzweigung hinter dem Schritt: zwei Zweige mit je einem neuen Schritt; was danach kam, folgt der Zusammenführung.
-    const branchAfter = (type) => {
-      const a = newStep();
-      const b = newStep(a);
-      const fork = type === 'alt'
-        ? { id: uid('v'), type, branches: [{ id: uid('b'), trans: s0.trans || '', steps: [a] }, { id: uid('b'), trans: '', steps: [b] }] }
-        : { id: uid('v'), type, trans: '', branches: [{ id: uid('b'), steps: [a] }, { id: uid('b'), steps: [b] }] };
-      if (type === 'alt') s0.trans = '';
-      list.splice(i + 1, 0, fork);
-      changed();
-      closePop();
-      say(type === 'alt' ? '⑂ Alternativverzweigung: Transitionen an den Zweigen eintragen (antippen).' : '⫴ Parallelverzweigung: Transition davor und nach der Synchronisation eintragen.');
-    };
     openPop(e, `Schritt ${s0.name}`,
       h('div', { class: 'lab-row' }, h('span', { text: 'Name ' }), field(s0.name ?? '', (v) => { s0.name = v.trim(); changed(); }, { size: 6, disabled: !ok })),
       h('label', { class: 'lab-check' }, h('input', { type: 'checkbox', checked: !!s0.initial, disabled: !ok, onchange: (ev) => { allSteps().forEach((x) => { delete x.initial; }); if (ev.target.checked) s0.initial = true; changed(); } }), ' Initialschritt'),
@@ -247,11 +229,41 @@ export function mount(el, { state, mode, onChange, say = () => {} }) {
         h('button', { type: 'button', class: 'lab-mini', disabled: !ok || i === 0, onclick: () => move(-1) }, '↑ nach oben'),
         h('button', { type: 'button', class: 'lab-mini', disabled: !ok || i === list.length - 1, onclick: () => move(1) }, '↓ nach unten'),
         h('button', { type: 'button', class: 'lab-mini', disabled: !ok, onclick: () => { (s0.actions ||= []).push({ id: uid('a'), q: 'N', time: '', text: '', var: '', cond: '' }); changed(); closePop(); } }, '+ Aktion')),
-      h('div', { class: 'lab-row' },
-        h('button', { type: 'button', class: 'lab-mini', disabled: !ok, title: 'Danach geht es je nach Bedingung in einen von mehreren Zweigen (ODER) – mit Sprung auch zurück', onclick: () => branchAfter('alt') }, '⑂ Alternativ danach'),
-        h('button', { type: 'button', class: 'lab-mini', disabled: !ok, title: 'Danach laufen mehrere Zweige gleichzeitig (UND), weiter erst, wenn alle fertig sind', onclick: () => branchAfter('par') }, '⫴ Parallel danach')),
       ok && allSteps().length > 1 ? h('div', { class: 'lab-row' }, h('button', { type: 'button', class: 'lab-mini lab-del', onclick: () => { list.splice(list.indexOf(s0), 1); changed(); closePop(); } }, '✕ Schritt löschen')) : null);
   }
+  /**
+   * (+) an der Transition nach Schritt `id`: Schritt danach (Regelfall, lineare Kette) oder eine Verzweigung.
+   * Verzweigung: zwei Zweige mit je einem neuen Schritt; was danach kam, folgt der Zusammenführung.
+   */
+  function popInsert(id, e) {
+    const loc = spsLocate(st, id);
+    const s0 = loc?.el;
+    if (!loc?.list || !s0 || !can(s0)) return;
+    const after = (el) => { loc.list.splice(loc.list.indexOf(s0) + 1, 0, el); };
+    const step = () => {
+      after(newStep());
+      changed();
+      closePop();
+      if (spsGraph(st).uses.has(s0.id)) popTrans(s0, e, true);
+    };
+    const branch = (type) => {
+      const a = newStep();
+      const b = newStep(a);
+      const fork = type === 'alt'
+        ? { id: uid('v'), type, branches: [{ id: uid('b'), trans: s0.trans || '', steps: [a] }, { id: uid('b'), trans: '', steps: [b] }] }
+        : { id: uid('v'), type, trans: '', branches: [{ id: uid('b'), steps: [a] }, { id: uid('b'), steps: [b] }] };
+      if (type === 'alt') s0.trans = '';
+      after(fork);
+      changed();
+      closePop();
+      say(type === 'alt' ? '⑂ Alternativverzweigung: Transitionen an den Zweigen eintragen (antippen).' : '⫴ Parallelverzweigung: Transition davor und nach der Synchronisation eintragen.');
+    };
+    openPop(e, `Nach ${s0.name} einfügen`,
+      h('button', { type: 'button', class: 'lab-btn lab-btn-primary', title: 'Neuer Schritt direkt dahinter – die folgenden rücken eine Nummer weiter', onclick: step }, '+ Schritt danach'),
+      h('button', { type: 'button', class: 'lab-btn', title: 'Danach geht es je nach Bedingung in einen von mehreren Zweigen (ODER) – mit Sprung auch zurück', onclick: () => branch('alt') }, '⑂ Alternativverzweigung'),
+      h('button', { type: 'button', class: 'lab-btn', title: 'Danach laufen mehrere Zweige gleichzeitig (UND), weiter erst, wenn alle fertig sind', onclick: () => branch('par') }, '⫴ Parallelverzweigung'));
+  }
+
   /** Linie einer Verzweigung: Zweig dazu, festlegen, ganze Verzweigung löschen. */
   function popFork(fork, e) {
     if (!fork) return;

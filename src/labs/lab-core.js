@@ -1787,6 +1787,24 @@ export function labMerge(name, preset, state) {
   return out;
 }
 
+/**
+ * Kopierten Laborstand einsetzen (📥 Einfügen). Lehrkraft (Vorgabe): der Stand, wie er ist – auch mit seinen
+ * 🔒. Sonst (Schüler, Lehrerlösung): Was die Vorgabe festlegt, bleibt; der eingefügte Stand kommt als eigener
+ * dazu – mitgebrachte 🔒 zählen dort nicht (sonst fiele z. B. eine festgelegte Zuordnungstabelle weg).
+ */
+export function labPasted(name, preset, state, teacher = false) {
+  const st = JSON.parse(JSON.stringify(state || {}));
+  if (teacher) {
+    const base = preset && typeof preset === 'object' && Object.keys(preset).length ? preset : labDefault(name);
+    return { ...JSON.parse(JSON.stringify(base)), ...st };
+  }
+  for (const key of LOCKABLE[name] || []) {
+    if (Array.isArray(st[key])) st[key] = st[key].map((x) => { if (x && typeof x === 'object') { const { locked: _l, ...rest } = x; return rest; } return x; });
+  }
+  if (st.plant && typeof st.plant === 'object') delete st.plant.locked;
+  return labMerge(name, preset, st);
+}
+
 /** Fehler eines Labor-Bausteins (für validateDocSpec). */
 export function labValidate(block) {
   const errors = [];

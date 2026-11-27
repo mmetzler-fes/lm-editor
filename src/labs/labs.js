@@ -12,7 +12,7 @@
 // Gespeichert wird der Stand je Gerät (localStorage) – im Stift-Editor zusätzlich mit der Beschriftung
 // (form-state.js im Gastgeber holt ihn über el._lab.getState()).
 
-import { LABS, labMerge, labSvg } from './lab-core.js';
+import { LABS, labMerge, labPasted, labSvg } from './lab-core.js';
 
 const LOADERS = {
   zeiger: () => import('./zeiger-ui.js'),
@@ -193,7 +193,7 @@ export async function mountLab(host, block, { mode = 'student', saved = null, on
         onChange(null);
         say('↺ Zurückgesetzt');
       } }, '↺ Neu') : null,
-      ...clipButtons(block.lab, current, (st) => { const next = labMerge(block.lab, mode === 'teacher' ? null : block.preset, st); api.setState(next); onChange(api.getState()); }, say),
+      ...clipButtons(block.lab, current, (st) => { api.setState(labPasted(block.lab, block.preset, st, mode === 'teacher')); onChange(api.getState()); }, say),
       h('button', { type: 'button', class: 'lab-btn', title: 'Bild kopieren (zum Einfügen in andere Programme)', onclick: () => copyPng(labSvg({ lab: block.lab, preset: current() }), say, info.label) }, '📋 Bild'),
       h('button', { type: 'button', class: 'lab-btn lab-to-sheet', title: 'Das Bild als freies Bild aufs Blatt legen (zum Beschriften)', hidden: true, onclick: async () => {
         const blob = await svgToPng(labSvg({ lab: block.lab, preset: current() }));
@@ -273,7 +273,7 @@ export function openLabDialog(block, { extras = [] } = {}) {
     box.append(
       h('div', { class: 'lab-dialog-head' },
         h('strong', { text: `${info.icon} ${info.label} – Vorgabe` }),
-        h('span', { class: 'lab-row' }, ...clipButtons(block.lab, () => (api ? api.getState() : labMerge(block.lab, block.preset, null)), (st) => api?.setState(labMerge(block.lab, null, st)), say), status),
+        h('span', { class: 'lab-row' }, ...clipButtons(block.lab, () => (api ? api.getState() : labMerge(block.lab, block.preset, null)), (st) => api?.setState(labPasted(block.lab, block.preset, st, true)), say), status),
         h('span', { class: 'lab-hint', text: 'So sehen die Schüler das Labor zu Beginn. Mit 🔒 legst du einzelne Teile fest – Schüler können sie dann nicht ändern.' })),
       host,
       h('div', { class: 'lab-dialog-foot' },

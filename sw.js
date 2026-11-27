@@ -21,6 +21,7 @@ const CORE = [
   'src/labs/zeiger-ui.js',
   'src/labs/curves-ui.js',
   'src/labs/logik-ui.js',
+  'src/labs/sps-ui.js',
   'src/doc/docspec.js',
   'src/doc/ids.js',
   'src/doc/image-group.js',

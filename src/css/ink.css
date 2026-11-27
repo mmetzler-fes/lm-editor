@@ -308,6 +308,10 @@ body.ink-open { overflow: hidden; }
 .ink-block-grip[hidden], .ink-text-editing .ink-block-grip, .ink-tool-area .ink-block-grip { display: none !important; }
 .ink-block-grip:hover, .ink-block-sel ~ .ink-block-grip:hover { opacity: 1; background: #e0ecff; }
 @media print { .ink-insert-mark, .ink-block-grip { display: none; } }
+/* Labor: Die Kopfzeile ist beim Pfeil sein Anfasser (nur wo die Lehrkraft Bausteine verschiebt). */
+.ink-tool-select :has(> .ink-block-grip) .lab-live > .lab-bar { cursor: grab; touch-action: none; }
+.ink-tool-select :has(> .ink-block-grip) .ink-block-sel .lab-live > .lab-bar, .ink-tool-select :has(> .ink-block-grip) .lab-live.ink-block-sel > .lab-bar,
+.ink-tool-select :has(> .ink-block-grip) .lab-live > .lab-bar:hover { background: #e0ecff; border-radius: 4px; }
 
 /* Beschriftung in der gewöhnlichen Ansicht (ink-view.js): das Blatt wie im Editor, verkleinert auf die Breite. */
 .ink-view { margin: 0 auto; max-width: max-content; }

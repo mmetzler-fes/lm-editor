@@ -1073,11 +1073,15 @@ export function spsDefault() {
       { id: 'i3', kind: 'in', name: 'B0', addr: '%I0.2', desc: 'Zylinder eingefahren', contact: 'NO' },
       { id: 'o1', kind: 'out', name: 'Y1', addr: '%Q0.0', desc: 'Zylinder ausfahren' },
       { id: 'o2', kind: 'out', name: 'H1', addr: '%Q0.1', desc: 'Meldeleuchte' },
+      { id: 't1', kind: 'tim', name: 'tonT1', addr: '', desc: 'Wartezeit 3s' },
     ],
     steps: [
       { id: 's1', name: 'S_1', initial: true, trans: 'S1', actions: [] },
       { id: 's2', name: 'S_2', trans: 'B1', actions: [{ id: 'a1', q: 'N', time: '', text: 'Zylinder ausfahren', var: 'Y1', cond: '' }] },
-      { id: 's3', name: 'S_3', trans: 'S_3.T >= T#3s', actions: [{ id: 'a2', q: 'L', time: 'T#2s', text: 'Leuchte an', var: 'H1', cond: '' }] },
+      { id: 's3', name: 'S_3', trans: 'tonT1.Q', actions: [
+        { id: 'a2', q: 'L', time: 'T#2s', text: 'Leuchte an', var: 'H1', cond: '' },
+        { id: 'a3', q: 'D', time: 'T#3s', text: 'Wartezeit 3s', var: 'tonT1', cond: '' },
+      ] },
     ],
     back: true,
   };

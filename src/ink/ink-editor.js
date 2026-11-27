@@ -867,6 +867,8 @@ export async function openInkEditor({ title = 'Arbeitsblatt', key, loadPdf = nul
   const STYLUS_CONTROL = 'button, a, select, summary, label, [role="button"], [role="menuitem"], input[type="checkbox"], input[type="radio"], input[type="file"], input[type="range"], input[type="color"], .ink-touchbar';
   /** Bausteine, die im Blatt bedienbar bleiben: eingebettete Quizze und ausführbares Python (Gastgeber). */
 const LIVE_BLOCK = '.ds-quiz-live, .py-block, .lab-live';
+// Woran die Lehrkraft ein Labor mit dem Pfeil anfasst (wählen, ziehen, löschen).
+const LAB_HANDLE = '.lab-live > .lab-bar';
 // Was der Stift auf einem Quiz greift, statt zu scrollen.
 const QUIZ_GRAB = 'input, textarea, select, button, a, label, [contenteditable="true"], canvas, .dnd-player-drag, .dnd-player-draggables, [draggable="true"]';
 const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-rich-edit, .ink-area-bar';
@@ -881,7 +883,7 @@ const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-r
         if (state.editing) { e.preventDefault(); return; }
         // Eigene Knöpfe auf dem Blatt klickt er an; der Pfeil bedient Quizze samt ihrer Eingabefelder.
         if (t.closest?.(INK_CONTROL)) return;
-        if (state.tool === 'select' && t.closest?.(LIVE_BLOCK)) return;
+        if (state.tool === 'select' && t.closest?.(LIVE_BLOCK) && !(t.closest(LAB_HANDLE) && !t.closest('button, input, select, a'))) return;
         e.preventDefault();
         return;
       }
@@ -3710,13 +3712,17 @@ const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-r
       if (e.target.closest?.('.ink-rich-edit')) return;
       // Griff ⠿: Der Baustein ist gewählt und hängt sofort am Stift oder Finger.
       // Nur beim Pfeil: Der Bereich zieht sein Rechteck auch am linken Rand auf.
+      // Kopfzeile eines Labors (außer ihren Knöpfen) wirkt beim Pfeil wie der Griff: wählen und ziehen.
       const grip = p.paper && paper.blockOps && state.tool === 'select' ? e.target.closest?.('.ink-block-grip') : null;
-      if (grip) {
+      const labHead = !grip && p.paper && paper.blockOps && state.tool === 'select' && e.target.closest?.(LAB_HANDLE) && !e.target.closest('button, input, select, a')
+        ? topBlocks().find((b) => b.el.contains(e.target) && !b.el.dataset.inserted)?.bid : null;
+      if (grip || labHead) {
+        const bid = grip ? grip.dataset.grip : labHead;
         e.preventDefault();
         e.stopPropagation();
         p.el.setPointerCapture?.(e.pointerId);
-        selectBlocks([grip.dataset.grip]);
-        gesture = { kind: 'blockMove', id: e.pointerId, anchor: [e.clientX, e.clientY], bids: [grip.dataset.grip] };
+        selectBlocks([bid]);
+        gesture = { kind: 'blockMove', id: e.pointerId, anchor: [e.clientX, e.clientY], bids: [bid] };
         p.busy = true;
         return;
       }

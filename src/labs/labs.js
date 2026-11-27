@@ -118,6 +118,48 @@ async function copyPng(svg, say, name) {
   say('⬇ Kopieren geht hier nicht – das Bild wurde gespeichert.');
 }
 
+// ---------- Laborstand kopieren und einfügen (auch in ein anderes Arbeitsblatt) ----------
+// Gemerkt auf dem Gerät (localStorage) und, wo es geht, als Text in der Zwischenablage – so kommt
+// eine Lösung auch auf ein anderes Gerät. Eingefügt wird nur in ein Labor derselben Art.
+const CLIP = 'lm_lab_clip';
+const CLIP_MARK = 'lm-lab-state';
+
+async function copyState(lab, state, say) {
+  const rec = { [CLIP_MARK]: 1, lab, state, at: Date.now() };
+  try { localStorage.setItem(CLIP, JSON.stringify(rec)); } catch (_) { /* nur Zwischenablage */ }
+  try { await navigator.clipboard?.writeText(JSON.stringify(rec)); } catch (_) { /* nur auf dem Gerät */ }
+  say('⧉ Kopiert – in einem anderen Labor dieser Art mit „📥 Einfügen“ übernehmen.');
+}
+
+async function pastedState(lab) {
+  const parse = (txt) => {
+    try {
+      const r = JSON.parse(txt);
+      return r && r[CLIP_MARK] && r.lab && r.state && typeof r.state === 'object' ? r : null;
+    } catch (_) { return null; }
+  };
+  let rec = null;
+  try { rec = parse(await navigator.clipboard?.readText?.()); } catch (_) { /* nicht erlaubt */ }
+  if (!rec) { try { rec = parse(localStorage.getItem(CLIP)); } catch (_) { /* nichts */ } }
+  if (!rec) return { error: 'Nichts kopiert – erst in einem Labor „⧉ Kopieren“ wählen.' };
+  if (rec.lab !== lab) return { error: `Kopiert ist ein ${labInfo(rec.lab).label} – hier geht nur ${labInfo(lab).label}.` };
+  return { state: rec.state };
+}
+
+/** Knöpfe ⧉ Kopieren / 📥 Einfügen; `get()` liefert den Stand, `set(state)` übernimmt ihn. */
+function clipButtons(lab, get, set, say) {
+  return [
+    h('button', { type: 'button', class: 'lab-btn', title: 'Den ganzen Stand kopieren (z. B. eine Lösung), um ihn in ein anderes Arbeitsblatt einzufügen', onclick: () => copyState(lab, get(), say) }, '⧉ Kopieren'),
+    h('button', { type: 'button', class: 'lab-btn', title: 'Einen kopierten Stand hier einsetzen (ersetzt den jetzigen)', onclick: async () => {
+      const res = await pastedState(lab);
+      if (res.error) { say(res.error); return; }
+      if (!confirm('Den jetzigen Stand dieses Labors durch den kopierten ersetzen?')) return;
+      set(res.state);
+      say('📥 Eingefügt');
+    } }, '📥 Einfügen'),
+  ];
+}
+
 /**
  * Ein Labor in `host` aufbauen. `block`: { lab, preset }; `saved`: Schülerstand oder null.
  * Liefert { getState, setState, destroy } – oder null, wenn es das Labor nicht gibt.
@@ -151,6 +193,7 @@ export async function mountLab(host, block, { mode = 'student', saved = null, on
         onChange(null);
         say('↺ Zurückgesetzt');
       } }, '↺ Neu') : null,
+      ...clipButtons(block.lab, current, (st) => { const next = labMerge(block.lab, mode === 'teacher' ? null : block.preset, st); api.setState(next); onChange(api.getState()); }, say),
       h('button', { type: 'button', class: 'lab-btn', title: 'Bild kopieren (zum Einfügen in andere Programme)', onclick: () => copyPng(labSvg({ lab: block.lab, preset: current() }), say, info.label) }, '📋 Bild'),
       h('button', { type: 'button', class: 'lab-btn lab-to-sheet', title: 'Das Bild als freies Bild aufs Blatt legen (zum Beschriften)', hidden: true, onclick: async () => {
         const blob = await svgToPng(labSvg({ lab: block.lab, preset: current() }));
@@ -179,10 +222,13 @@ export function mountLabs(root, { moduleId = '', mode = 'student' } = {}) {
     const key = `${moduleId || 'doc'}:${el.closest('[data-bid]')?.dataset.bid || `n${i}`}`;
     el.dataset.labKey = key;
     const presetHash = hash(block.preset);
-    const rec = load(key);
+    // Vorgabe einstellen (Lehrkraft): Es gilt der Stand im Baustein, nichts wird auf dem Gerät gemerkt.
+    const teacher = mode === 'teacher';
+    const rec = teacher ? null : load(key);
     const saved = rec?.state ?? null;
     let timer = null;
     const persist = (state) => {
+      if (teacher) return;
       clearTimeout(timer);
       if (state === null) { forget(key); return; }
       timer = setTimeout(() => save(key, { state, presetHash, at: Date.now() }), 400);
@@ -204,9 +250,10 @@ export function mountLabs(root, { moduleId = '', mode = 'student' } = {}) {
 
 /**
  * Vorgabe bearbeiten (Lehrkraft, Doppelklick im Editor): Labor im Dialog, „Übernehmen“ liefert den neuen
- * Baustein, „Abbrechen“ null.
+ * Baustein, „Abbrechen“ null. `extras`: weitere Knöpfe links [{ label, action, title, danger }] – sie
+ * liefern { action, block } (block mit dem Stand im Dialog), z. B. „Entfernen“ oder „Als YAML“.
  */
-export function openLabDialog(block) {
+export function openLabDialog(block, { extras = [] } = {}) {
   return new Promise((resolve) => {
     const info = labInfo(block.lab);
     const box = h('div', { class: 'lab-dialog' });
@@ -221,12 +268,17 @@ export function openLabDialog(block) {
     const onKey = (e) => { if (e.key === 'Escape' && !e.target.closest?.('input, textarea, select')) { e.preventDefault(); close(null); } };
     document.addEventListener('keydown', onKey, true);
     const host = h('div', { class: 'ds-lab' });
+    const status = h('span', { class: 'lab-status', role: 'status' });
+    const say = (t) => { status.textContent = t; };
     box.append(
       h('div', { class: 'lab-dialog-head' },
         h('strong', { text: `${info.icon} ${info.label} – Vorgabe` }),
+        h('span', { class: 'lab-row' }, ...clipButtons(block.lab, () => (api ? api.getState() : labMerge(block.lab, block.preset, null)), (st) => api?.setState(labMerge(block.lab, null, st)), say), status),
         h('span', { class: 'lab-hint', text: 'So sehen die Schüler das Labor zu Beginn. Mit 🔒 legst du einzelne Teile fest – Schüler können sie dann nicht ändern.' })),
       host,
       h('div', { class: 'lab-dialog-foot' },
+        ...extras.map((x) => h('button', { type: 'button', class: `lab-btn${x.danger ? ' lab-btn-danger' : ''}`, title: x.title, onclick: () => close({ action: x.action, block: { ...block, preset: api ? api.getState() : block.preset } }) }, x.label)),
+        h('span', { class: 'lab-dialog-gap' }),
         h('button', { type: 'button', class: 'lab-btn', onclick: () => close(null) }, 'Abbrechen'),
         h('button', { type: 'button', class: 'lab-btn lab-btn-primary', onclick: () => close({ ...block, preset: api ? api.getState() : block.preset }) }, 'Übernehmen')));
     document.body.append(overlay);

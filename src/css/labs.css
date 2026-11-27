@@ -13,6 +13,9 @@
 .lab-btn:hover { background: #eef4fa; }
 .lab-btn-primary { background: #2563eb; color: #fff; border-color: #2563eb; }
 .lab-btn-primary:hover { background: #1d4fd8; }
+.lab-btn-danger { color: #b91c1c; border-color: #fca5a5; }
+.lab-btn-danger:hover { background: #fef2f2; }
+.lab-dialog-gap { flex: 1; }
 .lab-mini { font: inherit; font-size: 0.85em; padding: 0 0.35em; min-width: 1.8em; border: 1px solid transparent; border-radius: 4px; background: transparent; cursor: pointer; }
 .lab-mini:hover:not(:disabled) { border-color: #b8c6d4; background: #fff; }
 .lab-mini.lab-on { background: #fff3cd; border-color: #e0c060; }

@@ -172,6 +172,73 @@ function moveBlock(editor, dir) {
   return true;
 }
 
+/**
+ * Lösung (Behälter mit Text): eigene Leiste beim Darüberfahren – nach oben/unten, verdoppeln, entfernen und
+ * „danach weiterschreiben“ (ein leerer Absatz dahinter). „Lösung:“ antippen wählt sie als Ganzes
+ * (dann gehen auch Strg+X/C/V und Ziehen). Feedback: Hinter einer Lösung kam man schlecht weiter.
+ */
+function solutionView({ node, getPos, editor }) {
+  const dom = document.createElement('div');
+  dom.className = 'ds-pm-solution ds-pm-container';
+  const contentDOM = document.createElement('div');
+  contentDOM.className = 'ds-pm-solution-body';
+  const bar = document.createElement('div');
+  bar.className = 'ds-wbar ds-pm-cbar';
+  bar.contentEditable = 'false';
+  const act = (what) => {
+    const pos = getPos();
+    const { state } = editor;
+    const cur = state.doc.nodeAt(pos);
+    if (!cur) return;
+    const end = pos + cur.nodeSize;
+    const $pos = state.doc.resolve(pos);
+    const parent = $pos.parent;
+    const index = $pos.index();
+    let tr = state.tr;
+    if (what === 'del') tr = tr.delete(pos, end);
+    else if (what === 'dup') tr = tr.insert(end, cur.copy(cur.content)).setSelection(TextSelection.near(tr.doc.resolve(end + 1)));
+    else if (what === 'after') {
+      const para = state.schema.nodes.paragraph.create();
+      tr = tr.insert(end, para);
+      tr.setSelection(TextSelection.create(tr.doc, end + 1));
+    } else {
+      const other = index + (what === 'up' ? -1 : 1);
+      if (other < 0 || other >= parent.childCount) return;
+      tr = tr.delete(pos, end);
+      const target = what === 'up' ? pos - parent.child(other).nodeSize : pos + parent.child(other).nodeSize;
+      tr.insert(target, cur);
+      tr.setSelection(NodeSelection.create(tr.doc, target));
+    }
+    editor.view.dispatch(tr.scrollIntoView());
+    editor.view.focus();
+  };
+  for (const [what, label, title] of [['up', '↑', 'Lösung nach oben'], ['down', '↓', 'Lösung nach unten'], ['dup', '⧉', 'Lösung verdoppeln'],
+    ['after', '↵ danach', 'Hinter der Lösung weiterschreiben (neuer Absatz)'], ['del', '✕', 'Lösung entfernen']]) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = label;
+    b.title = title;
+    b.addEventListener('mousedown', (e) => e.preventDefault());
+    b.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); act(what); });
+    bar.appendChild(b);
+  }
+  dom.append(bar, contentDOM);
+  // „Lösung:“ (oberhalb des Textes) wählt den ganzen Baustein.
+  dom.addEventListener('mousedown', (e) => {
+    if (e.target !== dom || e.offsetY > contentDOM.offsetTop) return;
+    e.preventDefault();
+    editor.view.dispatch(editor.state.tr.setSelection(NodeSelection.create(editor.state.doc, getPos())));
+    editor.view.focus();
+  });
+  return {
+    dom,
+    contentDOM,
+    update: (next) => next.type === node.type,
+    stopEvent: (e) => !!e.target.closest?.('.ds-pm-cbar'),
+    ignoreMutation: (m) => !contentDOM.contains(m.target) && m.type !== 'selection',
+  };
+}
+
 /** Baustein am Stück: sieht aus wie in der Vorschau; wählen, ziehen, per Doppelklick bearbeiten. */
 function atomView(host) {
   return ({ node, getPos, editor }) => {
@@ -771,6 +838,7 @@ export function createPmEditor(element, spec, host = {}) {
   nodeViews.tableRow = tableRowView;
   nodeViews.columns = columnsView;
   nodeViews.heading = headingView;
+  nodeViews.solution = solutionView;
   const toDoc = (s) => {
     const json = specToPm(s);
     return json.content?.length ? json : { ...json, content: [{ type: 'paragraph' }] };

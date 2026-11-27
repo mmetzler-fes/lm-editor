@@ -99,7 +99,7 @@ export function mountPlant(host, ctx) {
   }
   const builtins = () => PLANT_EXAMPLES.map((ex) => ({
     id: `builtin:${ex.key}`, title: ex.label, builtin: true,
-    data: { plant: ex.make(), io: ex.io.map(([kind, name, desc, contact, addr]) => ({ kind, name, desc, addr: addr || '', ...(kind === 'in' ? { contact: contact || 'NO' } : {}) })), ...(ex.init ? { init: ex.init } : {}) },
+    data: { plant: ex.make(), io: ex.io.map(([kind, name, desc, contact, addr]) => ({ kind, name, desc, ...(kind === 'tim' ? {} : { addr: addr || '' }), ...(kind === 'in' ? { contact: contact || 'NO' } : {}) })), ...(ex.init ? { init: ex.init } : {}) },
   }));
 
   /** Anlage (und auf Wunsch die Kette) aus dem Labor für die Bibliothek. */
@@ -126,7 +126,8 @@ export function mountPlant(host, ctx) {
       const have = symbolAlias(row.name, io.filter((x) => x.kind === row.kind).map((x) => x.name));
       if (have) { map[row.name] = have; continue; }
       const taken = io.some((x) => x.addr && x.addr === row.addr);
-      spsInsertIo(io, { ...row, id: uid('io'), addr: row.addr && !taken ? row.addr : spsNextAddr(io, row.kind) });
+      const { addr: _a, ...rest } = row;
+      spsInsertIo(io, { ...rest, id: uid('io'), ...(row.kind === 'tim' ? {} : { addr: row.addr && !taken ? row.addr : spsNextAddr(io, row.kind) }) });
     }
     st.plant = JSON.parse(JSON.stringify(data.plant));
     for (const [from, to] of Object.entries(map)) if (from !== to) plantRename(st.plant, from, to);

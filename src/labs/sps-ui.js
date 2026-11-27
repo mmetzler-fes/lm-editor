@@ -355,10 +355,17 @@ export function mount(el, { state, mode, onChange, say = () => {} }) {
       } else control = h('span', { class: 'sps-lamp', 'data-lamp': name, title: 'Zustand' });
       return h('tr', { 'data-io': x.id },
         h('td', { class: 'sps-grip-cell' }, ok ? h('span', { class: 'sps-grip', title: 'Zeile verschieben: anfassen und ziehen', onpointerdown: (e) => dragRow(e, x) }, '⠿') : null),
-        h('td', {}, h('select', { disabled: !ok, onchange: (e) => { x.kind = e.target.value; if (x.kind !== 'in') delete x.contact; else x.contact ||= 'NO'; changed(); } },
+        h('td', {}, h('select', { disabled: !ok, onchange: (e) => {
+          x.kind = e.target.value;
+          if (x.kind !== 'in') delete x.contact; else x.contact ||= 'NO';
+          // Zeitglieder haben keine Adresse (Multiinstanz im FB oder eigener DB); sonst die nächste freie
+          if (x.kind === 'tim') delete x.addr; else if (!x.addr || !String(x.addr).toUpperCase().includes({ in: 'I', out: 'Q', mem: 'M' }[x.kind])) x.addr = spsNextAddr(io().filter((y) => y !== x), x.kind);
+          changed();
+        } },
           ...KINDS.map(([k, l]) => h('option', { value: k, selected: x.kind === k }, l)))),
         h('td', {}, field(x.name ?? '', (v) => { x.name = v.trim(); changed(); }, { size: 5, disabled: !ok, class: dup ? 'lab-bad' : '', title: dup ? 'Symbol doppelt' : 'Symbolname' })),
-        h('td', {}, field(x.addr ?? '', (v) => { x.addr = v.trim(); changed(); }, { size: 6, disabled: !ok, placeholder: '%I0.0' })),
+        h('td', {}, x.kind === 'tim' ? h('span', { class: 'lab-hint', text: '–', title: 'Zeitglied: keine Adresse (Multiinstanz im FB oder eigener DB)' })
+          : field(x.addr ?? '', (v) => { x.addr = v.trim(); changed(); }, { size: 6, disabled: !ok, placeholder: { in: '%I0.0', out: '%Q0.0', mem: '%M0.0' }[x.kind] || '' })),
         h('td', {}, field(x.desc ?? '', (v) => { x.desc = v; changed(); }, { size: 18, disabled: !ok, placeholder: 'Beschreibung' })),
         h('td', {}, x.kind === 'in' ? h('select', { disabled: !ok, onchange: (e) => { x.contact = e.target.value; pressed[x.id] = false; changed(); } },
           ...CONTACTS.map(([k, l]) => h('option', { value: k, selected: (x.contact || 'NO') === k }, l))) : ''),
@@ -373,7 +380,7 @@ export function mount(el, { state, mode, onChange, say = () => {} }) {
       const base = { in: 'S', out: 'Y', mem: 'M', tim: 'tonT' }[kind];
       let n = io().filter((x) => x.kind === kind).length + 1;
       while (used.has(`${base}${n}`)) n++;
-      spsInsertIo(io(), { id: uid('io'), kind, name: `${base}${n}`, addr: spsNextAddr(io(), kind), desc: '', ...(kind === 'in' ? { contact: 'NO' } : {}) });
+      spsInsertIo(io(), { id: uid('io'), kind, name: `${base}${n}`, ...(kind === 'tim' ? {} : { addr: spsNextAddr(io(), kind) }), desc: '', ...(kind === 'in' ? { contact: 'NO' } : {}) });
       changed();
     };
     return h('div', { class: 'sps-section' },

@@ -1085,7 +1085,7 @@ export function spsDefault() {
       { id: 'i3', kind: 'in', name: 'B0', addr: '%I0.2', desc: 'Zylinder eingefahren', contact: 'NO' },
       { id: 'o1', kind: 'out', name: 'Y1', addr: '%Q0.0', desc: 'Zylinder ausfahren' },
       { id: 'o2', kind: 'out', name: 'H1', addr: '%Q0.1', desc: 'Meldeleuchte' },
-      { id: 't1', kind: 'tim', name: 'tonT1', addr: '', desc: 'Wartezeit 3s' },
+      { id: 't1', kind: 'tim', name: 'tonT1', desc: 'Wartezeit 3s' },
     ],
     steps: [
       { id: 's1', name: 'S_1', initial: true, trans: 'S1', actions: [] },

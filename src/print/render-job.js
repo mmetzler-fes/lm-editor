@@ -145,10 +145,12 @@ export function renderJob(spec, { title = '', media = {}, modules = {}, outputs 
       else if (block.type === 'group') out.push(groupBlock(block));
       else if (block.type === 'lab') {
         // Labor: Bild der Vorgabe (lab-core.js), wie der Server es druckt.
-        const svg = labSvg(block);
+        // Blatt quer: SPS-Kette und Anlage nebeneinander, und die Textbreite ist größer.
+        const landscape = spec?.orientation === 'landscape';
+        const svg = labSvg(block, null, { landscape });
         const name = `labor/labor-${++labCount}.svg`;
         files[name] = base64(new TextEncoder().encode(svg));
-        out.push({ type: 'image', file: name, width: `${Math.min(labSvgWidthCm(svg), TEXT_WIDTH_CM).toFixed(2)}cm`, ...(block.id ? { id: block.id } : {}) });
+        out.push({ type: 'image', file: name, width: `${Math.min(labSvgWidthCm(svg), landscape ? 24.5 : TEXT_WIDTH_CM).toFixed(2)}cm`, ...(block.id ? { id: block.id } : {}) });
       } else if ((block.type === 'code' && block.file !== undefined && block.code === undefined) || (block.type === 'image' && block.file !== undefined)) {
         warnings.push(`„${block.file}“ gibt es nur im Kurs-Projekt – im Druck steht ein Hinweis.`);
         out.push({ type: 'note', text: `[${block.file}]` });

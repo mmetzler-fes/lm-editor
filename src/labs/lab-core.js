@@ -2,12 +2,15 @@
 //
 // Labore sind Bausteine im Dokument ({ type: 'lab', lab: 'zeiger', preset: {…} }), in denen Schüler
 // selbst etwas aufbauen: Zeigerdiagramme, Bode-Diagramme, Ortskurven, Logikschaltungen.
-// Diese Datei rechnet und zeichnet (SVG) – ohne DOM und ohne import, damit der Server sie für den Druck
-// genauso lädt wie der Browser (src/core/browser-module.ts in LearningModules). Bedienung: labs.js und
-// die *-ui.js je Labor. "export" nur vor function/const/class am Zeilenanfang.
+// Diese Datei rechnet und zeichnet (SVG) – ohne DOM, damit der Server sie für den Druck genauso lädt wie
+// der Browser (src/core/browser-module.ts in LearningModules). Importe nur als „import { … } from './…';“
+// aus ebenso schlichten Geschwisterdateien (plant-core.js). Bedienung: labs.js und die *-ui.js je Labor.
+// "export" nur vor function/const/class am Zeilenanfang.
 //
 // Stand eines Labors: `preset` (Vorgabe der Lehrkraft) und – je Schüler – `state` mit demselben Aufbau.
 // labMerge() setzt beides zusammen: Was die Lehrkraft mit locked: true festlegt, gilt immer.
+
+import { plantSvgParts, plantUpgrade } from './plant-core.js';
 
 export const LABS = [
   { name: 'zeiger', label: 'Zeigerlabor', icon: '↗', what: 'Zeiger als komplexe Zahlen zeichnen, verschieben und berechnen' },
@@ -1783,8 +1786,28 @@ export function labValidate(block) {
   return errors;
 }
 
+/**
+ * Texte für LibreOffice (Druck über die Vorlage): Bei Schriftgrößen unter 1 Einheit (hier cm) lässt es
+ * zentrierten und rechtsbündigen Text weg. Deshalb jeder Text 100-fach groß und mit scale(0.01) zurück –
+ * im Browser sieht das gleich aus.
+ */
+export function svgPrintTexts(svg) {
+  return String(svg).replace(/<text\b([^>]*)>/g, (m, attrs) => {
+    if (/\btransform=/.test(attrs)) return m;
+    let a = attrs;
+    for (const k of ['x', 'y', 'font-size']) {
+      a = a.replace(new RegExp(`(\\s${k}=")(-?[\\d.]+)(")`), (_q, pre, v, post) => `${pre}${r3(Number(v) * 100)}${post}`);
+    }
+    return `<text transform="scale(0.01)"${a}>`;
+  });
+}
+
 /** SVG des Labors (Vorgabe bzw. Stand) – für Anzeige ohne Bedienung, Druck und „Aufs Blatt“. */
 export function labSvg(block, state = null, opts = {}) {
+  return svgPrintTexts(labSvgRaw(block, state, opts));
+}
+
+function labSvgRaw(block, state = null, opts = {}) {
   const st = labMerge(block?.lab, block?.preset, state);
   try {
     switch (block?.lab) {
@@ -1792,12 +1815,49 @@ export function labSvg(block, state = null, opts = {}) {
       case 'bode': return bodeSvg(st, opts);
       case 'ortskurve': return ortskurveSvg(st, opts);
       case 'logik': return logikSvg(st, opts);
-      case 'sps': return spsSvg(st, opts);
+      case 'sps': return st.plant && Array.isArray(st.plant.items) ? spsWithPlant(st, opts) : spsSvg(st, opts);
       default: return '';
     }
   } catch (e) {
     return `${svgOpen(10, 1)}${text(0.2, 0.65, `Labor: ${e.message}`, { size: 0.35, fill: '#b00' })}</svg>`;
   }
+}
+
+/**
+ * SPS-Labor mit Anlage als ein Bild (Druck, „Bild“, Aufs Blatt): Blatt hoch – Anlage unter der Kette,
+ * Blatt quer (opts.landscape) – daneben; wie auf dem Bildschirm. Die Anlage ohne Raster und Endlagen.
+ */
+function spsWithPlant(st, opts = {}) {
+  const chain = spsSvg(st, opts);
+  const vb = /viewBox="0 0 ([\d.]+) ([\d.]+)"/.exec(chain);
+  const W1 = vb ? Number(vb[1]) : 10;
+  const H1 = vb ? Number(vb[2]) : 10;
+  const inner = chain.replace(/^<svg[^>]*>/, '').replace(/<\/svg>\s*$/, '');
+  const plant = JSON.parse(JSON.stringify(st.plant));
+  plantUpgrade(plant);
+  const p = plantSvgParts(plant, { io: st.io || [], print: true });
+  const GAP = 0.6;
+  let sc;
+  let px;
+  let py;
+  let W;
+  let H;
+  if (opts.landscape) {
+    const th = Math.max(H1, 7);
+    sc = th / p.h;
+    px = W1 + GAP;
+    py = 0;
+    W = px + p.w * sc;
+    H = Math.max(H1, th);
+  } else {
+    const tw = Math.max(W1, 12);
+    sc = tw / p.w;
+    px = 0;
+    py = H1 + GAP;
+    W = Math.max(W1, tw);
+    H = py + p.h * sc;
+  }
+  return `${svgOpen(W, H)}<g>${inner}</g><g transform="translate(${r3(px)} ${r3(py)}) scale(${r3(sc)})">${p.defs ? `<defs>${p.defs}</defs>` : ''}${p.body}</g></svg>`;
 }
 
 /** Breite des Bildes in cm (aus dem SVG). */

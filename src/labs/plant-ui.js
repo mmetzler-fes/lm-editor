@@ -4,15 +4,10 @@
 // Steuerung läuft; aufbauen (Elemente aus der Leiste, ziehen, antippen → Eigenschaften) geht, solange
 // sie steht. Taster und Sensoren hängen über ihr Symbol an der Zuordnungstabelle.
 
-import { PLANT_MATERIALS, PLANT_EXAMPLES, plantSize, cylinderHead, plantInputs, plantDefault, plantSymbols, plantRename, symbolAlias, cylinderSetStroke } from './plant-core.js';
+import { PLANT_MATERIALS, PLANT_EXAMPLES, MAT_COLOR, plantSvg, plantDefault, plantSymbols, plantRename, symbolAlias, cylinderSetStroke } from './plant-core.js';
 import { spsWalk, spsIsStep, spsInsertIo, spsNextAddr } from './lab-core.js';
 import { h, field, svgPoint } from './labs.js';
 
-const r3 = (v) => Math.round(v * 1000) / 1000;
-const esc = (v) => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-const FONT = 'font-family="Liberation Sans, Arial, sans-serif"';
-const MAT_COLOR = { metal: '#9ca3af', plastic: '#f59e0b', wood: '#b7791f' };
-const LAMP_COLOR = { yellow: '#facc15', red: '#ef4444', green: '#22c55e', blue: '#3b82f6', white: '#f8fafc' };
 const PALETTE = [
   ['button', '🔘 Taster', 'Taster oder Schalter – Schließer, Öffner oder rastend (Kontaktart in der Zuordnungstabelle), wahlweise beleuchtet'],
   ['lamp', '💡 Lampe', 'Meldeleuchte an einem Ausgang'],
@@ -50,158 +45,9 @@ export function mountPlant(host, ctx) {
   const stage = h('div', { class: 'plant-stage' });
   host.append(bar, stage);
 
-  // ---------- Zeichnen ----------
+  // ---------- Zeichnen (plantSvg in plant-core.js – dasselbe Bild wie im Druck) ----------
   function svg() {
-    const p = plant();
-    const W = p.w || 24;
-    const H = p.h || 12;
-    const inp = world ? plantInputs(p, world) : {};
-    const on = (n) => !!(n && vars[String(n).trim()]);
-    const edit = canEdit();
-    let o = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" class="plant-svg${edit ? ' plant-edit' : ''}">`;
-    o += `<defs><pattern id="pg" width="1" height="1" patternUnits="userSpaceOnUse"><path d="M1 0H0V1" fill="none" stroke="#e5e7eb" stroke-width="0.02"/></pattern>`
-      + '<pattern id="ph" width="0.4" height="0.4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="0.4" stroke="#64748b" stroke-width="0.08"/></pattern></defs>';
-    o += `<rect x="0" y="0" width="${W}" height="${H}" fill="#ffffff"/><rect x="0" y="0" width="${W}" height="${H}" fill="url(#pg)"/>`;
-    const txt = (x, y, s, size = 0.4, fill = '#334155', anchor = 'middle') => `<text x="${r3(x)}" y="${r3(y)}" font-size="${size}" ${FONT} fill="${fill}" text-anchor="${anchor}">${esc(s)}</text>`;
-    const items = p.items || [];
-    // Zuerst Flächen und Geräte, dann Werkstücke, dann Sensoren (Strahl über allem)
-    const order = { destroyer: 0, creator: 1, object: 2, conveyor: 3, cylinder: 4, lamp: 5, button: 6, sensor: 8 };
-    for (const it of [...items].sort((a, b) => (order[a.type] ?? 5) - (order[b.type] ?? 5))) {
-      if (it.type === 'object' && !it.fixed && world) continue; // beweglich: während des Laufs aus der Physik
-      if (it.type === 'sensor') continue;
-      const { w, h: hh } = plantSize(it);
-      const x = it.x || 0;
-      const y = it.y || 0;
-      let g = '';
-      switch (it.type) {
-        case 'button': {
-          const io = ioByName(it.in);
-          const lit = on(it.lamp);
-          const down = !!(io && pressed[io.id]);
-          const ring = io?.contact === 'NC' ? '#dc2626' : io?.contact === 'latch' ? '#2563eb' : '#16a34a';
-          g += `<rect x="${x}" y="${y}" width="${w}" height="${hh}" rx="0.15" fill="#e2e8f0" stroke="#475569" stroke-width="0.04"/>`;
-          g += `<circle cx="${r3(x + w / 2)}" cy="${r3(y + hh / 2)}" r="${down ? 0.45 : 0.5}" fill="${lit ? '#fde047' : down ? '#94a3b8' : '#f8fafc'}" stroke="${ring}" stroke-width="0.12"${lit ? ' filter="drop-shadow(0 0 0.2px #facc15)"' : ''}/>`;
-          g += txt(x + w / 2, y + hh + 0.45, it.label || it.in || 'Taster', 0.36);
-          break;
-        }
-        case 'lamp': {
-          const lit = on(it.out);
-          g += `<circle cx="${r3(x + w / 2)}" cy="${r3(y + hh / 2)}" r="0.55" fill="${lit ? LAMP_COLOR[it.color] || '#facc15' : '#cbd5e1'}" stroke="#334155" stroke-width="0.05"/>`;
-          if (lit) g += `<circle cx="${r3(x + w / 2)}" cy="${r3(y + hh / 2)}" r="0.8" fill="none" stroke="${LAMP_COLOR[it.color] || '#facc15'}" stroke-width="0.08" opacity="0.6"/>`;
-          g += `<path d="M${r3(x + w / 2 - 0.3)} ${r3(y + hh / 2 - 0.3)}l0.6 0.6M${r3(x + w / 2 + 0.3)} ${r3(y + hh / 2 - 0.3)}l-0.6 0.6" stroke="#334155" stroke-width="0.05"/>`;
-          g += txt(x + w / 2, y + hh + 0.45, it.label || it.out || 'Lampe', 0.36);
-          break;
-        }
-        case 'conveyor': {
-          const v = on(it.out) ? 1 : on(it.rev) ? -1 : 0;
-          const shift = world ? -(world.t * Math.abs(it.speed || 3) * v) % 0.8 : 0;
-          g += `<rect x="${x}" y="${y}" width="${w}" height="${hh}" rx="${hh / 2}" fill="#475569"/>`;
-          g += `<line x1="${r3(x + hh / 2)}" y1="${r3(y + 0.06)}" x2="${r3(x + w - hh / 2)}" y2="${r3(y + 0.06)}" stroke="${v ? '#22c55e' : '#cbd5e1'}" stroke-width="0.1" stroke-dasharray="0.4 0.4" stroke-dashoffset="${r3(shift)}"/>`;
-          for (const cx of [x + hh / 2, x + w - hh / 2]) g += `<circle cx="${r3(cx)}" cy="${r3(y + hh / 2)}" r="${r3(hh / 2 - 0.1)}" fill="#94a3b8"/>`;
-          g += txt(x + w / 2, y + hh + 0.45, [it.out, it.rev].filter(Boolean).join(' / ') || 'Band', 0.34);
-          break;
-        }
-        case 'cylinder': {
-          const pos = world?.cyl?.[it.id] || 0;
-          const stroke = Math.max(0.2, it.stroke ?? 4);
-          const horiz = !/^(up|down)$/.test(it.dir);
-          const sgn = it.dir === 'left' || it.dir === 'up' ? -1 : 1; // Richtung des Ausfahrens
-          const cx = x + w / 2;
-          const cy = y + hh / 2;
-          // Längs der Achse: hinteres Ende des Gehäuses, Kolben bei Hub `q`
-          const back = horiz ? (sgn > 0 ? x : x + w) : (sgn > 0 ? y : y + hh);
-          const pist = (q) => back + sgn * (0.3 + q);
-          const at = (a, d = 0) => (horiz ? [a, cy + d] : [cx + d, a]);
-          const ln = (a1, a2, sw, extra = '') => { const [x1, y1] = at(a1); const [x2, y2] = at(a2); return `<line x1="${r3(x1)}" y1="${r3(y1)}" x2="${r3(x2)}" y2="${r3(y2)}" stroke="#334155" stroke-width="${sw}"${extra}/>`; };
-          const plate = (head, extra) => `<rect x="${r3(head.x)}" y="${r3(head.y)}" width="${r3(head.w)}" height="${r3(head.h)}" ${extra}/>`;
-          // Eingestellt (Simulation steht): Endlage gestrichelt – so weit reicht der Hub.
-          if (!world) {
-            const end = cylinderHead(it, stroke);
-            const endMid = horiz ? end.x + end.w / 2 : end.y + end.h / 2;
-            g += ln(back + sgn * (horiz ? w : hh), endMid, 0.08, ' stroke-dasharray="0.15 0.12" opacity="0.6"');
-            g += plate(end, 'fill="none" stroke="#2563eb" stroke-width="0.05" stroke-dasharray="0.2 0.12"');
-          }
-          g += `<rect x="${x}" y="${y}" width="${w}" height="${hh}" rx="0.1" fill="#e2e8f0" stroke="#334155" stroke-width="0.05"/>`;
-          // Kolben im Gehäuse, Stange vom Kolben zur Platte
-          const head = cylinderHead(it, pos);
-          const headMid = horiz ? head.x + head.w / 2 : head.y + head.h / 2;
-          g += ln(pist(pos), headMid, 0.2);
-          const pk = pist(pos);
-          g += horiz ? `<rect x="${r3(pk - 0.1)}" y="${r3(y + 0.08)}" width="0.2" height="${r3(hh - 0.16)}" fill="#94a3b8"/>`
-            : `<rect x="${r3(x + 0.08)}" y="${r3(pk - 0.1)}" width="${r3(w - 0.16)}" height="0.2" fill="#94a3b8"/>`;
-          g += plate(head, 'fill="#1e293b"');
-          // Beschriftung neben dem Gehäuse (innen läuft der Kolben)
-          g += horiz ? txt(cx, y - 0.2, it.label || it.out || 'Zylinder', 0.3, '#1e293b') : txt(x - 0.15, cy + 0.1, it.label || it.out || 'Zylinder', 0.3, '#1e293b', 'end');
-          // Endlagensensoren als grüne Punkte (leuchten, wenn erreicht): eingefahren hinten, ausgefahren vorn
-          const inp2 = world ? plantInputs(p, world) : {};
-          const dot = (name, a) => {
-            if (!name) return '';
-            const [px, py] = horiz ? [a, y + hh + 0.3] : [x + w + 0.25, a];
-            const on2 = inp2[String(name).trim()];
-            return `<circle cx="${r3(px)}" cy="${r3(py)}" r="0.18" fill="${on2 ? '#22c55e' : '#e2e8f0'}" stroke="#15803d" stroke-width="0.04"/>`
-              + (horiz ? txt(px, py + 0.55, name, 0.3) : txt(px + 0.3, py + 0.11, name, 0.3, '#334155', 'start'));
-          };
-          g += dot(it.home, pist(0)) + dot(it.ext, pist(stroke));
-          break;
-        }
-        case 'object':
-          g += `<rect x="${x}" y="${y}" width="${w}" height="${hh}" rx="${it.shape === 'round' ? Math.min(w, hh) / 2 : 0.08}" fill="${it.color || (it.fixed ? '#cbd5e1' : MAT_COLOR[it.material] || '#f59e0b')}" stroke="#334155" stroke-width="0.04"/>`;
-          if (it.fixed && !it.color) g += `<rect x="${x}" y="${y}" width="${w}" height="${hh}" fill="url(#ph)" opacity="0.5"/>`;
-          break;
-        case 'creator':
-          g += `<path d="M${r3(x)} ${r3(y)}h${r3(w)}l-0.3 ${r3(hh)}h${r3(-(w - 0.6))}z" fill="#dbeafe" stroke="#2563eb" stroke-width="0.05"/>`;
-          g += txt(x + w / 2, y - 0.15, `⊕ ${it.out || (it.every ? `${it.every} s` : 'Erzeuger')}`, 0.32, '#2563eb');
-          break;
-        case 'destroyer':
-          g += `<rect x="${x}" y="${y}" width="${w}" height="${hh}" fill="#fee2e2" stroke="#dc2626" stroke-width="0.05" stroke-dasharray="0.2 0.12"/>`;
-          g += txt(x + w / 2, y + hh / 2 + 0.15, '⊗', 0.5, '#dc2626');
-          break;
-        default: break;
-      }
-      o += `<g data-pit="${esc(it.id)}"${it.type === 'button' ? ` data-pbtn="${esc(it.id)}"` : ''}>${g}</g>`;
-    }
-    // Werkstücke aus der Physik
-    for (const b of world?.bodies || []) {
-      if (b.bend > 0.01) { o += bentSheet(b); continue; }
-      o += `<rect x="${r3(b.x)}" y="${r3(b.y)}" width="${r3(b.w)}" height="${r3(b.h)}" rx="${b.shape === 'round' ? r3(Math.min(b.w, b.h) / 2) : 0.08}" fill="${b.color || MAT_COLOR[b.material] || '#f59e0b'}" stroke="#334155" stroke-width="0.04"/>`;
-    }
-    for (const it of items.filter((x) => x.type === 'sensor')) {
-      const { w, h: hh } = plantSize(it);
-      const hit = world ? !!inp[String(it.in ?? '').trim()] : false;
-      const c = hit ? '#16a34a' : '#dc2626';
-      let g = it.kind === 'prox'
-        ? `<rect x="${it.x}" y="${it.y}" width="${w}" height="${hh}" fill="${c}" fill-opacity="0.15" stroke="${c}" stroke-width="0.04" stroke-dasharray="0.12 0.08"/>`
-        : `<rect x="${it.x}" y="${it.y}" width="${w}" height="${hh}" fill="${c}" fill-opacity="0.35"/>`;
-      g += `<circle cx="${r3(it.x + w / 2)}" cy="${r3(it.y - 0.3)}" r="0.22" fill="${c}"/>`;
-      g += `<text x="${r3(it.x + w / 2 + 0.35)}" y="${r3(it.y - 0.2)}" font-size="0.34" ${FONT} fill="#334155">${esc(`${it.in || 'Sensor'}${it.material ? ` (${(PLANT_MATERIALS.find((m) => m[0] === it.material) || [])[1] || it.material})` : ''}${it.nc ? ' Ö' : ''}`)}</text>`;
-      o += `<g data-pit="${esc(it.id)}">${g}</g>`;
-    }
-    // Auswahl (beim Aufbauen): gestricheltes Rechteck um das Element
-    const chosen = edit && sel ? items.find((x) => x.id === sel) : null;
-    if (chosen) {
-      const { w, h: hh } = plantSize(chosen);
-      o += `<rect x="${r3((chosen.x || 0) - 0.15)}" y="${r3((chosen.y || 0) - 0.15)}" width="${r3(w + 0.3)}" height="${r3(hh + 0.3)}" fill="none" stroke="#2563eb" stroke-width="0.05" stroke-dasharray="0.2 0.12" pointer-events="none"/>`;
-    }
-    return `${o}</svg>`;
-  }
-
-  /** Gebogenes Blech: gerades Stück auf der Auflage, abgeknicktes Stück über der Kante. */
-  function bentSheet(b) {
-    const fill = b.color || MAT_COLOR[b.material] || '#475569';
-    const L = b.bendLen;
-    const d = Math.min(L, b.bend);
-    const run = Math.sqrt(Math.max(0, L * L - d * d)); // waagrechter Rest des Stücks
-    const e = b.bendEdge;
-    const s = b.bendSide;
-    const flatA = s < 0 ? e : b.x;
-    const flatB = s < 0 ? b.x + b.w : e;
-    let o = `<rect x="${r3(flatA)}" y="${r3(b.y)}" width="${r3(flatB - flatA)}" height="${r3(b.h)}" fill="${fill}" stroke="#334155" stroke-width="0.03"/>`;
-    const ex = e + s * run;
-    const ey = b.y + d;
-    // Abgeknicktes Stück als Streifen der Blechdicke von der Kante zum Ende
-    o += `<line x1="${r3(e)}" y1="${r3(b.y + b.h / 2)}" x2="${r3(ex)}" y2="${r3(ey + b.h / 2)}" stroke="#334155" stroke-width="${r3(b.h + 0.06)}"/>`;
-    o += `<line x1="${r3(e)}" y1="${r3(b.y + b.h / 2)}" x2="${r3(ex)}" y2="${r3(ey + b.h / 2)}" stroke="${fill}" stroke-width="${r3(b.h)}"/>`;
-    return o;
+    return plantSvg(plant(), { world, vars, io: getSt().io || [], pressed, edit: canEdit(), sel, cls: true });
   }
 
   function renderBar() {

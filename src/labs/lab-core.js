@@ -1057,10 +1057,19 @@ export function logikSvg(state, { selected = null, pending = null } = {}) {
 
 // ==================== SPS-Labor: Ablaufkette nach IEC 61131-3 ====================
 //
-// Stand: { io: [{ id, kind: 'in'|'out'|'mem', name, addr, desc, contact: 'NO'|'NC'|'latch' }],
-//          steps: [{ id, name, initial, trans, actions: [{ id, q, time, text, var, cond }] }], back }
-// Die Kette ist (vorerst) linear: auf jeden Schritt folgt seine Transition, nach dem letzten Schritt
-// geht es (back) zum Initialschritt zurück. Bestimmungszeichen: N, S, R, L, D, P, DS, SD, SL.
+// Stand: { io: [{ id, kind: 'in'|'out'|'mem'|'tim', name, addr, desc, contact: 'NO'|'NC'|'latch' }],
+//          steps: [Element], back }
+//   Element: Schritt { id, name, initial, trans, actions: [{ id, q, time, text, var, cond }] }
+//              trans: Transition nach dem Schritt (zum nächsten Element)
+//          | Alternativverzweigung { id, type: 'alt', branches: [{ id, trans, steps: [Element], jump? }] }
+//              Jeder Zweig beginnt mit seiner Transition (trans) – die des Schritts davor entfällt.
+//              Der letzte Schritt eines Zweigs hat seine Transition vor der Zusammenführung;
+//              jump: Name des Schritts, zu dem der Zweig springt (statt Zusammenführung).
+//          | Parallelverzweigung { id, type: 'par', branches: [{ id, steps: [Element] }], trans }
+//              Davor gilt die Transition des Schritts davor, alle Zweige starten zugleich; die letzten
+//              Schritte der Zweige haben keine eigene Transition – nach der Synchronisation gilt trans.
+// Nach dem Ende der Kette geht es (back) zum Initialschritt zurück. Alte Ketten (nur Schritte) bleiben gültig.
+// Bestimmungszeichen: N, S, R, L, D, P, DS, SD, SL.
 
 export const SPS_QUALIFIERS = ['N', 'S', 'R', 'L', 'D', 'P', 'DS', 'SD', 'SL'];
 export const SPS_TIMED = ['L', 'D', 'DS', 'SD', 'SL'];
@@ -1198,9 +1207,108 @@ export function spsInputSignal(io, pressed) {
   return io?.contact === 'NC' ? (pressed ? 0 : 1) : pressed ? 1 : 0;
 }
 
+export const spsIsStep = (e) => !!e && typeof e === 'object' && e.type !== 'alt' && e.type !== 'par';
+
+/** Jedes Element der Kette (auch in Zweigen) mit seiner Liste, Stelle und den umgebenden Elementen. */
+export function spsWalk(list, fn, parents = []) {
+  (Array.isArray(list) ? list : []).forEach((el, index) => {
+    if (!el || typeof el !== 'object') return;
+    fn(el, list, index, parents);
+    if (!spsIsStep(el)) for (const b of el.branches || []) spsWalk(b.steps, fn, [...parents, el, b]);
+  });
+}
+
+/** Alle Schritte der Kette in Lesereihenfolge (Zweige von links nach rechts). */
+export function spsFlat(st) {
+  const out = [];
+  spsWalk(st?.steps, (el) => { if (spsIsStep(el)) out.push(el); });
+  return out;
+}
+
+/** Element (Schritt, Verzweigung) oder Zweig zu einer ID: { el, list, index, parents } bzw. { branch, fork }. */
+export function spsLocate(st, id) {
+  let found = null;
+  spsWalk(st?.steps, (el, list, index, parents) => {
+    if (found) return;
+    if (el.id === id) found = { el, list, index, parents };
+    else if (!spsIsStep(el)) {
+      const b = (el.branches || []).find((x) => x.id === id);
+      if (b) found = { branch: b, fork: el, parents: [...parents, el] };
+    }
+  });
+  return found;
+}
+
+const spsAnd = (a, b) => {
+  const x = String(a ?? '').trim();
+  const y = String(b ?? '').trim();
+  return x && y ? `(${x}) AND (${y})` : x || y;
+};
+
+/**
+ * Die Kette als Graph: Transitionen { from: [Schritt-IDs], to: [Schritt-IDs], cond, where } in der Reihenfolge,
+ * in der sie Vorrang haben (Alternativzweige von links nach rechts). `uses`: Schritte, deren trans gilt.
+ */
+export function spsGraph(st) {
+  const flat = spsFlat(st);
+  const byName = new Map(flat.map((s) => [String(s.name ?? '').trim(), s]));
+  const trans = [];
+  const uses = new Set();
+  const problems = [];
+  const link = (pending, to) => {
+    for (const p of pending) if (p.from.length && to.length) trans.push({ from: p.from, to, cond: p.cond, where: p.where });
+  };
+  // pending: Ausgänge, die noch ein Ziel brauchen ({ from, cond, where }); null = nichts kommt herein.
+  function seq(list, pending, ctx) {
+    const items = (Array.isArray(list) ? list : []).filter((el) => el && typeof el === 'object');
+    items.forEach((el, i) => {
+      const next = items[i + 1];
+      if (el.type === 'alt') {
+        if (!pending) problems.push('Eine Alternativverzweigung braucht einen Schritt davor');
+        const out = [];
+        (el.branches || []).forEach((b, k) => {
+          const where = `Zweig ${k + 1} der Verzweigung`;
+          let p = (pending || []).map((q) => ({ from: q.from, cond: spsAnd(q.cond, b.trans), where }));
+          p = seq(b.steps, p, 'alt');
+          const jump = String(b.jump ?? '').trim();
+          if (jump) {
+            const target = byName.get(jump);
+            if (target) link(p, [target.id]);
+            else problems.push(`Sprung zu „${jump}“: diesen Schritt gibt es nicht`);
+          } else out.push(...p);
+        });
+        pending = out;
+      } else if (el.type === 'par') {
+        const branches = (el.branches || []).filter((b) => (b.steps || []).length);
+        if (branches.length < (el.branches || []).length) problems.push('Ein Parallelzweig ist leer');
+        if (branches.some((b) => !spsIsStep(b.steps[0]))) problems.push('Ein Parallelzweig muss mit einem Schritt beginnen');
+        if (pending) link(pending, branches.map((b) => b.steps[0]).filter(spsIsStep).map((x) => x.id));
+        const tails = branches.flatMap((b) => seq(b.steps, null, 'par'));
+        if (tails.some((t) => String(t.cond ?? '').trim())) problems.push('Ein Parallelzweig muss mit einem Schritt enden');
+        pending = [{ from: [...new Set(tails.flatMap((t) => t.from))], cond: el.trans, where: 'Transition nach der Synchronisation' }];
+      } else {
+        if (pending) link(pending, [el.id]);
+        // Keine eigene Transition: vor einer Alternativverzweigung, als letzter Schritt eines Parallelzweigs.
+        const own = next ? next.type !== 'alt' : ctx !== 'par';
+        if (own) uses.add(el.id);
+        pending = [{ from: [el.id], cond: own ? el.trans : '', where: `Transition nach ${el.name}` }];
+      }
+    });
+    return pending || [];
+  }
+  const top = Array.isArray(st?.steps) ? st.steps : [];
+  if (top.length && !spsIsStep(top[0])) problems.push('Die Kette muss mit einem Schritt beginnen');
+  const end = seq(top, null, 'top');
+  if (st?.back !== false) {
+    const init = flat.find((s) => s.initial) || flat[0];
+    if (init) link(end, [init.id]);
+  }
+  return { flat, trans, uses, problems };
+}
+
 /** Laufzeit neu: Initialschritt(e) aktiv. */
 export function spsInit(st) {
-  const steps = st.steps || [];
+  const steps = spsFlat(st);
   const init = steps.filter((s) => s.initial);
   const active = (init.length ? init : steps.slice(0, 1)).map((s) => s.id);
   return { t: 0, cycle: 0, active, since: Object.fromEntries(active.map((id) => [id, 0])), entered: new Set(active), stored: {}, timers: {}, vars: {}, error: null };
@@ -1211,8 +1319,8 @@ export function spsInit(st) {
  * `inputs`: Name → Signal (0/1). Ergebnis: rt (verändert) mit vars (alle Variablen), active, error.
  */
 export function spsCycle(st, rt, inputs, dt) {
-  const steps = st.steps || [];
-  const byId = new Map(steps.map((s) => [s.id, s]));
+  const graph = spsGraph(st);
+  const steps = graph.flat;
   const byName = new Map(steps.map((s) => [String(s.name ?? '').trim(), s]));
   rt.t += dt;
   rt.cycle++;
@@ -1239,23 +1347,22 @@ export function spsCycle(st, rt, inputs, dt) {
       return 0;
     }
   };
-  // 1. Transitionen der aktiven Schritte (alle mit dem Stand vom Anfang des Zyklus)
+  // 1. Transitionen, deren Schritte davor alle aktiv sind (mit dem Stand vom Anfang des Zyklus).
+  // Ein Schritt gibt nur einmal ab: Bei Alternativen hat der linke Zweig Vorrang.
   const fire = [];
   if (rt.cycle > 1) {
-    for (const id of rt.active) {
-      const i = steps.findIndex((s) => s.id === id);
-      if (i < 0) continue;
-      const nextStep = i + 1 < steps.length ? steps[i + 1] : st.back !== false ? (steps.find((s) => s.initial) || steps[0]) : null;
-      if (!nextStep) continue;
-      if (cond(steps[i].trans, `Transition nach ${steps[i].name}`)) fire.push([id, nextStep.id]);
+    const used = new Set();
+    for (const t of graph.trans) {
+      if (!t.from.every((id) => rt.active.includes(id)) || t.from.some((id) => used.has(id))) continue;
+      if (cond(t.cond, t.where)) { fire.push(t); t.from.forEach((id) => used.add(id)); }
     }
   }
   rt.entered = rt.cycle === 1 ? new Set(rt.active) : new Set();
   // Die Schrittzeit beginnt im Zyklus, in dem der Schritt aktiv wird (beim Start der Initialschritt).
   if (rt.cycle === 1) for (const id of rt.active) rt.since[id] = rt.t;
   if (fire.length) {
-    const off = new Set(fire.map(([a]) => a));
-    const on = fire.map(([, b]) => b);
+    const off = new Set(fire.flatMap((t) => t.from));
+    const on = fire.flatMap((t) => t.to);
     rt.active = [...rt.active.filter((id) => !off.has(id)), ...on.filter((b, i, l) => l.indexOf(b) === i)];
     for (const b of on) { rt.since[b] = rt.t; rt.entered.add(b); }
   }
@@ -1308,8 +1415,12 @@ export function spsCheck(st) {
   const names = (st.io || []).map((io) => String(io.name ?? '').trim()).filter(Boolean);
   const dup = names.filter((n, i) => names.indexOf(n) !== i);
   if (dup.length) out.push(`Symbol doppelt: ${[...new Set(dup)].join(', ')}`);
-  const stepNames = new Set((st.steps || []).map((s) => String(s.name ?? '').trim()));
-  const known = new Set([...names, ...stepNames]);
+  const graph = spsGraph(st);
+  const stepList = graph.flat.map((s) => String(s.name ?? '').trim());
+  const dupSteps = stepList.filter((n, i) => n && stepList.indexOf(n) !== i);
+  if (dupSteps.length) out.push(`Schrittname doppelt: ${[...new Set(dupSteps)].join(', ')}`);
+  out.push(...graph.problems);
+  const known = new Set([...names, ...stepList]);
   const check = (src, where) => {
     try {
       const walk = (t) => {
@@ -1321,98 +1432,232 @@ export function spsCheck(st) {
       walk(spsParse(src));
     } catch (e) { out.push(`${where}: ${e.message}`); }
   };
-  for (const s of st.steps || []) {
-    check(s.trans, `Transition nach ${s.name}`);
+  for (const t of graph.trans) check(t.cond, t.where);
+  for (const s of graph.flat) {
     for (const a of s.actions || []) {
       if (String(a.cond ?? '').trim()) check(a.cond, `${s.name}, Bedingung`);
       if (SPS_TIMED.includes(a.q) && !Number.isFinite(spsTime(a.time))) out.push(`${s.name}: ${a.q} braucht eine Zeit (T#2s)`);
       if (a.var && !names.includes(String(a.var).trim())) out.push(`${s.name}: „${a.var}“ steht nicht in der Zuordnungstabelle`);
     }
   }
-  return out;
+  return [...new Set(out)];
 }
 
-/** Bild der Kette wie im Arbeitsblatt (Schritt, Transition, Aktionsblock A1–A4); aktive Schritte grün. */
+/**
+ * Bild der Kette wie im Arbeitsblatt (Schritt, Transition, Aktionsblock A1–A4); aktive Schritte grün.
+ * Verzweigungen: Alternativ mit einfacher Linie (jeder Zweig mit eigener Transition), parallel mit
+ * Doppellinie; ein Sprung endet als Pfeil mit dem Namen des Ziels.
+ * Mit edit: (+) und anklickbare Bereiche (data-step, data-trans, data-act, data-add-step, data-add-act,
+ * data-fork, data-btrans, data-ptrans, data-add-branch, data-add-first).
+ */
 export function spsSvg(state, { active = [], vars = {}, edit = false } = {}) {
   const st = { ...spsDefault(), ...(state || {}) };
-  const steps = st.steps || [];
+  const graph = spsGraph(st);
+  const flat = graph.flat;
   const CH = 0.19; // Breite eines Zeichens bei 0,36
-  const condW = Math.max(2.2, ...steps.map((s) => String(s.trans ?? '').length * CH + 0.5));
-  const SX = condW + 0.2; // linke Kante der Schritte
   const SW = 1.3;
   const SH = 0.95;
-  const AX = SX + SW + 0.45;
+  const TR = 1.1; // Verbindung mit Transition
   const RH = 0.55; // Zeile im Aktionsblock
+  const GAP = 0.5; // zwischen Zweigen
   const w1 = 0.95;
-  const w2 = Math.max(2.4, ...steps.flatMap((s) => (s.actions || []).map((a) => String(a.text ?? '').length * CH + 0.4)));
-  const w3 = Math.max(1.2, ...steps.flatMap((s) => (s.actions || []).map((a) => String(a.var ?? '').length * CH + 0.4)));
+  const w2 = Math.max(2.4, ...flat.flatMap((s) => (s.actions || []).map((a) => String(a.text ?? '').length * CH + 0.4)));
+  const w3 = Math.max(1.2, ...flat.flatMap((s) => (s.actions || []).map((a) => String(a.var ?? '').length * CH + 0.4)));
   const AW = w1 + w2 + w3;
+  const ink = '#111';
+  const tw = (c) => String(c ?? '').length * CH + 0.5; // Platz für eine Bedingung links der Linie
+  const condText = (c) => String(c ?? '') || (edit ? '(Bedingung)' : '');
   const blockH = (s) => (s.actions || []).reduce((h, a) => h + RH * (String(a.cond ?? '').trim() ? 2 : 1), 0);
-  let y = 0.4;
-  const rows = steps.map((s) => {
-    const h = Math.max(SH, blockH(s));
-    const r = { s, y, h };
-    y += h + 1.1; // Schritt + Verbindung mit Transition
-    return r;
-  });
-  const H = y + 0.6;
-  const W = AX + AW + (edit ? 0.9 : 0.3);
-  // Bearbeiten in der Grafik: (+) für Schritt bzw. Aktion, klickbare Bereiche mit data-…
   const plus = (x, y, attr, title) => (edit ? `<g ${attr} style="cursor:pointer"><title>${escX(title)}</title><circle cx="${r3(x)}" cy="${r3(y)}" r="0.22" fill="#ffffff" stroke="#2563eb" stroke-width="0.03"/>`
     + `<text x="${r3(x)}" y="${r3(y + 0.11)}" font-size="0.32" text-anchor="middle" fill="#2563eb" ${FONT}>+</text></g>` : '');
-  let out = svgOpen(W, H);
-  const cx = SX + SW / 2;
-  const ink = '#111';
-  rows.forEach(({ s, y: top, h }, i) => {
-    const sy = top + (h - SH) / 2;
-    const isOn = active.includes(s.id);
-    out += `<g data-step="${escX(s.id)}">`;
-    out += `<rect x="${r3(SX)}" y="${r3(sy)}" width="${SW}" height="${SH}" fill="${isOn ? '#bbf7d0' : '#ffffff'}" stroke="${ink}" stroke-width="0.04"/>`;
-    if (s.initial) out += `<rect x="${r3(SX + 0.1)}" y="${r3(sy + 0.1)}" width="${r3(SW - 0.2)}" height="${r3(SH - 0.2)}" fill="none" stroke="${ink}" stroke-width="0.03"/>`;
-    out += text(cx, sy + SH / 2 + 0.13, String(s.name ?? ''), { size: 0.36, anchor: 'middle' });
-    out += '</g>';
-    // Verbindung von oben (außer beim ersten) und nach unten mit Transition
-    if (i > 0) out += line(cx, top - 1.1 + rows[i - 1].h, cx, sy, ink, 0.03);
-    const ty = top + h + 0.55;
-    const nextTop = i + 1 < rows.length ? rows[i + 1].y + (rows[i + 1].h - SH) / 2 : ty + 0.45;
-    out += line(cx, sy + SH, cx, nextTop, ink, 0.03);
-    out += line(cx - 0.2, ty, cx + 0.2, ty, ink, 0.05);
-    out += `<g data-trans="${escX(s.id)}"${edit ? ' style="cursor:pointer"' : ''}>`;
-    if (edit) out += `<rect x="0" y="${r3(ty - 0.3)}" width="${r3(cx)}" height="0.6" fill="transparent"/>`;
-    out += text(cx - 0.3, ty + 0.12, String(s.trans ?? '') || (edit ? '(Bedingung)' : ''), { size: 0.34, anchor: 'end', fill: s.trans ? '#222' : '#94a3b8' });
-    out += '</g>';
-    out += plus(cx + 0.55, ty, `data-add-step="${escX(s.id)}"`, 'Schritt danach einfügen');
-    if (i + 1 === rows.length && st.back !== false) {
-      const init = steps.find((x) => x.initial) || steps[0];
-      out += arrow(cx, ty + 0.1, cx, nextTop + 0.05, ink, 0.03, 0.15) + text(cx + 0.15, nextTop + 0.05, init ? String(init.name) : '', { size: 0.3, fill: '#444' });
-    }
-    // Aktionsblock
-    if (!(s.actions || []).length) out += plus(SX + SW + 0.45, sy + SH / 2, `data-add-act="${escX(s.id)}"`, 'Aktion hinzufügen');
-    if ((s.actions || []).length) {
-      const by = top + (h - blockH(s)) / 2;
-      out += line(SX + SW, sy + SH / 2, AX, sy + SH / 2, ink, 0.03);
-      let ay = by;
-      for (const a of s.actions) {
-        // Nur im aktiven Schritt grün: Dieselbe Variable steht oft in mehreren Schritten.
-        const val = isOn && vars[String(a.var ?? '').trim()];
-        const q = `${a.q || ''}${SPS_TIMED.includes(a.q) && a.time ? ` ${a.time}` : ''}`;
-        out += `<g data-act="${escX(s.id)}|${escX(a.id)}"${edit ? ' style="cursor:pointer"' : ''}>`;
-        out += `<rect x="${r3(AX)}" y="${r3(ay)}" width="${r3(AW)}" height="${RH}" fill="${val ? '#bbf7d0' : '#ffffff'}" stroke="${ink}" stroke-width="0.03"/>`;
-        out += line(AX + w1, ay, AX + w1, ay + RH, ink, 0.03) + line(AX + w1 + w2, ay, AX + w1 + w2, ay + RH, ink, 0.03);
-        out += text(AX + 0.08, ay + RH / 2 + 0.11, q, { size: q.length > 4 ? 0.24 : 0.32 });
-        out += text(AX + w1 + w2 / 2, ay + RH / 2 + 0.12, String(a.text ?? ''), { size: 0.32, anchor: 'middle' });
-        out += text(AX + w1 + w2 + w3 / 2, ay + RH / 2 + 0.12, String(a.var ?? ''), { size: 0.32, anchor: 'middle', bold: !!val });
-        out += '</g>';
-        ay += RH;
-        if (String(a.cond ?? '').trim()) {
-          out += `<rect x="${r3(AX)}" y="${r3(ay)}" width="${r3(AW)}" height="${RH}" fill="#ffffff" stroke="${ink}" stroke-width="0.03"/>`;
-          out += text(AX + AW / 2, ay + RH / 2 + 0.12, String(a.cond), { size: 0.3, anchor: 'middle' });
-          ay += RH;
+  const initName = () => String((flat.find((x) => x.initial) || flat[0])?.name ?? '');
+  /** Transition an (x, y): Strich, Bedingung links, klickbar über `attr`. */
+  const transMark = (x, y, c, attr) => {
+    let o = line(x - 0.2, y, x + 0.2, y, ink, 0.05);
+    o += `<g ${attr}${edit ? ' style="cursor:pointer"' : ''}>`;
+    if (edit) o += `<rect x="${r3(x - tw(condText(c)) - 0.2)}" y="${r3(y - 0.3)}" width="${r3(tw(condText(c)) + 0.4)}" height="0.6" fill="transparent"/>`;
+    o += text(x - 0.3, y + 0.12, condText(c), { size: 0.34, anchor: 'end', fill: c ? '#222' : '#94a3b8' });
+    return `${o}</g>`;
+  };
+  const jumpMark = (x, y, name) => arrow(x, y, x, y + 0.5, ink, 0.03, 0.15) + text(x + 0.15, y + 0.5, String(name ?? ''), { size: 0.3, fill: '#444' });
+
+  // Jedes Teil: { w, h, cx, draw(ox, oy) } – die Linie kommt bei (ox+cx, oy) an und geht bei (ox+cx, oy+h) weiter.
+  function stepBox(s) {
+    const own = graph.uses.has(s.id);
+    const hh = Math.max(SH, blockH(s));
+    const L = SW / 2 + (own ? Math.max(1.2, tw(condText(s.trans))) : 0.3);
+    const R = SW / 2 + ((s.actions || []).length ? 0.45 + AW + (edit ? 0.7 : 0.1) : (edit ? 0.8 : 0.2));
+    const H = hh + (own ? TR : 0.45);
+    return {
+      w: L + R, h: H, cx: L,
+      draw(ox, oy) {
+        const cx = ox + L;
+        const SX = cx - SW / 2;
+        const sy = oy + (hh - SH) / 2;
+        const isOn = active.includes(s.id);
+        let o = '';
+        if (sy > oy) o += line(cx, oy, cx, sy, ink, 0.03);
+        o += `<g data-step="${escX(s.id)}">`;
+        o += `<rect x="${r3(SX)}" y="${r3(sy)}" width="${SW}" height="${SH}" fill="${isOn ? '#bbf7d0' : '#ffffff'}" stroke="${ink}" stroke-width="0.04"/>`;
+        if (s.initial) o += `<rect x="${r3(SX + 0.1)}" y="${r3(sy + 0.1)}" width="${r3(SW - 0.2)}" height="${r3(SH - 0.2)}" fill="none" stroke="${ink}" stroke-width="0.03"/>`;
+        o += text(cx, sy + SH / 2 + 0.13, String(s.name ?? ''), { size: 0.36, anchor: 'middle' });
+        o += '</g>';
+        o += line(cx, sy + SH, cx, oy + H, ink, 0.03);
+        if (own) {
+          const ty = oy + hh + TR / 2;
+          o += transMark(cx, ty, s.trans, `data-trans="${escX(s.id)}"`);
+          o += plus(cx + 0.55, ty, `data-add-step="${escX(s.id)}"`, 'Schritt danach einfügen');
+        } else o += plus(cx + 0.55, oy + hh + 0.22, `data-add-step="${escX(s.id)}"`, 'Schritt danach einfügen');
+        // Aktionsblock
+        const AX = SX + SW + 0.45;
+        if (!(s.actions || []).length) o += plus(AX, sy + SH / 2, `data-add-act="${escX(s.id)}"`, 'Aktion hinzufügen');
+        else {
+          o += line(SX + SW, sy + SH / 2, AX, sy + SH / 2, ink, 0.03);
+          let ay = oy + (hh - blockH(s)) / 2;
+          for (const a of s.actions) {
+            // Nur im aktiven Schritt grün: Dieselbe Variable steht oft in mehreren Schritten.
+            const val = isOn && vars[String(a.var ?? '').trim()];
+            const q = `${a.q || ''}${SPS_TIMED.includes(a.q) && a.time ? ` ${a.time}` : ''}`;
+            o += `<g data-act="${escX(s.id)}|${escX(a.id)}"${edit ? ' style="cursor:pointer"' : ''}>`;
+            o += `<rect x="${r3(AX)}" y="${r3(ay)}" width="${r3(AW)}" height="${RH}" fill="${val ? '#bbf7d0' : '#ffffff'}" stroke="${ink}" stroke-width="0.03"/>`;
+            o += line(AX + w1, ay, AX + w1, ay + RH, ink, 0.03) + line(AX + w1 + w2, ay, AX + w1 + w2, ay + RH, ink, 0.03);
+            o += text(AX + 0.08, ay + RH / 2 + 0.11, q, { size: q.length > 4 ? 0.24 : 0.32 });
+            o += text(AX + w1 + w2 / 2, ay + RH / 2 + 0.12, String(a.text ?? ''), { size: 0.32, anchor: 'middle' });
+            o += text(AX + w1 + w2 + w3 / 2, ay + RH / 2 + 0.12, String(a.var ?? ''), { size: 0.32, anchor: 'middle', bold: !!val });
+            o += '</g>';
+            ay += RH;
+            if (String(a.cond ?? '').trim()) {
+              o += `<rect x="${r3(AX)}" y="${r3(ay)}" width="${r3(AW)}" height="${RH}" fill="#ffffff" stroke="${ink}" stroke-width="0.03"/>`;
+              o += text(AX + AW / 2, ay + RH / 2 + 0.12, String(a.cond), { size: 0.3, anchor: 'middle' });
+              ay += RH;
+            }
+          }
+          o += plus(AX + AW + 0.4, ay - RH / 2, `data-add-act="${escX(s.id)}"`, 'Aktion hinzufügen');
         }
-      }
-      out += plus(AX + AW + 0.4, ay - RH / 2, `data-add-act="${escX(s.id)}"`, 'Aktion hinzufügen');
-    }
-  });
+        return o;
+      },
+    };
+  }
+
+  function seqBox(list) {
+    const boxes = (Array.isArray(list) ? list : []).filter((el) => el && typeof el === 'object')
+      .map((el) => (el.type === 'alt' ? altBox(el) : el.type === 'par' ? parBox(el) : stepBox(el)));
+    if (!boxes.length) return { w: 0.8, h: 0, cx: 0.4, draw: () => '' };
+    const L = Math.max(...boxes.map((b) => b.cx));
+    const R = Math.max(...boxes.map((b) => b.w - b.cx));
+    return {
+      w: L + R, h: boxes.reduce((sum, b) => sum + b.h, 0), cx: L,
+      draw(ox, oy) {
+        let y = oy;
+        let o = '';
+        for (const b of boxes) { o += b.draw(ox + L - b.cx, y); y += b.h; }
+        return o;
+      },
+    };
+  }
+
+  /** Zweige nebeneinander: Spalten mit Linie bei cols[i].x (relativ), Breite gesamt. */
+  function columns(branches, head) {
+    let x = 0;
+    const cols = branches.map((b, i) => {
+      const inner = seqBox(b.steps);
+      const L = Math.max(inner.cx, head(b, i), 0.5);
+      const R = Math.max(inner.w - inner.cx, edit ? 0.9 : 0.4);
+      const col = { b, inner, x: x + L };
+      x += L + R + GAP;
+      return col;
+    });
+    return { cols, w: Math.max(0.8, x - GAP) };
+  }
+
+  function altBox(el) {
+    const branches = el.branches || [];
+    const { cols, w } = columns(branches, (b) => tw(condText(b.trans)) + 0.2);
+    const inH = Math.max(0, ...cols.map((c) => c.inner.h));
+    const anyJoin = cols.some((c) => !String(c.b.jump ?? '').trim());
+    const H = 0.15 + TR + inH + (anyJoin ? 0.35 + 0.35 : 0.6);
+    const cx0 = cols[0]?.x ?? 0.4;
+    return {
+      w: w + (edit ? 0.5 : 0), h: H, cx: cx0,
+      draw(ox, oy) {
+        const yd = oy + 0.15;
+        let o = line(ox + cx0, oy, ox + cx0, yd, ink, 0.03);
+        const xs = cols.map((c) => ox + c.x);
+        // Auseinander: einfache Linie (anklickbar: Verzweigung bearbeiten)
+        o += `<g data-fork="${escX(el.id)}"${edit ? ' style="cursor:pointer"' : ''}>`;
+        if (edit) o += `<rect x="${r3(Math.min(...xs, ox + cx0) - 0.1)}" y="${r3(yd - 0.15)}" width="${r3(Math.max(...xs, ox + cx0) - Math.min(...xs, ox + cx0) + 0.2)}" height="0.3" fill="transparent"/>`;
+        o += line(Math.min(...xs, ox + cx0), yd, Math.max(...xs, ox + cx0), yd, ink, 0.04);
+        o += '</g>';
+        o += plus(Math.max(...xs) + 0.45, yd, `data-add-branch="${escX(el.id)}"`, 'Zweig hinzufügen');
+        const yc = yd + TR + inH + 0.35;
+        const joins = [];
+        for (const c of cols) {
+          const x = ox + c.x;
+          o += line(x, yd, x, yd + TR, ink, 0.03);
+          o += transMark(x, yd + TR / 2, c.b.trans, `data-btrans="${escX(el.id)}|${escX(c.b.id)}"`);
+          o += c.inner.draw(x - c.inner.cx, yd + TR);
+          const end = yd + TR + c.inner.h;
+          if (!(c.b.steps || []).length) o += plus(x + 0.45, end - 0.1 > yd + TR / 2 + 0.3 ? end - 0.1 : yd + TR - 0.15, `data-add-first="${escX(el.id)}|${escX(c.b.id)}"`, 'Schritt in den Zweig');
+          const jump = String(c.b.jump ?? '').trim();
+          if (jump) o += jumpMark(x, end, jump);
+          else { o += line(x, end, x, yc, ink, 0.03); joins.push(x); }
+        }
+        // Zusammen: einfache Linie, weiter auf der Linie des ersten Zweigs
+        if (anyJoin) {
+          o += line(Math.min(...joins, ox + cx0), yc, Math.max(...joins, ox + cx0), yc, ink, 0.04);
+          o += line(ox + cx0, yc, ox + cx0, oy + H, ink, 0.03);
+        }
+        return o;
+      },
+    };
+  }
+
+  function parBox(el) {
+    const branches = el.branches || [];
+    const { cols, w } = columns(branches, (b, i) => (i === 0 ? tw(condText(el.trans)) + 0.2 : 0.5));
+    const inH = Math.max(0, ...cols.map((c) => c.inner.h));
+    const H = 0.2 + 0.08 + 0.3 + inH + 0.3 + 0.08 + TR;
+    const cx0 = cols[0]?.x ?? 0.4;
+    return {
+      w: w + (edit ? 0.5 : 0), h: H, cx: cx0,
+      draw(ox, oy) {
+        const xs = cols.map((c) => ox + c.x);
+        const x1 = Math.min(...xs, ox + cx0) - 0.15;
+        const x2 = Math.max(...xs, ox + cx0) + 0.15;
+        const dbl = (y) => line(x1, y, x2, y, ink, 0.035) + line(x1, y + 0.08, x2, y + 0.08, ink, 0.035);
+        const yt = oy + 0.2;
+        let o = line(ox + cx0, oy, ox + cx0, yt, ink, 0.03);
+        o += `<g data-fork="${escX(el.id)}"${edit ? ' style="cursor:pointer"' : ''}>`;
+        if (edit) o += `<rect x="${r3(x1)}" y="${r3(yt - 0.12)}" width="${r3(x2 - x1)}" height="0.32" fill="transparent"/>`;
+        o += `${dbl(yt)}</g>`;
+        o += plus(x2 + 0.35, yt + 0.04, `data-add-branch="${escX(el.id)}"`, 'Zweig hinzufügen');
+        const yb = yt + 0.08 + 0.3 + inH + 0.3;
+        for (const c of cols) {
+          const x = ox + c.x;
+          const top = yt + 0.08;
+          o += line(x, top, x, top + 0.3, ink, 0.03);
+          o += c.inner.draw(x - c.inner.cx, top + 0.3);
+          if (!(c.b.steps || []).length) o += plus(x + 0.45, top + 0.3, `data-add-first="${escX(el.id)}|${escX(c.b.id)}"`, 'Schritt in den Zweig');
+          o += line(x, top + 0.3 + c.inner.h, x, yb, ink, 0.03);
+        }
+        o += dbl(yb);
+        const ty = yb + 0.08 + TR / 2;
+        o += line(ox + cx0, yb + 0.08, ox + cx0, oy + H, ink, 0.03);
+        o += transMark(ox + cx0, ty, el.trans, `data-ptrans="${escX(el.id)}"`);
+        return o;
+      },
+    };
+  }
+
+  const root = seqBox(st.steps);
+  const last = (st.steps || [])[st.steps.length - 1];
+  const open = !(last?.type === 'alt' && (last.branches || []).every((b) => String(b.jump ?? '').trim()));
+  const back = st.back !== false && open && flat.length > 0;
+  const W = root.w + 0.5;
+  const H = 0.4 + root.h + (back ? 0.8 : 0.3);
+  let out = svgOpen(W, H);
+  out += root.draw(0.2, 0.4);
+  if (back) out += jumpMark(0.2 + root.cx, 0.4 + root.h, initName());
   return `${out}</svg>`;
 }
 

@@ -4,9 +4,11 @@
 // ▶ Start, ⏸, ⟲. Zuordnungstabelle: IN/OUT/Merker mit Symbol, Adresse, Beschreibung, Kontaktart
 // (Schließer, Öffner, rastend) – Eingänge hier betätigen, Ausgänge leuchten. Darunter die Schritte mit
 // Aktionsblöcken (Bestimmungszeichen, Zeit, Aktionsname, Aktorvariable, Zuweisungsbedingung) und
-// Transitionen. Rechnen und Zeichnen: lab-core.js (spsCycle, spsSvg). Später rechts: die Anlage (Physik).
+// Transitionen. Verzweigungen (alternativ, parallel) und Sprünge entstehen in der Grafik: Schritt antippen →
+// „⑂ Alternativ danach“ / „⫴ Parallel danach“; Linie der Verzweigung antippen → Zweige, Sprungziel.
+// Rechnen und Zeichnen: lab-core.js (spsGraph, spsCycle, spsSvg). Später rechts: die Anlage (Physik).
 
-import { spsSvg, spsInit, spsCycle, spsCheck, spsInputSignal, SPS_QUALIFIERS, SPS_TIMED } from './lab-core.js';
+import { spsSvg, spsInit, spsCycle, spsCheck, spsInputSignal, spsFlat, spsLocate, spsGraph, SPS_QUALIFIERS, SPS_TIMED } from './lab-core.js';
 import { h, field } from './labs.js';
 
 const clone = (v) => JSON.parse(JSON.stringify(v));
@@ -32,8 +34,17 @@ export function mount(el, { state, mode, onChange, say = () => {} }) {
   const changed = () => { onChange(clone(st)); if (rt) restart(); renderAll(); };
   const io = () => (st.io ||= []);
   const steps = () => (st.steps ||= []);
-  const can = (x) => teacher || !x?.locked;
+  const allSteps = () => spsFlat(st);
+  // Fest (🔒) ist ein Eintrag auch, wenn die Verzweigung, in der er steht, fest ist.
+  const can = (x) => teacher || !(x?.locked || (x?.id && (spsLocate(st, x.id)?.parents || []).some((p) => p.locked)));
   const uid = (p) => `${p}${Math.random().toString(36).slice(2, 7)}`;
+  /** Neuer Schritt mit freiem Namen S_n (`also`: Schritte, die noch nicht in der Kette stehen). */
+  const newStep = (...also) => {
+    const used = new Set([...allSteps(), ...also].map((x) => String(x.name ?? '').trim()));
+    let n = allSteps().length + also.length + 1;
+    while (used.has(`S_${n}`)) n++;
+    return { id: uid('s'), name: `S_${n}`, trans: '', actions: [] };
+  };
 
   const bar = h('div', { class: 'lab-row lab-tools sps-run' });
   const canvas = h('div', { class: 'lab-canvas sps-canvas', title: 'Schritt antippen: unten bearbeiten' });
@@ -82,14 +93,36 @@ export function mount(el, { state, mode, onChange, say = () => {} }) {
       popAction(s0, (s0?.actions || []).find((a) => a.id === aid), e);
     }));
     canvas.querySelectorAll('[data-add-step]').forEach((g) => g.addEventListener('click', (e) => {
-      const i = steps().findIndex((x) => x.id === g.dataset.addStep);
-      const used = new Set(steps().map((x) => x.name));
-      let n = steps().length + 1;
-      while (used.has(`S_${n}`)) n++;
-      const ns = { id: uid('s'), name: `S_${n}`, trans: '', actions: [] };
-      steps().splice(i + 1, 0, ns);
+      const loc = spsLocate(st, g.dataset.addStep);
+      if (!loc?.list || !can(loc.el)) return;
+      loc.list.splice(loc.index + 1, 0, newStep());
       changed();
-      popTrans(byStep(g.dataset.addStep), e, true);
+      const s0 = byStep(g.dataset.addStep);
+      if (spsGraph(st).uses.has(s0?.id)) popTrans(s0, e, true);
+    }));
+    // Verzweigungen: Linie antippen, Transition eines Zweigs, Synchronisation, Zweig dazu, erster Schritt
+    canvas.querySelectorAll('[data-fork]').forEach((g) => g.addEventListener('click', (e) => popFork(spsLocate(st, g.dataset.fork)?.el, e)));
+    canvas.querySelectorAll('[data-btrans]').forEach((g) => g.addEventListener('click', (e) => {
+      const [fid, bid] = g.dataset.btrans.split('|');
+      const fork = spsLocate(st, fid)?.el;
+      popBranch(fork, (fork?.branches || []).find((b) => b.id === bid), e);
+    }));
+    canvas.querySelectorAll('[data-ptrans]').forEach((g) => g.addEventListener('click', (e) => popSync(spsLocate(st, g.dataset.ptrans)?.el, e)));
+    canvas.querySelectorAll('[data-add-branch]').forEach((g) => g.addEventListener('click', (e) => {
+      const fork = spsLocate(st, g.dataset.addBranch)?.el;
+      if (!fork || !can(fork)) return;
+      const b = { id: uid('b'), ...(fork.type === 'alt' ? { trans: '' } : {}), steps: [newStep()] };
+      fork.branches.push(b);
+      changed();
+      if (fork.type === 'alt') popBranch(fork, b, e);
+    }));
+    canvas.querySelectorAll('[data-add-first]').forEach((g) => g.addEventListener('click', () => {
+      const [fid, bid] = g.dataset.addFirst.split('|');
+      const fork = spsLocate(st, fid)?.el;
+      const b = (fork?.branches || []).find((x) => x.id === bid);
+      if (!b || !can(fork)) return;
+      (b.steps ||= []).unshift(newStep());
+      changed();
     }));
     canvas.querySelectorAll('[data-add-act]').forEach((g) => g.addEventListener('click', (e) => {
       const s0 = byStep(g.dataset.addAct);
@@ -100,7 +133,7 @@ export function mount(el, { state, mode, onChange, say = () => {} }) {
       popAction(s0, a, e);
     }));
     if (rt) {
-      const act = steps().filter((s) => rt.active.includes(s.id)).map((s) => `${s.name} (${((rt.t - rt.since[s.id]) / 1000).toFixed(1)} s)`);
+      const act = allSteps().filter((s) => rt.active.includes(s.id)).map((s) => `${s.name} (${((rt.t - rt.since[s.id]) / 1000).toFixed(1)} s)`);
       status.textContent = rt.error ? `⚠️ ${rt.error}` : `Aktiv: ${act.join(', ') || '–'}`;
       status.classList.toggle('sps-err', !!rt.error);
     } else {
@@ -115,7 +148,7 @@ export function mount(el, { state, mode, onChange, say = () => {} }) {
   }
 
   // ---------- Bearbeiten in der Grafik (kleines Feld an der angetippten Stelle) ----------
-  const byStep = (id) => steps().find((x) => x.id === id) || null;
+  const byStep = (id) => allSteps().find((x) => x.id === id) || null;
   let pop = null;
   const closePop = () => { pop?.remove(); pop = null; };
   function openPop(e, title, ...rows) {
@@ -131,7 +164,7 @@ export function mount(el, { state, mode, onChange, say = () => {} }) {
     pop.querySelector('input, select')?.focus();
   }
   // Vorschläge für Bedingungen: Eingänge, Merker, Zeitglieder (.Q), Schritte (.X)
-  const condWords = () => [...io().filter((x) => x.name).map((x) => (x.kind === 'tim' ? `${x.name}.Q` : x.name)), ...steps().map((x) => `${x.name}.X`), 'AND', 'OR', 'NOT'];
+  const condWords = () => [...io().filter((x) => x.name).map((x) => (x.kind === 'tim' ? `${x.name}.Q` : x.name)), ...allSteps().map((x) => `${x.name}.X`), 'AND', 'OR', 'NOT'];
   function condField(value, onSet, placeholder) {
     const listId = uid('dl');
     const inp = field(value ?? '', (v) => onSet(v.trim()), { size: 28, placeholder, list: listId });
@@ -144,26 +177,87 @@ export function mount(el, { state, mode, onChange, say = () => {} }) {
     return [inp, h('datalist', { id: listId }, ...condWords().map((w) => h('option', { value: w }))), chips, apply];
   }
   function popTrans(s0, e, fresh = false) {
-    if (!s0) return;
-    const i = steps().indexOf(s0);
-    const next = i + 1 < steps().length ? steps()[i + 1] : (steps().find((x) => x.initial) || steps()[0]);
-    if (!can(s0)) return;
-    openPop(e, `${fresh ? 'Neuer Schritt – ' : ''}Transition ${s0.name} → ${next?.name || ''}`,
+    if (!s0 || !can(s0)) return;
+    openPop(e, `${fresh ? 'Neuer Schritt – ' : ''}Transition ${s0.name} → ${targetsOf(s0.id)}`,
       ...condField(s0.trans, (v) => { s0.trans = v; changed(); }, 'z. B. SF1 AND NOT B2 oder tonT1.Q'));
+  }
+  /** Namen der Schritte, zu denen die Transition nach `id` führt. */
+  function targetsOf(id) {
+    const g = spsGraph(st);
+    const t = g.trans.find((x) => x.from.includes(id));
+    return t ? t.to.map((x) => g.flat.find((s) => s.id === x)?.name).join(', ') : '–';
   }
   function popStep(s0, e) {
     if (!s0) return;
     const ok = can(s0);
-    const i = steps().indexOf(s0);
-    const move = (d) => { const l = steps(); const j = i + d; if (j < 0 || j >= l.length) return; [l[i], l[j]] = [l[j], l[i]]; changed(); closePop(); };
+    const loc = spsLocate(st, s0.id);
+    const list = loc?.list || steps();
+    const i = list.indexOf(s0);
+    const move = (d) => { const j = i + d; if (j < 0 || j >= list.length) return; [list[i], list[j]] = [list[j], list[i]]; changed(); closePop(); };
+    // Verzweigung hinter dem Schritt: zwei Zweige mit je einem neuen Schritt; was danach kam, folgt der Zusammenführung.
+    const branchAfter = (type) => {
+      const a = newStep();
+      const b = newStep(a);
+      const fork = type === 'alt'
+        ? { id: uid('v'), type, branches: [{ id: uid('b'), trans: s0.trans || '', steps: [a] }, { id: uid('b'), trans: '', steps: [b] }] }
+        : { id: uid('v'), type, trans: '', branches: [{ id: uid('b'), steps: [a] }, { id: uid('b'), steps: [b] }] };
+      if (type === 'alt') s0.trans = '';
+      list.splice(i + 1, 0, fork);
+      changed();
+      closePop();
+      say(type === 'alt' ? '⑂ Alternativverzweigung: Transitionen an den Zweigen eintragen (antippen).' : '⫴ Parallelverzweigung: Transition davor und nach der Synchronisation eintragen.');
+    };
     openPop(e, `Schritt ${s0.name}`,
       h('div', { class: 'lab-row' }, h('span', { text: 'Name ' }), field(s0.name ?? '', (v) => { s0.name = v.trim(); changed(); }, { size: 6, disabled: !ok })),
-      h('label', { class: 'lab-check' }, h('input', { type: 'checkbox', checked: !!s0.initial, disabled: !ok, onchange: (ev) => { steps().forEach((x) => { delete x.initial; }); if (ev.target.checked) s0.initial = true; changed(); } }), ' Initialschritt'),
+      h('label', { class: 'lab-check' }, h('input', { type: 'checkbox', checked: !!s0.initial, disabled: !ok, onchange: (ev) => { allSteps().forEach((x) => { delete x.initial; }); if (ev.target.checked) s0.initial = true; changed(); } }), ' Initialschritt'),
       h('div', { class: 'lab-row' },
         h('button', { type: 'button', class: 'lab-mini', disabled: !ok || i === 0, onclick: () => move(-1) }, '↑ nach oben'),
-        h('button', { type: 'button', class: 'lab-mini', disabled: !ok || i === steps().length - 1, onclick: () => move(1) }, '↓ nach unten'),
-        h('button', { type: 'button', class: 'lab-mini', disabled: !ok, onclick: () => { (s0.actions ||= []).push({ id: uid('a'), q: 'N', time: '', text: '', var: '', cond: '' }); changed(); closePop(); } }, '+ Aktion'),
-        ok && steps().length > 1 ? h('button', { type: 'button', class: 'lab-mini lab-del', onclick: () => { st.steps = steps().filter((x) => x !== s0); changed(); closePop(); } }, '✕ Schritt löschen') : null));
+        h('button', { type: 'button', class: 'lab-mini', disabled: !ok || i === list.length - 1, onclick: () => move(1) }, '↓ nach unten'),
+        h('button', { type: 'button', class: 'lab-mini', disabled: !ok, onclick: () => { (s0.actions ||= []).push({ id: uid('a'), q: 'N', time: '', text: '', var: '', cond: '' }); changed(); closePop(); } }, '+ Aktion')),
+      h('div', { class: 'lab-row' },
+        h('button', { type: 'button', class: 'lab-mini', disabled: !ok, title: 'Danach geht es je nach Bedingung in einen von mehreren Zweigen (ODER) – mit Sprung auch zurück', onclick: () => branchAfter('alt') }, '⑂ Alternativ danach'),
+        h('button', { type: 'button', class: 'lab-mini', disabled: !ok, title: 'Danach laufen mehrere Zweige gleichzeitig (UND), weiter erst, wenn alle fertig sind', onclick: () => branchAfter('par') }, '⫴ Parallel danach')),
+      ok && allSteps().length > 1 ? h('div', { class: 'lab-row' }, h('button', { type: 'button', class: 'lab-mini lab-del', onclick: () => { list.splice(list.indexOf(s0), 1); changed(); closePop(); } }, '✕ Schritt löschen')) : null);
+  }
+  /** Linie einer Verzweigung: Zweig dazu, festlegen, ganze Verzweigung löschen. */
+  function popFork(fork, e) {
+    if (!fork) return;
+    const ok = can(fork);
+    const loc = spsLocate(st, fork.id);
+    const alt = fork.type === 'alt';
+    openPop(e, alt ? '⑂ Alternativverzweigung (ODER)' : '⫴ Parallelverzweigung (UND)',
+      h('div', { class: 'lab-hint', text: alt ? 'Je Zweig eine Transition – es geht in den ersten Zweig, dessen Bedingung erfüllt ist (links hat Vorrang). Zweig antippen: Bedingung, Sprung.'
+        : 'Alle Zweige starten zugleich. Weiter geht es erst, wenn in jedem Zweig der letzte Schritt aktiv ist und die Transition darunter erfüllt ist.' }),
+      h('div', { class: 'lab-row' },
+        h('button', { type: 'button', class: 'lab-mini', disabled: !ok, onclick: () => { fork.branches.push({ id: uid('b'), ...(alt ? { trans: '' } : {}), steps: [newStep()] }); changed(); closePop(); } }, '+ Zweig'),
+        teacher ? h('button', { type: 'button', class: `lab-mini${fork.locked ? ' lab-on' : ''}`, title: 'Für Schüler festlegen (mit allem darin)', onclick: () => { fork.locked = !fork.locked; if (!fork.locked) delete fork.locked; changed(); closePop(); } }, fork.locked ? '🔒 fest' : '🔓 festlegen') : null,
+        ok ? h('button', { type: 'button', class: 'lab-mini lab-del', onclick: () => {
+          if (!confirm('Die Verzweigung mit allen Schritten darin löschen?')) return;
+          loc.list.splice(loc.index, 1);
+          changed();
+          closePop();
+        } }, '✕ Verzweigung löschen') : null));
+  }
+  /** Zweig einer Alternativverzweigung: Transition, Sprungziel, Schritt am Anfang, löschen. */
+  function popBranch(fork, b, e) {
+    if (!fork || !b) return;
+    const ok = can(fork);
+    const k = fork.branches.indexOf(b);
+    const names = allSteps().map((x) => String(x.name ?? '').trim()).filter(Boolean);
+    openPop(e, `Zweig ${k + 1} – Transition`,
+      ...(ok ? condField(b.trans, (v) => { b.trans = v; changed(); }, 'z. B. B1 AND NOT B2') : [h('span', { text: b.trans || '–' })]),
+      h('div', { class: 'lab-row' }, h('span', { text: 'Am Ende ' }),
+        h('select', { disabled: !ok, title: 'Zusammenführen oder zu einem Schritt springen (z. B. zurück für eine Schleife)', onchange: (ev) => { if (ev.target.value) b.jump = ev.target.value; else delete b.jump; changed(); } },
+          h('option', { value: '', selected: !b.jump }, 'zusammenführen'),
+          ...names.map((n) => h('option', { value: n, selected: b.jump === n }, `Sprung zu ${n}`)))),
+      h('div', { class: 'lab-row' },
+        h('button', { type: 'button', class: 'lab-mini', disabled: !ok, onclick: () => { (b.steps ||= []).unshift(newStep()); changed(); closePop(); } }, '+ Schritt am Anfang'),
+        ok && fork.branches.length > 1 ? h('button', { type: 'button', class: 'lab-mini lab-del', onclick: () => { fork.branches.splice(k, 1); changed(); closePop(); } }, '✕ Zweig löschen') : null));
+  }
+  /** Transition nach der Synchronisation einer Parallelverzweigung. */
+  function popSync(fork, e) {
+    if (!fork || !can(fork)) return;
+    openPop(e, 'Transition nach der Synchronisation', ...condField(fork.trans, (v) => { fork.trans = v; changed(); }, 'z. B. B3 AND B4'));
   }
   function popAction(s0, a, e) {
     if (!s0 || !a) return;
@@ -243,10 +337,12 @@ export function mount(el, { state, mode, onChange, say = () => {} }) {
   }
 
   // ---------- Schritte ----------
-  function stepEditor(s, i) {
+  function stepEditor(s, uses) {
     const ok = can(s);
     const varList = io().filter((x) => x.kind !== 'in' && x.name).map((x) => String(x.name).trim());
-    const move = (d) => () => { const l = steps(); const j = i + d; if (j < 0 || j >= l.length) return; [l[i], l[j]] = [l[j], l[i]]; changed(); };
+    const l = spsLocate(st, s.id)?.list || steps();
+    const i = l.indexOf(s);
+    const move = (d) => () => { const j = i + d; if (j < 0 || j >= l.length) return; [l[i], l[j]] = [l[j], l[i]]; changed(); };
     const actRows = (s.actions || []).map((a) => {
       const timed = SPS_TIMED.includes(a.q);
       return h('tr', {},
@@ -268,25 +364,27 @@ export function mount(el, { state, mode, onChange, say = () => {} }) {
     return h('div', { class: `sps-step${selStep === s.id ? ' lab-sel' : ''}`, 'data-edit': s.id },
       h('div', { class: 'lab-row' },
         field(s.name ?? '', (v) => { s.name = v.trim(); changed(); }, { size: 5, disabled: !ok, class: 'lab-name', title: 'Schrittname' }),
-        h('label', { class: 'lab-check', title: 'Initialschritt: nach dem Start aktiv (doppelt umrandet)' }, h('input', { type: 'checkbox', checked: !!s.initial, disabled: !ok, onchange: (e) => { steps().forEach((x) => { delete x.initial; }); if (e.target.checked) s.initial = true; changed(); } }), ' Initialschritt'),
+        h('label', { class: 'lab-check', title: 'Initialschritt: nach dem Start aktiv (doppelt umrandet)' }, h('input', { type: 'checkbox', checked: !!s.initial, disabled: !ok, onchange: (e) => { allSteps().forEach((x) => { delete x.initial; }); if (e.target.checked) s.initial = true; changed(); } }), ' Initialschritt'),
         h('span', { style: { flex: '1' } }),
         h('button', { type: 'button', class: 'lab-mini', title: 'Nach oben', disabled: !ok || i === 0, onclick: move(-1) }, '↑'),
-        h('button', { type: 'button', class: 'lab-mini', title: 'Nach unten', disabled: !ok || i === steps().length - 1, onclick: move(1) }, '↓'),
+        h('button', { type: 'button', class: 'lab-mini', title: 'Nach unten', disabled: !ok || i === l.length - 1, onclick: move(1) }, '↓'),
         teacher ? h('button', { type: 'button', class: `lab-mini${s.locked ? ' lab-on' : ''}`, title: s.locked ? 'Für Schüler fest' : 'Für Schüler festlegen', onclick: () => { s.locked = !s.locked; if (!s.locked) delete s.locked; changed(); } }, s.locked ? '🔒' : '🔓') : (s.locked ? h('span', { text: '🔒' }) : null),
-        ok ? h('button', { type: 'button', class: 'lab-mini lab-del', title: 'Schritt löschen', onclick: () => { st.steps = steps().filter((x) => x !== s); changed(); } }, '✕') : null),
+        ok ? h('button', { type: 'button', class: 'lab-mini lab-del', title: 'Schritt löschen', onclick: () => { l.splice(l.indexOf(s), 1); changed(); } }, '✕') : null),
       actRows.length ? h('table', { class: 'lab-table sps-acts' },
         h('thead', {}, h('tr', {}, ...['A1', 'Zeit', 'A2 Aktion', 'A3 Variable', 'A4 Bedingung', ''].map((t) => h('th', { text: t })))),
         h('tbody', {}, ...actRows)) : null,
       ok ? h('button', { type: 'button', class: 'lab-mini', onclick: () => { (s.actions ||= []).push({ id: uid('a'), q: 'N', time: '', text: '', var: varList[0] || '', cond: '' }); changed(); } }, '+ Aktion') : null,
-      h('div', { class: 'lab-row sps-trans' }, h('span', { class: 'lab-label', text: i + 1 < steps().length ? `Transition → ${steps()[i + 1].name}:` : `Transition → ${(steps().find((x) => x.initial) || steps()[0])?.name || ''}:` }),
-        field(s.trans ?? '', (v) => { s.trans = v.trim(); changed(); }, { size: 26, disabled: !ok, placeholder: 'z. B. S1 AND NOT B2 oder S_2.T >= T#3s' })));
+      uses.has(s.id) ? h('div', { class: 'lab-row sps-trans' }, h('span', { class: 'lab-label', text: `Transition → ${targetsOf(s.id)}:` }),
+        field(s.trans ?? '', (v) => { s.trans = v.trim(); changed(); }, { size: 26, disabled: !ok, placeholder: 'z. B. S1 AND NOT B2 oder S_2.T >= T#3s' }))
+        : h('div', { class: 'lab-hint', text: 'Transition an der Verzweigung (in der Grafik)' }));
   }
 
   function renderPanel() {
-    const list = steps().map(stepEditor);
+    const uses = spsGraph(st).uses;
+    const list = allSteps().map((s) => stepEditor(s, uses));
     const addStep = () => {
-      const n = steps().length + 1;
-      steps().push({ id: uid('s'), name: `S_${n}`, trans: '', actions: [], ...(n === 1 ? { initial: true } : {}) });
+      const first = !allSteps().length;
+      steps().push({ ...newStep(), ...(first ? { initial: true } : {}) });
       changed();
     };
     panel.replaceChildren(ioTable(),

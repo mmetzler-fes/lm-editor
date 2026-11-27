@@ -15,6 +15,7 @@ Im Druck erscheint das Bild der Vorgabe.
 | `bode`      | Amplituden- und Phasengang            | `params: [{ name, value }]`, `curves: [{ name, expr }]`, `fmin`, `fmax`, `dbmin`, `dbmax`, `phase` |
 | `ortskurve` | Ortskurve in der komplexen Ebene      | `params`, `curves`, `var` (Laufparameter), `from`, `to`, `log`, `unit`, `cursor` |
 | `logik`     | Logikschaltung nach DIN EN 60617      | `parts: [{ id, type: in\|out\|and\|or\|not\|nand\|nor\|xor\|xnor, x, y, n, label }]`, `wires: [{ from, to, pin }]`, `lockAll` |
+| `sps`       | Ablaufkette nach IEC 61131-3 (SPS)    | `io: [{ id, kind: in\|out\|mem\|tim, name, addr, desc, contact }]`, `steps: [Schritt \| { type: 'alt', branches: [{ id, trans, steps, jump? }] } \| { type: 'par', branches: [{ id, steps }], trans }]`, `back` – Schritt `{ id, name, initial, trans, actions: [{ q, time, text, var, cond }] }` |
 
 Formeln (alle Labore): `3 + j4`, `5∠30°`, `10k`, `4,7µ`, `R || X` (parallel), `abs`, `arg` (Grad), `conj`,
 `re`, `im`, `sqrt`, `exp`, `ln`, `lg`, `sin`/`cos`/`tan` (Grad), `polar(r; φ)`, `par(a; b)`, `db(x)`;
@@ -25,7 +26,7 @@ Bode/Ortskurve zusätzlich `f`, `w` (= ω) und `s` (= jω).
 - `src/labs/lab-core.js` – Rechnen und Zeichnen (SVG), **ohne import und ohne DOM**: Der Server von
   LearningModules lädt dieselbe Datei für Prüfung und Druck (`src/worksheets/docspec.ts`).
 - `src/labs/labs.js` – Anmeldung, Aufbau im Blatt (`mountLabs`), Stand je Gerät, Vorgabe-Dialog (`openLabDialog`).
-- `src/labs/zeiger-ui.js`, `curves-ui.js` (Bode, Ortskurve), `logik-ui.js` – die Bedienung.
+- `src/labs/zeiger-ui.js`, `curves-ui.js` (Bode, Ortskurve), `logik-ui.js`, `sps-ui.js` – die Bedienung.
 - `src/labs/register.js` – meldet `lab-core.js` bei `docspec.js` an (wie `src/doc/latex.js`).
 
 ## Ein weiteres Labor anmelden

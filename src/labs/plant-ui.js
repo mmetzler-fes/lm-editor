@@ -4,7 +4,7 @@
 // Steuerung läuft; aufbauen (Elemente aus der Leiste, ziehen, antippen → Eigenschaften) geht, solange
 // sie steht. Taster und Sensoren hängen über ihr Symbol an der Zuordnungstabelle.
 
-import { PLANT_MATERIALS, PLANT_EXAMPLES, MAT_COLOR, plantSvg, plantDefault, plantSymbols, plantRename, symbolAlias, cylinderSetStroke } from './plant-core.js';
+import { PLANT_MATERIALS, PLANT_EXAMPLES, MAT_COLOR, plantSvg, plantDefault, plantSymbols, plantRename, symbolAlias, cylinderSetStroke, plantSpawn, plantRemoveBody } from './plant-core.js';
 import { spsWalk, spsIsStep, spsInsertIo, spsNextAddr } from './lab-core.js';
 import { h, field, svgPoint } from './labs.js';
 
@@ -17,6 +17,7 @@ const PALETTE = [
   ['sensor', '◉ Sensor', 'Lichtschranke oder Näherungsschalter, wahlweise nur für einen Werkstoff'],
   ['creator', '⊕ Erzeuger', 'Legt Werkstücke nach – bei einem Signal oder im Takt'],
   ['destroyer', '⊗ Vernichter', 'Werkstücke verschwinden hier (Behälter, Ende der Anlage)'],
+  ['gate', '⇤ Tor', 'Schiebetor mit Motor (auf/zu), Endlagen und Druckleiste'],
 ];
 const NEW = {
   button: () => ({ in: '' }),
@@ -27,6 +28,7 @@ const NEW = {
   sensor: () => ({ w: 0.3, h: 2, in: '', kind: 'light', material: '' }),
   creator: () => ({ out: '', every: 0, object: { w: 1.5, h: 1.5, material: 'plastic' } }),
   destroyer: () => ({ w: 2, h: 2 }),
+  gate: () => ({ w: 6, h: 3, travel: 5, speed: 2, open: '', close: '', isOpen: '', isClosed: '', bar: '' }),
 };
 
 /**
@@ -54,7 +56,7 @@ export function mountPlant(host, ctx) {
     const p = plant();
     if (!p) {
       bar.replaceChildren(
-        ...PLANT_EXAMPLES.map((ex) => h('button', { type: 'button', class: 'lab-btn', title: `Beispielanlage – fehlende Einträge (${ex.io.map((x) => x[1]).join(', ')}) kommen in die Zuordnungstabelle`, onclick: () => useExample(ex) }, `🏭 ${ex.label}`)),
+        h('button', { type: 'button', class: 'lab-btn', title: 'Mitgelieferte, eigene und geteilte Anlagen – fehlende Einträge kommen in die Zuordnungstabelle', onclick: (e) => popLibrary(e) }, '📚 Anlage aus der Bibliothek'),
         h('button', { type: 'button', class: 'lab-btn', onclick: () => { getSt().plant = plantDefault(); changed(); } }, '🏭 Leere Anlage'),
         h('span', { class: 'lab-hint', text: 'Anlage neben der Kette: Taster, Lampen, Bänder, Zylinder, Werkstücke, Sensoren (wie in PLC-Lab).' }));
       return;
@@ -76,21 +78,136 @@ export function mountPlant(host, ctx) {
   }
 
   /** Beispielanlage einsetzen; fehlende Symbole kommen in die Zuordnungstabelle. */
-  function useExample(ex) {
+  // ---------- Bibliothek ----------
+  // Eintrag: { title, description, data: { plant, io: [Zeilen der Tabelle], init?, steps?, back? } }.
+  // Mitgeliefert (PLANT_EXAMPLES), eigene und geteilte (Gastgeber: window.lmPlantLibrary, sonst Browser).
+
+  /** Ablage: in LearningModules der Server, sonst dieser Browser. */
+  function store() {
+    const host = globalThis.lmPlantLibrary;
+    if (host && (!host.available || host.available())) return host;
+    if (host) return null; // LearningModules ohne Anmeldung (Schüler): keine eigene Bibliothek
+    const KEY = 'lm_plant_library';
+    const read = () => { try { return JSON.parse(localStorage.getItem(KEY) || '[]'); } catch (_) { return []; } };
+    const write = (l) => { try { localStorage.setItem(KEY, JSON.stringify(l)); } catch (_) { throw new Error('Speichern im Browser geht nicht.'); } };
+    return {
+      local: true,
+      list: async () => read().map((x) => ({ ...x, own: true })),
+      save: async (entry) => { const l = read().filter((x) => x.id !== entry.id); const id = entry.id || uid('lib'); l.push({ ...entry, id }); write(l); return { id }; },
+      remove: async (id) => write(read().filter((x) => x.id !== id)),
+    };
+  }
+  const builtins = () => PLANT_EXAMPLES.map((ex) => ({
+    id: `builtin:${ex.key}`, title: ex.label, builtin: true,
+    data: { plant: ex.make(), io: ex.io.map(([kind, name, desc, contact, addr]) => ({ kind, name, desc, addr: addr || '', ...(kind === 'in' ? { contact: contact || 'NO' } : {}) })), ...(ex.init ? { init: ex.init } : {}) },
+  }));
+
+  /** Anlage (und auf Wunsch die Kette) aus dem Labor für die Bibliothek. */
+  function entryData(withSteps) {
+    const st = getSt();
+    const used = new Set([...plantSymbols(st.plant).keys(), ...(st.init ? [st.init] : [])]);
+    const rows = (st.io || []).filter((x) => withSteps || used.has(String(x.name ?? '').trim()))
+      .map(({ id: _id, locked: _l, ...rest }) => rest);
+    const plant = JSON.parse(JSON.stringify(st.plant));
+    delete plant.locked;
+    return { plant, io: rows, ...(st.init ? { init: st.init } : {}), ...(withSteps ? { steps: JSON.parse(JSON.stringify(st.steps || [])), back: st.back !== false } : {}) };
+  }
+
+  /**
+   * Eintrag einsetzen: vorhandene Symbole nutzen (xSF1 für SF1), Fehlendes an seinem Platz in die Tabelle
+   * (mit Adresse und Kontaktart aus dem Eintrag, sonst der nächsten freien), Anlage ersetzen.
+   */
+  function useEntry(entry, withSteps = false) {
     const st = getSt();
     const io = (st.io ||= []);
-    // Vorhandene Namen nehmen (xSF1 für SF1), nur Fehlendes neu in die Tabelle.
+    const data = entry.data || {};
     const map = {};
-    for (const [kind, name, desc] of ex.io) {
-      const have = symbolAlias(name, io.filter((x) => x.kind === kind).map((x) => x.name));
-      if (have) { map[name] = have; continue; }
-      spsInsertIo(io, { id: uid('io'), kind, name, addr: spsNextAddr(io, kind), desc, ...(kind === 'in' ? { contact: 'NO' } : {}) });
+    for (const row of data.io || []) {
+      const have = symbolAlias(row.name, io.filter((x) => x.kind === row.kind).map((x) => x.name));
+      if (have) { map[row.name] = have; continue; }
+      const taken = io.some((x) => x.addr && x.addr === row.addr);
+      spsInsertIo(io, { ...row, id: uid('io'), addr: row.addr && !taken ? row.addr : spsNextAddr(io, row.kind) });
     }
-    st.plant = ex.make();
+    st.plant = JSON.parse(JSON.stringify(data.plant));
     for (const [from, to] of Object.entries(map)) if (from !== to) plantRename(st.plant, from, to);
+    if (data.init) st.init = map[data.init] || data.init;
+    if (withSteps && Array.isArray(data.steps)) {
+      // Namen in der Kette wie in der Tabelle (z. B. SF1 → xSF1)
+      const swap = (src) => String(src ?? '').replace(/[A-Za-z_ÄÖÜäöüß][A-Za-z0-9_ÄÖÜäöüß]*/g, (w) => (map[w] && map[w] !== w ? map[w] : w));
+      st.steps = JSON.parse(JSON.stringify(data.steps));
+      spsWalk(st.steps, (el) => {
+        el.trans = swap(el.trans);
+        if (spsIsStep(el)) for (const x of el.actions || []) { x.var = swap(x.var); x.cond = swap(x.cond); }
+        else for (const br of el.branches || []) br.trans = swap(br.trans);
+      });
+      if (data.back === false) st.back = false; else delete st.back;
+    }
     changed();
-    const used = Object.entries(map).filter(([a, b]) => a !== b);
-    if (used.length) say(`Vorhandene Symbole verwendet: ${used.map(([a, b]) => `${b} für ${a}`).join(', ')}.`);
+    const used = Object.entries(map).filter(([x, y]) => x !== y);
+    say(`🏭 „${entry.title}“ eingesetzt${used.length ? ` – vorhandene Symbole verwendet: ${used.map(([x, y]) => `${y} für ${x}`).join(', ')}` : ''}.`);
+  }
+
+  /** 📚 Bibliothek: mitgelieferte, eigene und geteilte Anlagen. */
+  async function popLibrary(e) {
+    const lib = store();
+    let own = [];
+    let error = '';
+    if (lib) { try { own = await lib.list(); } catch (err) { error = err.message || String(err); } }
+    let withSteps = false;
+    const item = (x) => h('div', { class: 'plant-lib-item' },
+      h('div', {}, h('strong', { text: x.title }),
+        x.owner ? h('span', { class: 'lab-hint', text: ` – von ${x.owner}` }) : null,
+        x.data?.steps ? h('span', { class: 'lab-hint', text: ' · mit Schrittkette' }) : null,
+        x.description ? h('div', { class: 'lab-hint', text: x.description }) : null),
+      h('div', { class: 'lab-row' },
+        h('button', { type: 'button', class: 'lab-mini', onclick: () => {
+          if (plant() && !confirm(`Die jetzige Anlage durch „${x.title}“ ersetzen?`)) return;
+          useEntry(x, withSteps);
+          closePop();
+        } }, 'Einsetzen'),
+        x.own && lib?.share ? h('button', { type: 'button', class: `lab-mini${x.shared ? ' lab-on' : ''}`, title: x.shared ? 'Für alle Lehrkräfte sichtbar – klicken: nur für mich' : 'Für alle Lehrkräfte dieses Servers sichtbar machen',
+          onclick: async () => { try { await lib.share(x.id, !x.shared); } catch (err) { say(err.message); } popLibrary(e); } }, x.shared ? '👥 geteilt' : '👤 nur ich') : null,
+        x.own ? h('button', { type: 'button', class: 'lab-mini lab-del', title: 'Aus der Bibliothek löschen', onclick: async () => {
+          if (!confirm(`„${x.title}“ aus der Bibliothek löschen?`)) return;
+          try { await lib.remove(x.id); } catch (err) { say(err.message); }
+          popLibrary(e);
+        } }, '✕') : null));
+    const mine = own.filter((x) => x.own);
+    const others = own.filter((x) => !x.own);
+    openPop(e, '📚 Bibliothek der Anlagen',
+      h('label', { class: 'lab-check', title: 'Nur bei Einträgen, die eine Kette enthalten' }, h('input', { type: 'checkbox', onchange: (ev) => { withSteps = ev.target.checked; } }), ' Schrittkette mit übernehmen (falls gespeichert)'),
+      h('div', { class: 'lab-label', text: 'Mitgeliefert' }), ...builtins().map(item),
+      ...(lib ? [h('div', { class: 'lab-label', text: lib.local ? 'Meine Anlagen (in diesem Browser)' : 'Meine Anlagen' }),
+        ...(mine.length ? mine.map(item) : [h('div', { class: 'lab-hint', text: error || 'Noch keine – unter ⚙ Anlage „In der Bibliothek ablegen“.' })])] : []),
+      ...(others.length ? [h('div', { class: 'lab-label', text: 'Von Kolleginnen und Kollegen' }), ...others.map(item)] : []));
+  }
+
+  /** Die jetzige Anlage in der Bibliothek ablegen (neu oder über eine eigene gleichen Namens). */
+  async function popSave(e) {
+    const lib = store();
+    if (!lib) { say('Die Bibliothek gibt es für Lehrkräfte (angemeldet).'); return; }
+    let mine = [];
+    try { mine = (await lib.list()).filter((x) => x.own); } catch (_) { /* dann neu */ }
+    const title = field('', () => {}, { size: 24, placeholder: 'Name, z. B. Torsteuerung' });
+    const desc = h('textarea', { rows: 2, placeholder: 'Kurze Beschreibung (optional)', style: { width: '100%' } });
+    const steps = h('input', { type: 'checkbox' });
+    const shared = h('input', { type: 'checkbox' });
+    openPop(e, '📚 In der Bibliothek ablegen',
+      row('Name', title), desc,
+      h('label', { class: 'lab-check', title: 'z. B. als Lehrerlösung – sonst nur Anlage und ihre Einträge der Zuordnungstabelle' }, steps, ' Schrittkette mitspeichern'),
+      lib.share ? h('label', { class: 'lab-check' }, shared, ' für alle Lehrkräfte dieses Servers sichtbar') : null,
+      h('div', { class: 'lab-row' }, h('button', { type: 'button', class: 'lab-btn lab-btn-primary', onclick: async () => {
+        const t = title.value.trim();
+        if (!t) { title.focus(); return; }
+        const same = mine.find((x) => x.title === t);
+        if (same && !confirm(`„${t}“ gibt es schon in deiner Bibliothek – überschreiben?`)) return;
+        try {
+          await lib.save({ ...(same ? { id: same.id } : {}), title: t, description: desc.value.trim(), data: entryData(steps.checked), ...(lib.share ? { shared: shared.checked } : {}) });
+          say(`📚 „${t}“ liegt in der Bibliothek.`);
+          closePop();
+        } catch (err) { say(`⚠️ ${err.message || err}`); }
+      } }, 'Ablegen')));
+    title.focus();
   }
 
   // ---------- Aufbauen ----------
@@ -141,13 +258,28 @@ export function mountPlant(host, ctx) {
           row('Ausfahren', pick(it.out, ['out', 'mem'], set(it, 'out'))),
           row('Einfahren', pick(it.ret, ['out', 'mem'], set(it, 'ret'), 'Feder (einfachwirkend)')),
           row('Endlage aus', pick(it.ext, ['in'], set(it, 'ext'), 'ohne')), row('Endlage ein', pick(it.home, ['in'], set(it, 'home'), 'ohne')),
-          row('Hub', numF(it.stroke, (v) => { cylinderSetStroke(it, v); changed(); }), ' Tempo ', numF(it.speed, set(it, 'speed'))));
+          row('Hub', numF(it.stroke, (v) => { cylinderSetStroke(it, v); changed(); }), ' Tempo ', numF(it.speed, set(it, 'speed'))),
+          h('label', { class: 'lab-check' }, h('input', { type: 'checkbox', checked: !!it.startExt, onchange: (ev) => set(it, 'startExt')(ev.target.checked || '') }), ' Grundstellung ausgefahren'),
+          row('Platte', numF(it.plate ?? 1.6, set(it, 'plate'), { title: 'quer zur Stange' }), ' × ', numF(it.plateThick ?? 0.4, set(it, 'plateThick'), { title: 'längs der Stange' }), ' (quer × längs)'),
+          row('Fährt mit', h('select', { title: 'Sitzt auf einem anderen Zylinder und fährt mit ihm', onchange: (ev) => set(it, 'mount')(ev.target.value) },
+            h('option', { value: '', selected: !it.mount }, '– fest –'),
+            ...(plant().items || []).filter((x) => x.type === 'cylinder' && x.id !== it.id).map((x) => h('option', { value: x.id, selected: it.mount === x.id }, x.label || x.out || x.id)))));
+        break;
+      case 'gate':
+        rows.push(row('Motor auf', pick(it.open, ['out', 'mem'], set(it, 'open'))), row('Motor zu', pick(it.close, ['out', 'mem'], set(it, 'close'))),
+          row('Endlage auf', pick(it.isOpen, ['in'], set(it, 'isOpen'), 'ohne')), row('Endlage zu', pick(it.isClosed, ['in'], set(it, 'isClosed'), 'ohne')),
+          row('Druckleiste', pick(it.bar, ['in'], set(it, 'bar'), 'ohne')),
+          h('div', { class: 'lab-hint', text: 'Öffner (z. B. Endlagen, Druckleiste) stellst du in der Zuordnungstabelle ein.' }),
+          sizeRow(), row('Weg', numF(it.travel, set(it, 'travel')), ' Tempo ', numF(it.speed, set(it, 'speed'))),
+          h('label', { class: 'lab-check' }, h('input', { type: 'checkbox', checked: it.start === 'open', onchange: (ev) => set(it, 'start')(ev.target.checked ? 'open' : '') }), ' zu Beginn offen'));
         break;
       case 'object':
         rows.push(sizeRow(), h('label', { class: 'lab-check' }, h('input', { type: 'checkbox', checked: !!it.fixed, onchange: (ev) => set(it, 'fixed')(ev.target.checked || '') }), ' feststehend (Tisch, Wand, Rutsche)'),
           row('Werkstoff', matSel(it.material, set(it, 'material'))),
           row('Form', h('select', { onchange: (ev) => set(it, 'shape')(ev.target.value === 'box' ? '' : ev.target.value) }, h('option', { value: 'box', selected: it.shape !== 'round' }, 'eckig'), h('option', { value: 'round', selected: it.shape === 'round' }, 'rund'))),
-          row('Farbe', h('input', { type: 'color', value: it.color || MAT_COLOR[it.material] || '#f59e0b', onchange: (ev) => set(it, 'color')(ev.target.value) })));
+          row('Farbe', h('input', { type: 'color', value: it.color || MAT_COLOR[it.material] || '#f59e0b', onchange: (ev) => set(it, 'color')(ev.target.value) })),
+          it.fixed ? h('label', { class: 'lab-check' }, h('input', { type: 'checkbox', checked: it.look === 'wall', onchange: (ev) => set(it, 'look')(ev.target.checked ? 'wall' : '') }), ' als Mauer zeichnen')
+            : h('label', { class: 'lab-check' }, h('input', { type: 'checkbox', checked: !!it.pick, onchange: (ev) => set(it, 'pick')(ev.target.checked || '') }), ' im Lauf antippen = entnehmen'));
         break;
       case 'sensor':
         rows.push(row('Eingang', pick(it.in, ['in'], set(it, 'in'))),
@@ -162,7 +294,12 @@ export function mountPlant(host, ctx) {
         rows.push(row('Signal', pick(it.out, ['out', 'mem', 'in'], set(it, 'out'), 'keins')),
           row('Takt', numF(it.every || 0, set(it, 'every')), ' s (0 = nur bei Signal)'),
           row('Teil', numF(o.w, setO('w')), ' × ', numF(o.h, setO('h')), ' ', matSel(o.material, setO('material'))),
-          row('Farbe', h('input', { type: 'color', value: o.color || MAT_COLOR[o.material] || '#f59e0b', onchange: (ev) => setO('color')(ev.target.value) })));
+          row('Farbe', h('input', { type: 'color', value: o.color || MAT_COLOR[o.material] || '#f59e0b', onchange: (ev) => setO('color')(ev.target.value) })),
+          h('label', { class: 'lab-check' }, h('input', { type: 'checkbox', checked: !!it.manual, onchange: (ev) => set(it, 'manual')(ev.target.checked || '') }), ' im Lauf antippen = einlegen'),
+          h('label', { class: 'lab-check' }, h('input', { type: 'checkbox', checked: !!o.pick, onchange: (ev) => setO('pick')(ev.target.checked || '') }), ' Teile lassen sich entnehmen'),
+          row('Ablegen bei', numF(it.place?.x ?? '', (v) => { it.place = { ...(it.place || { y: it.y || 0 }), x: v }; changed(); }, { placeholder: 'x' }), ' ',
+            numF(it.place?.y ?? '', (v) => { it.place = { ...(it.place || { x: it.x || 0 }), y: v }; changed(); }, { placeholder: 'y' }),
+            h('button', { type: 'button', class: 'lab-mini', title: 'Wieder unter dem Trichter', onclick: () => { delete it.place; changed(); } }, '↺')));
         break;
       }
       case 'destroyer':
@@ -183,6 +320,9 @@ export function mountPlant(host, ctx) {
       row('Größe', numF(p.w, (v) => { p.w = Math.max(6, Math.min(60, v)); changed(); }), ' × ', numF(p.h, (v) => { p.h = Math.max(4, Math.min(40, v)); changed(); }), ' Einheiten'),
       ...symbolRows(),
       teacher ? h('label', { class: 'lab-check' }, h('input', { type: 'checkbox', checked: !!p.locked, onchange: (ev) => { if (ev.target.checked) p.locked = true; else delete p.locked; changed(); } }), ' 🔒 Für Schüler fest (sie bedienen sie nur)') : null,
+      h('div', { class: 'lab-row' },
+        store() ? h('button', { type: 'button', class: 'lab-mini', onclick: () => popSave(e) }, '📚 In der Bibliothek ablegen') : null,
+        h('button', { type: 'button', class: 'lab-mini', onclick: () => popLibrary(e) }, '📚 Andere Anlage einsetzen')),
       h('div', { class: 'lab-row' }, h('button', { type: 'button', class: 'lab-mini lab-del', onclick: () => {
         if (!confirm('Die ganze Anlage entfernen?')) return;
         delete getSt().plant;
@@ -232,10 +372,22 @@ export function mountPlant(host, ctx) {
   stage.addEventListener('pointerdown', (e) => {
     const svgEl = stage.querySelector('svg');
     if (!svgEl) return;
+    // Im Lauf: Werkstück einlegen (Erzeuger) oder entnehmen
+    if (ctx.running() && world) {
+      const cr = e.target.closest?.('[data-pcreate]');
+      const body = e.target.closest?.('[data-body]');
+      if (cr || body) {
+        e.preventDefault();
+        if (cr && !plantSpawn(plant(), world, cr.dataset.pcreate, vars)) say('Dort ist kein Platz – erst das Werkstück entnehmen.');
+        if (body) plantRemoveBody(world, body.dataset.body);
+        render();
+        return;
+      }
+    }
     const btn = e.target.closest?.('[data-pbtn]');
     if (btn && !canEdit()) {
       const it = (plant().items || []).find((x) => x.id === btn.dataset.pbtn);
-      const io = ioByName(it?.in);
+      const io = ioByName(it?.[btn.dataset.pkey || 'in']);
       if (!io) { say('Dieser Taster hat noch keinen Eingang (antippen, wenn die Steuerung steht).'); return; }
       e.preventDefault();
       if (io.contact === 'latch') ctx.onPress(io, !pressed[io.id]);

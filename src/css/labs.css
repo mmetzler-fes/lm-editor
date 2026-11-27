@@ -117,3 +117,6 @@
 .sps-io tr.sps-dragging { position: relative; z-index: 2; background: #eff6ff; box-shadow: 0 2px 8px rgba(0,0,0,.15); }
 .sps-io tr.sps-drop-before td { box-shadow: inset 0 3px 0 #2563eb; }
 .sps-io tr.sps-drop-after td { box-shadow: inset 0 -3px 0 #2563eb; }
+/* Bibliothek der Anlagen */
+.plant-lib-item { border-top: 1px solid var(--border, #e2e8f0); padding: 4px 0; display: flex; flex-direction: column; gap: 2px; }
+.sps-pop:has(.plant-lib-item) { width: 380px; max-height: 70vh; overflow: auto; }

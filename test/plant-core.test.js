@@ -173,3 +173,46 @@ test('Anlage der ersten Fassung: Gehäuse wächst nach hinten, Platte bleibt', a
   assert.equal(cylinderHead(old.items[1], 0).x, 4);
   assert.equal(plantUpgrade(old), false, 'nur einmal');
 });
+
+test('Tor: Motor auf/zu, beide = steht, Endlagen', async () => {
+  const { plantGate } = await import('../src/labs/plant-core.js');
+  const plant = plantGate();
+  const w = plantInit(plant);
+  assert.deepEqual(plantInputs(plant, w), { BG1: 0, BG2: 1 }); // roh: zu (Öffner kehrt die Tabelle um)
+  run(plant, w, { QM1: 1 }, 1);
+  assert.ok(Math.abs(w.gate.tor - 2.5) < 0.1);
+  run(plant, w, { QM1: 1, QM2: 1 }, 1);
+  assert.ok(Math.abs(w.gate.tor - 2.5) < 0.1, 'beide: steht');
+  run(plant, w, { QM1: 1 }, 5);
+  assert.deepEqual(plantInputs(plant, w), { BG1: 1, BG2: 0 });
+  assert.deepEqual([...plantInputNames(plant)].sort(), ['BG1', 'BG2']); // Druckleiste ist ein Taster
+});
+
+test('Zylinder: Grundstellung ausgefahren, Plattenmaß, Mitfahren auf einem anderen Zylinder', async () => {
+  const { plantFlanging, plantPlaced, cylinderHead } = await import('../src/labs/plant-core.js');
+  const plant = plantFlanging();
+  const w = plantInit(plant);
+  assert.equal(w.cyl.mm2, 2, 'MM2 startet ausgefahren');
+  assert.deepEqual(plantInputs(plant, w).BG22, 1);
+  const head2 = cylinderHead(plant.items.find((i) => i.id === 'mm2'), 2);
+  assert.deepEqual([head2.w, head2.h], [2, 0.4]);
+  const y0 = plantPlaced(plant, w).find((i) => i.id === 'mm4').y;
+  run(plant, w, { QM31: 1 }, 1);
+  assert.equal(plantPlaced(plant, w).find((i) => i.id === 'mm4').y, y0 + 1, 'MM4 fährt mit MM3 herab');
+  assert.equal(plantInputs(plant, w).BG32, 1);
+});
+
+test('Werkstück entnehmen und mit dem Erzeuger einlegen (nur wenn Platz)', async () => {
+  const { plantFlanging, plantSpawn, plantRemoveBody } = await import('../src/labs/plant-core.js');
+  const plant = plantFlanging();
+  const w = plantInit(plant);
+  run(plant, w, {}, 0.2);
+  assert.equal(plantInputs(plant, w).BG1, 1);
+  assert.equal(plantSpawn(plant, w, 'neu'), false, 'Rohr liegt noch drin');
+  assert.equal(plantRemoveBody(w, w.bodies[0].id), true);
+  assert.equal(plantInputs(plant, w).BG1, 0);
+  assert.equal(plantSpawn(plant, w, 'neu'), true);
+  run(plant, w, {}, 0.5);
+  assert.equal(plantInputs(plant, w).BG1, 1);
+  assert.equal(w.bodies[0].pick, true);
+});

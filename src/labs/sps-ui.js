@@ -65,7 +65,8 @@ export function mount(el, { state, mode, onChange, say = () => {} }) {
     const byPlant = st.plant ? plantInputNames(st.plant) : new Set();
     return Object.fromEntries(io().filter((x) => x.kind === 'in' && x.name).map((x) => {
       const n = String(x.name).trim();
-      return [n, byPlant.has(n) ? (fromPlant[n] ? 1 : 0) : spsInputSignal(x, !!pressed[x.id])];
+      // Auch Sensoren und Endlagen der Anlage richten sich nach der Kontaktart (Öffner: betätigt = 0).
+      return [n, byPlant.has(n) ? spsInputSignal(x, !!fromPlant[n]) : spsInputSignal(x, !!pressed[x.id])];
     }));
   };
   function tick() {
@@ -476,7 +477,12 @@ export function mount(el, { state, mode, onChange, say = () => {} }) {
       steps().push({ ...newStep(), ...(first ? { initial: true } : {}) });
       changed();
     };
-    panel.replaceChildren(ioTable(),
+    const initRow = h('div', { class: 'lab-row', title: 'Solange dieser Eingang 1 ist, steht die Kette im Initialschritt (wie xINIT beim Standard-Ablaufkettenbaustein)' },
+      h('span', { class: 'lab-label', text: 'Kette initialisieren mit' }),
+      h('select', { onchange: (e) => { if (e.target.value) st.init = e.target.value; else delete st.init; changed(); } },
+        h('option', { value: '', selected: !st.init }, '– (keine INIT-Taste) –'),
+        ...io().filter((x) => (x.kind === 'in' || x.kind === 'mem') && x.name).map((x) => h('option', { value: String(x.name).trim(), selected: st.init === String(x.name).trim() }, String(x.name).trim()))));
+    panel.replaceChildren(ioTable(), initRow,
       // Die Kette entsteht in der Grafik – die Liste ist nur noch zum Nachsehen da (zugeklappt).
       h('details', { class: 'sps-section', open: listOpen, ontoggle: (e) => { listOpen = e.target.open; } }, h('summary', { class: 'lab-label', text: 'Schrittkette als Liste' }), ...list,
         h('div', { class: 'lab-row' }, h('button', { type: 'button', class: 'lab-btn', onclick: addStep }, '+ Schritt'),

@@ -1061,7 +1061,7 @@ export function logikSvg(state, { selected = null, pending = null } = {}) {
 // ==================== SPS-Labor: Ablaufkette nach IEC 61131-3 ====================
 //
 // Stand: { io: [{ id, kind: 'in'|'out'|'mem'|'tim', name, addr, desc, contact: 'NO'|'NC'|'latch' }],
-//          steps: [Element], back }
+//          steps: [Element], back, init? }  – init: Eingang, der die Kette in den Initialschritt setzt
 //   Element: Schritt { id, name, initial, trans, actions: [{ id, q, time, text, var, cond }] }
 //              trans: Transition nach dem Schritt (zum nächsten Element)
 //          | Alternativverzweigung { id, type: 'alt', branches: [{ id, trans, steps: [Element], jump? }] }
@@ -1403,10 +1403,19 @@ export function spsCycle(st, rt, inputs, dt) {
       return 0;
     }
   };
+  // INIT (st.init: Eingang oder Merker): Kette in den Initialschritt, solange er 1 ist – wie xINIT beim
+  // Standard-Ablaufkettenbaustein. Gespeicherte (S) Aktionen bleiben; Zeiten der Schritte beginnen neu.
+  const initName = String(st.init ?? '').trim();
+  if (initName && (inputs[initName] ?? rt.vars[initName])) {
+    const init = steps.filter((s) => s.initial);
+    rt.active = (init.length ? init : steps.slice(0, 1)).map((s) => s.id);
+    for (const id of rt.active) rt.since[id] = rt.t;
+    rt.timers = {};
+  }
   // 1. Transitionen, deren Schritte davor alle aktiv sind (mit dem Stand vom Anfang des Zyklus).
   // Ein Schritt gibt nur einmal ab: Bei Alternativen hat der linke Zweig Vorrang.
   const fire = [];
-  if (rt.cycle > 1) {
+  if (rt.cycle > 1 && !(initName && (inputs[initName] ?? rt.vars[initName]))) {
     const used = new Set();
     for (const t of graph.trans) {
       if (!t.from.every((id) => rt.active.includes(id)) || t.from.some((id) => used.has(id))) continue;

@@ -23,11 +23,16 @@
 //   { type: 'sensor', x, y, w, h, in: 'B2', kind: 'light'|'prox', material?: ''|'metal'|…, nc?: true }
 //   { type: 'creator', x, y, out?: 'Y3', every?: 0, object: { w, h, material, color, shape } }
 //   { type: 'destroyer', x, y, w, h }
+//   { type: 'gate', x, y, w, h, travel: 8, speed: 2, open: 'QM1', close: 'QM2', isOpen: 'BG1', isClosed: 'BG2',
+//     bar?: 'BG3', start?: 'closed'|'open' }                       – Schiebetor mit Motor, Druckleiste vorn
+// Zylinder zusätzlich: startExt (Grundstellung ausgefahren), plate/plateThick (Kolbenplatte quer/längs),
+// mount: ID eines Zylinders, auf dem er mitfährt. Objekte: pick (im Lauf antippen = entnehmen),
+// look: 'wall' (Mauer). Erzeuger: manual (im Lauf antippen = einlegen), place: { x, y } (wohin).
 //
 // Ablauf: world = plantInit(plant); je Zyklus plantStep(plant, world, ausgänge, dt) und
 // plantInputs(plant, world) → Eingänge (Sensoren, Endlagen der Zylinder).
 
-export const PLANT_TYPES = ['button', 'lamp', 'conveyor', 'cylinder', 'object', 'sensor', 'creator', 'destroyer'];
+export const PLANT_TYPES = ['button', 'lamp', 'conveyor', 'cylinder', 'object', 'sensor', 'creator', 'destroyer', 'gate'];
 export const PLANT_MATERIALS = [['metal', 'Metall'], ['plastic', 'Kunststoff'], ['wood', 'Holz']];
 export const GRAVITY = 40;
 const BELT_H = 0.8;
@@ -84,6 +89,7 @@ export function plantSize(it) {
     case 'conveyor': return { w: num(it.w, 8), h: BELT_H };
     case 'cylinder': return /^(up|down)$/.test(it.dir) ? { w: CYL.thick, h: cylinderLen(it) } : { w: cylinderLen(it), h: CYL.thick };
     case 'creator': return { w: num(it.object?.w, 1.5) + 0.6, h: 0.6 };
+    case 'gate': return { w: num(it.w, 6), h: num(it.h, 3) };
     default: return { w: num(it?.w, 1.5), h: num(it?.h, 1.5) };
   }
 }
@@ -96,22 +102,58 @@ export function cylinderHead(it, pos) {
   const { w, h } = plantSize(it);
   const x = num(it.x, 0);
   const y = num(it.y, 0);
+  const pl = Math.max(0.1, num(it.plate, CYL.plate)); // quer zur Stange
+  const pt = Math.max(0.1, num(it.plateThick, CYL.head)); // längs der Stange
   if (ux) {
-    const px = ux > 0 ? x + w + pos : x - CYL.head - pos;
-    return { x: px, y: y + h / 2 - CYL.plate / 2, w: CYL.head, h: CYL.plate };
+    const px = ux > 0 ? x + w + pos : x - pt - pos;
+    return { x: px, y: y + h / 2 - pl / 2, w: pt, h: pl };
   }
-  const py = uy > 0 ? y + h + pos : y - CYL.head - pos;
-  return { x: x + w / 2 - CYL.plate / 2, y: py, w: CYL.plate, h: CYL.head };
+  const py = uy > 0 ? y + h + pos : y - pt - pos;
+  return { x: x + w / 2 - pl / 2, y: py, w: pl, h: pt };
+}
+
+/** Grundstellung des Zylinders: eingefahren (0) oder – startExt – ausgefahren. */
+export function cylinderStart(it) {
+  return it?.startExt ? Math.max(0.2, num(it.stroke, 4)) : 0;
+}
+const cylPos = (it, world) => (world ? world.cyl?.[it.id] ?? cylinderStart(it) : cylinderStart(it));
+const gateStart = (it) => (it?.start === 'open' ? Math.max(0, num(it.travel, 8)) : 0);
+const gatePos = (it, world) => (world ? world.gate?.[it.id] ?? gateStart(it) : gateStart(it));
+
+/**
+ * Elemente an ihrem jetzigen Ort: Wer auf einem Zylinder sitzt (mount), fährt mit dessen Hub mit –
+ * auch über mehrere Stufen. Liefert Kopien (gleiche id) nur für bewegte Elemente.
+ */
+export function plantPlaced(plant, world) {
+  const items = plant?.items || [];
+  if (!items.some((it) => it.mount)) return items;
+  const byId = new Map(items.map((it) => [it.id, it]));
+  const off = (it, depth) => {
+    const m = it.mount ? byId.get(it.mount) : null;
+    if (!m || m.type !== 'cylinder' || depth > 5) return [0, 0];
+    const [ux, uy] = unit(m.dir);
+    const pos = cylPos(m, world);
+    const [ox, oy] = off(m, depth + 1);
+    return [ox + ux * pos, oy + uy * pos];
+  };
+  return items.map((it) => {
+    if (!it.mount) return it;
+    const [dx, dy] = off(it, 0);
+    return { ...it, x: num(it.x, 0) + dx, y: num(it.y, 0) + dy };
+  });
 }
 
 const overlap = (a, b, eps = EPS) => a.x < b.x + b.w - eps && a.x + a.w > b.x + eps && a.y < b.y + b.h - eps && a.y + a.h > b.y + eps;
 
 /** Laufzeit neu: bewegliche Objekte als Körper, Zylinder eingefahren. */
 export function plantInit(plant) {
-  const world = { t: 0, bodies: [], cyl: {}, prev: {}, spawnAt: {}, next: 1 };
+  const world = { t: 0, bodies: [], cyl: {}, gate: {}, prev: {}, spawnAt: {}, next: 1 };
   for (const it of plant?.items || []) {
+    if (it.type === 'cylinder') world.cyl[it.id] = cylinderStart(it);
+    if (it.type === 'gate') world.gate[it.id] = gateStart(it);
+  }
+  for (const it of plantPlaced(plant, world)) {
     if (it.type === 'object' && !it.fixed) world.bodies.push(newBody(world, it, num(it.x, 0), num(it.y, 0)));
-    if (it.type === 'cylinder') world.cyl[it.id] = 0;
     if (it.type === 'creator') world.spawnAt[it.id] = num(it.every, 0) > 0 ? 0 : Infinity;
   }
   return world;
@@ -122,13 +164,21 @@ function newBody(world, o, x, y) {
     id: `b${world.next++}`, x, y, w: Math.max(0.2, num(o.w, 1.5)), h: Math.max(0.2, num(o.h, 1.5)), vx: 0, vy: 0,
     material: o.material || 'plastic', color: o.color || '', shape: o.shape || 'box', on: null,
     ...(o.bendable ? { bendable: true } : {}),
+    ...(o.pick ? { pick: true } : {}),
   };
 }
 
+/** Werkstück entnehmen (im Lauf angetippt). */
+export function plantRemoveBody(world, bodyId) {
+  const n = world.bodies.length;
+  world.bodies = world.bodies.filter((b) => b.id !== bodyId);
+  return world.bodies.length < n;
+}
+
 /** Feste Kästen dieses Augenblicks: Objekte (fest), Bänder, Zylinder (Gehäuse und Kolbenplatte). */
-function solids(plant, world, out) {
+function solids(plant, world, out, placed = plantPlaced(plant, world)) {
   const list = [];
-  for (const it of plant?.items || []) {
+  for (const it of placed) {
     const x = num(it.x, 0);
     const y = num(it.y, 0);
     if (it.type === 'object' && it.fixed) list.push({ x, y, w: num(it.w, 1.5), h: num(it.h, 1.5), vx: 0, kind: 'fixed' });
@@ -139,7 +189,7 @@ function solids(plant, world, out) {
     } else if (it.type === 'cylinder') {
       const { w, h } = plantSize(it);
       list.push({ x, y, w, h, vx: 0, kind: 'cylinder' });
-      list.push({ ...cylinderHead(it, world.cyl[it.id] || 0), vx: 0, kind: 'head', cyl: it.id });
+      list.push({ ...cylinderHead(it, cylPos(it, world)), vx: 0, kind: 'head', cyl: it.id });
     }
   }
   return list;
@@ -206,7 +256,8 @@ export function plantStep(plant, world, out, dt) {
     left -= h;
   }
   // Erzeuger: steigende Flanke des Signals oder alle `every` Sekunden
-  for (const it of plant?.items || []) {
+  const placed = plantPlaced(plant, world);
+  for (const it of placed) {
     if (it.type !== 'creator') continue;
     const on = sig(out, it.out);
     const edge = on && !world.prev[it.id];
@@ -215,17 +266,11 @@ export function plantStep(plant, world, out, dt) {
     const due = every > 0 && world.t >= (world.spawnAt[it.id] ?? 0);
     if (!edge && !due) continue;
     if (due) world.spawnAt[it.id] = world.t + every;
-    const o = it.object || {};
-    const w = num(o.w, 1.5);
-    const cand = newBody(world, o, num(it.x, 0) + 0.3, num(it.y, 0) + 0.6);
-    cand.w = w;
-    // Nur, wenn dort Platz ist (sonst stapelten sich Objekte ineinander)
-    const blocked = world.bodies.some((b) => overlap(b, cand)) || solids(plant, world, out).some((s) => overlap(s, cand));
-    if (!blocked) world.bodies.push(cand); else world.next--;
+    plantSpawn(plant, world, it.id, out);
   }
   // Vernichter: Mitte des Körpers im Bereich; aus der Anlage gefallen
   const bottom = num(plant?.h, 12) + 4;
-  const killers = (plant?.items || []).filter((it) => it.type === 'destroyer');
+  const killers = placed.filter((it) => it.type === 'destroyer');
   world.bodies = world.bodies.filter((b) => {
     if (b.y > bottom || b.x + b.w < -6 || b.x > num(plant?.w, 24) + 6) return false;
     const cx = b.x + b.w / 2;
@@ -235,15 +280,42 @@ export function plantStep(plant, world, out, dt) {
   return world;
 }
 
+/**
+ * Erzeuger legt ein Werkstück nach (Signal, Takt oder angetippt) – an place bzw. unter dem Trichter,
+ * nur wenn dort Platz ist. true = gelegt.
+ */
+export function plantSpawn(plant, world, creatorId, out = {}) {
+  const it = plantPlaced(plant, world).find((x) => x.id === creatorId && x.type === 'creator');
+  if (!it) return false;
+  const o = it.object || {};
+  const at = it.place && typeof it.place === 'object' ? [num(it.place.x, 0), num(it.place.y, 0)] : [num(it.x, 0) + 0.3, num(it.y, 0) + 0.6];
+  const cand = newBody(world, o, at[0], at[1]);
+  // Nur, wenn dort Platz ist (sonst stapelten sich Objekte ineinander)
+  const blocked = world.bodies.some((b) => overlap(b, cand)) || solids(plant, world, out).some((s) => s.kind !== 'head' && overlap(s, cand));
+  if (blocked) { world.next--; return false; }
+  world.bodies.push(cand);
+  return true;
+}
+
 function substep(plant, world, out, h) {
   world.t += h;
-  // 1. Zylinder: Hub ändern, die Kolbenplatte schiebt, was ihr im Weg liegt
+  // 0. Tore: Motor auf/zu (beide oder keins: steht)
   for (const it of plant?.items || []) {
+    if (it.type !== 'gate') continue;
+    const o = sig(out, it.open);
+    const c = sig(out, it.close);
+    const v = Math.abs(num(it.speed, 2)) * h;
+    let pos = world.gate[it.id] ?? gateStart(it);
+    if (o && !c) pos += v; else if (c && !o) pos -= v;
+    world.gate[it.id] = Math.max(0, Math.min(Math.max(0, num(it.travel, 8)), pos));
+  }
+  // 1. Zylinder: Hub ändern, die Kolbenplatte schiebt, was ihr im Weg liegt
+  for (const it of plantPlaced(plant, world)) {
     if (it.type !== 'cylinder') continue;
     const stroke = Math.max(0.2, num(it.stroke, 4));
     const ext = sig(out, it.out);
     const ret = it.ret ? sig(out, it.ret) && !ext : !ext; // einfachwirkend: Feder zieht zurück
-    const before = world.cyl[it.id] || 0;
+    const before = world.cyl[it.id] ?? cylinderStart(it);
     let pos = before;
     if (ext && !(it.ret && sig(out, it.ret))) pos = Math.min(stroke, pos + num(it.speed, 4) * h);
     else if (ret) pos = Math.max(0, pos - num(it.speed, 4) * h);
@@ -319,16 +391,20 @@ export function plantInputs(plant, world) {
     const n = String(name ?? '').trim();
     if (n) inp[n] = inp[n] || v ? 1 : 0;
   };
-  for (const it of plant?.items || []) {
+  for (const it of plantPlaced(plant, world)) {
     if (it.type === 'sensor') {
       const area = { x: num(it.x, 0), y: num(it.y, 0), w: num(it.w, 1), h: num(it.h, 1) };
       const hit = (world?.bodies || []).some((b) => overlap(b, area) && (!it.material || it.material === b.material));
       set(it.in, it.nc ? !hit : hit);
     } else if (it.type === 'cylinder') {
-      const pos = world?.cyl?.[it.id] || 0;
+      const pos = cylPos(it, world);
       const stroke = Math.max(0.2, num(it.stroke, 4));
       if (it.home) set(it.home, pos <= 0.02);
       if (it.ext) set(it.ext, pos >= stroke - 0.02);
+    } else if (it.type === 'gate') {
+      const pos = gatePos(it, world);
+      if (it.isClosed) set(it.isClosed, pos <= 0.02);
+      if (it.isOpen) set(it.isOpen, pos >= Math.max(0, num(it.travel, 8)) - 0.02);
     }
   }
   return inp;
@@ -340,6 +416,7 @@ export function plantInputNames(plant) {
   for (const it of plant?.items || []) {
     if (it.type === 'sensor' && it.in) names.add(String(it.in).trim());
     if (it.type === 'cylinder') { if (it.home) names.add(String(it.home).trim()); if (it.ext) names.add(String(it.ext).trim()); }
+    if (it.type === 'gate') { if (it.isOpen) names.add(String(it.isOpen).trim()); if (it.isClosed) names.add(String(it.isClosed).trim()); }
   }
   return names;
 }
@@ -383,7 +460,58 @@ export function plantBending() {
   };
 }
 
-/** Beispielanlagen mit den Einträgen der Zuordnungstabelle, die sie brauchen. */
+/**
+ * Torsteuerung (Arbeitsblatt „Gate Control“): Schiebetor mit Motor (QM1 auf, QM2 zu), Endlagen BG1 (auf)
+ * und BG2 (zu) als Öffner, Druckleiste BG3 (Öffner) an der Vorderkante; Steuerpult mit SF1 Auf,
+ * SF0 Stopp (Öffner), SF2 Zu, Wahlschalter SF3 (Tippen/Automatik, rastend) und Meldeleuchte PF1.
+ */
+export function plantGate() {
+  return {
+    v: 2, w: 26, h: 14,
+    items: [
+      { id: 'tor', type: 'gate', x: 11, y: 2.5, w: 9, h: 4.3, travel: 8.5, speed: 2.5, open: 'QM1', close: 'QM2', isOpen: 'BG1', isClosed: 'BG2', bar: 'BG3' },
+      { id: 'wl', type: 'object', x: 0.5, y: 1.5, w: 4.5, h: 5.3, fixed: true, look: 'wall', color: '#f3dcc8' },
+      { id: 'wr', type: 'object', x: 21, y: 1.5, w: 4.5, h: 5.3, fixed: true, look: 'wall', color: '#f3dcc8' },
+      { id: 'pult', type: 'object', x: 9, y: 9.4, w: 11, h: 4, fixed: true, color: '#e5e7eb' },
+      { id: 'sf3', type: 'button', x: 9.6, y: 10.2, in: 'SF3', label: 'SF3 Tipp/Auto' },
+      { id: 'sf1', type: 'button', x: 13.2, y: 10.2, in: 'SF1', label: 'SF1 Auf' },
+      { id: 'sf0', type: 'button', x: 15.6, y: 10.2, in: 'SF0', label: 'SF0 Stopp' },
+      { id: 'sf2', type: 'button', x: 18, y: 10.2, in: 'SF2', label: 'SF2 Zu' },
+      { id: 'pf1', type: 'lamp', x: 22, y: 10.3, out: 'PF1', color: 'yellow', label: 'PF1' },
+    ],
+  };
+}
+
+/**
+ * Bördelvorrichtung (Arbeitsblatt „Flanging Device“): Rohr zwischen Spannbacke und MM1 (spannen),
+ * MM2 trägt den Anschlag (Grundstellung ausgefahren), MM3 drückt die Bördelformen herab, MM4 sitzt auf
+ * MM3 und wechselt die Form. BG1 meldet das Rohr; Rohr einlegen (Erzeuger) und entnehmen durch Antippen.
+ */
+export function plantFlanging() {
+  const tube = { w: 1.2, h: 8.3, material: 'metal', color: '#64748b', pick: true };
+  return {
+    v: 2, w: 19, h: 15.5,
+    items: [
+      { id: 'sf1', type: 'button', x: 1, y: 1, in: 'SF1', label: 'SF1' },
+      { id: 'init', type: 'button', x: 1, y: 3.6, in: 'INIT', label: 'INIT' },
+      { id: 'pf1', type: 'lamp', x: 3.4, y: 1.1, out: 'PF1', color: 'yellow', label: 'PF1' },
+      { id: 'basis', type: 'object', x: 6, y: 14, w: 9, h: 0.8, fixed: true, color: '#94a3b8' },
+      { id: 'backe', type: 'object', x: 8.4, y: 9.5, w: 1, h: 4.5, fixed: true, color: '#1f2937' },
+      { id: 'rohr', type: 'object', x: 9.4, y: 5.7, ...tube },
+      { id: 'bg1', type: 'sensor', x: 10.4, y: 12.8, w: 0.6, h: 0.8, in: 'BG1', kind: 'prox' },
+      { id: 'mm1', type: 'cylinder', x: 12.5, y: 11.25, dir: 'left', stroke: 1.5, speed: 2, out: 'QM11', ret: 'QM12', home: 'BG11', ext: 'BG12', label: 'MM1' },
+      { id: 'mm2', type: 'cylinder', x: 4.4, y: 5, dir: 'right', stroke: 2, speed: 2, startExt: true, plate: 0.4, plateThick: 2, out: 'QM22', ret: 'QM21', home: 'BG21', ext: 'BG22', label: 'MM2 Anschlag' },
+      { id: 'mm3', type: 'cylinder', x: 9.5, y: 1.9, dir: 'down', stroke: 1, speed: 1.5, out: 'QM31', home: 'BG31', ext: 'BG32', label: 'MM3' },
+      { id: 'mm4', type: 'cylinder', x: 12.2, y: 3.9, dir: 'left', stroke: 1.4, speed: 1.5, mount: 'mm3', plate: 0.6, plateThick: 2.4, out: 'QM41', ret: 'QM42', home: 'BG41', ext: 'BG42', label: 'MM4 Bördelformen' },
+      { id: 'neu', type: 'creator', x: 15.5, y: 9, manual: true, label: 'Rohr einlegen', place: { x: 9.4, y: 5.7 }, object: tube },
+    ],
+  };
+}
+
+/**
+ * Beispielanlagen mit den Einträgen der Zuordnungstabelle, die sie brauchen:
+ * [Art, Symbol, Beschreibung, Kontakt (NO/NC/latch), Adresse].
+ */
 export const PLANT_EXAMPLES = [
   { key: 'press', label: 'Zylinder schiebt Teile', make: plantExample, io: [
     ['in', 'S1', 'Start-Taster'], ['in', 'B0', 'Zylinder eingefahren'], ['in', 'B1', 'Zylinder ausgefahren'], ['in', 'B2', 'Lichtschranke Teil da'],
@@ -392,6 +520,21 @@ export const PLANT_EXAMPLES = [
     ['in', 'SF1', 'Start-Taster'], ['in', 'BG11', 'MM1 eingefahren (oben)'], ['in', 'BG12', 'MM1 ausgefahren (Blech gespannt)'],
     ['in', 'BG21', 'MM2 eingefahren (oben)'], ['in', 'BG22', 'MM2 ausgefahren (Blech gebogen)'],
     ['out', 'QM11', 'MM1 ausfahren (Ventil 1 Spule 1)'], ['out', 'QM12', 'MM1 einfahren (Ventil 1 Spule 2)'], ['out', 'QM21', 'MM2 ausfahren (Ventil 2 Spule 1)']] },
+  { key: 'gate', label: 'Torsteuerung', make: plantGate, io: [
+    ['in', 'SF0', 'Taster Stopp', 'NC', '%I0.0'], ['in', 'SF1', 'Taster Tor auf', 'NO', '%I0.1'], ['in', 'SF2', 'Taster Tor zu', 'NO', '%I0.2'],
+    ['in', 'BG1', 'Tor ist offen (0 = offen)', 'NC', '%I0.3'], ['in', 'BG2', 'Tor ist zu (0 = zu)', 'NC', '%I0.4'],
+    ['in', 'SF3', 'Wahlschalter Tippen/Automatik (1 = Automatik)', 'latch', '%I0.5'], ['in', 'BG3', 'Druckleiste (0 = betätigt)', 'NC', '%I0.6'],
+    ['out', 'QM1', 'Schütz Tor auf (Rechtslauf)', '', '%Q0.0'], ['out', 'QM2', 'Schütz Tor zu (Linkslauf)', '', '%Q0.1'], ['out', 'PF1', 'Meldeleuchte Tor fährt', '', '%Q0.2']] },
+  { key: 'flange', label: 'Bördelvorrichtung', make: plantFlanging, io: [
+    ['in', 'INIT', 'Kette initialisieren', 'NO', '%I0.0'], ['in', 'SF1', 'Start', 'NO', '%I0.1'], ['in', 'BG1', 'Rohr vorhanden', 'NO', '%I0.2'],
+    ['in', 'BG11', 'MM1 eingefahren (Grundstellung)', 'NO', '%I0.3'], ['in', 'BG12', 'MM1 ausgefahren (Rohr gespannt)', 'NO', '%I0.4'],
+    ['in', 'BG21', 'MM2 eingefahren (Arbeitsstellung)', 'NO', '%I0.5'], ['in', 'BG22', 'MM2 ausgefahren (Grundstellung)', 'NO', '%I0.6'],
+    ['in', 'BG31', 'MM3 eingefahren (Grundstellung)', 'NO', '%I0.7'], ['in', 'BG32', 'MM3 ausgefahren (Arbeitsstellung)', 'NO', '%I1.0'],
+    ['in', 'BG41', 'MM4 eingefahren (Grundstellung)', 'NO', '%I1.1'], ['in', 'BG42', 'MM4 ausgefahren (Arbeitsstellung)', 'NO', '%I1.2'],
+    ['out', 'PF1', 'Meldeleuchte Bördelvorgang aktiv', '', '%Q0.0'], ['out', 'QM11', 'MM1 vor (spannen)', '', '%Q0.1'], ['out', 'QM12', 'MM1 zurück', '', '%Q0.2'],
+    ['out', 'QM21', 'MM2 zurück (Anschlag weg)', '', '%Q0.3'], ['out', 'QM22', 'MM2 vor (Anschlag)', '', '%Q0.4'], ['out', 'QM31', 'MM3 vor (bördeln)', '', '%Q0.5'],
+    ['out', 'QM41', 'MM4 vor (Formwechsel)', '', '%Q0.6'], ['out', 'QM42', 'MM4 zurück', '', '%Q0.7'],
+    ['tim', 'tonT1', 'Bördelzeit 1 (T#3s)'], ['tim', 'tonT2', 'Bördelzeit 2 (T#5s)']], init: 'INIT' },
 ];
 
 /** Welche Felder eines Elements Symbole der Zuordnungstabelle tragen (und welcher Art). */
@@ -402,6 +545,7 @@ export const PLANT_SIGNALS = {
   cylinder: [['out', 'out'], ['ret', 'out'], ['ext', 'in'], ['home', 'in']],
   sensor: [['in', 'in']],
   creator: [['out', 'any']],
+  gate: [['open', 'out'], ['close', 'out'], ['isOpen', 'in'], ['isClosed', 'in'], ['bar', 'in']],
 };
 
 /** Symbole, die die Anlage verwendet: Name → { kind: 'in'|'out'|'any', uses: [{ it, key }] }. */
@@ -463,9 +607,9 @@ export function plantSvgParts(p, { world = null, vars = {}, io = [], pressed = {
   let o = `<rect x="0" y="0" width="${W}" height="${H}" fill="#ffffff"/>`;
   o += print ? `<rect x="0.02" y="0.02" width="${W - 0.04}" height="${H - 0.04}" fill="none" stroke="#94a3b8" stroke-width="0.04"/>` : `<rect x="0" y="0" width="${W}" height="${H}" fill="url(#pg)"/>`;
   const txt = (x, y, s, size = 0.4, fill = '#334155', anchor = 'middle') => `<text x="${r3(x)}" y="${r3(y)}" font-size="${size}" ${FONT} fill="${fill}" text-anchor="${anchor}">${esc(s)}</text>`;
-  const items = p.items || [];
+  const items = plantPlaced(p, world);
   // Zuerst Flächen und Geräte, dann Werkstücke, dann Sensoren (Strahl über allem)
-  const order = { destroyer: 0, creator: 1, object: 2, conveyor: 3, cylinder: 4, lamp: 5, button: 6, sensor: 8 };
+  const order = { destroyer: 0, creator: 1, gate: 1.5, object: 2, conveyor: 3, cylinder: 4, lamp: 5, button: 6, sensor: 8 };
   for (const it of [...items].sort((a, b) => (order[a.type] ?? 5) - (order[b.type] ?? 5))) {
     if (it.type === 'object' && !it.fixed && world) continue; // beweglich: während des Laufs aus der Physik
     if (it.type === 'sensor') continue;
@@ -502,7 +646,7 @@ export function plantSvgParts(p, { world = null, vars = {}, io = [], pressed = {
         break;
       }
       case 'cylinder': {
-        const pos = world?.cyl?.[it.id] || 0;
+        const pos = cylPos(it, world);
         const stroke = Math.max(0.2, it.stroke ?? 4);
         const horiz = !/^(up|down)$/.test(it.dir);
         const sgn = it.dir === 'left' || it.dir === 'up' ? -1 : 1; // Richtung des Ausfahrens
@@ -515,10 +659,11 @@ export function plantSvgParts(p, { world = null, vars = {}, io = [], pressed = {
         const ln = (a1, a2, sw, extra = '') => { const [x1, y1] = at(a1); const [x2, y2] = at(a2); return `<line x1="${r3(x1)}" y1="${r3(y1)}" x2="${r3(x2)}" y2="${r3(y2)}" stroke="#334155" stroke-width="${sw}"${extra}/>`; };
         const plate = (head, extra) => `<rect x="${r3(head.x)}" y="${r3(head.y)}" width="${r3(head.w)}" height="${r3(head.h)}" ${extra}/>`;
         // Eingestellt (Simulation steht): Endlage gestrichelt – so weit reicht der Hub.
+        // (Grundstellung ausgefahren: die eingefahrene Lage gestrichelt)
         if (!world && !print) {
-          const end = cylinderHead(it, stroke);
+          const end = cylinderHead(it, it.startExt ? 0 : stroke);
           const endMid = horiz ? end.x + end.w / 2 : end.y + end.h / 2;
-          g += ln(back + sgn * (horiz ? w : hh), endMid, 0.08, ' stroke-dasharray="0.15 0.12" opacity="0.6"');
+          if (!it.startExt) g += ln(back + sgn * (horiz ? w : hh), endMid, 0.08, ' stroke-dasharray="0.15 0.12" opacity="0.6"');
           g += plate(end, 'fill="none" stroke="#2563eb" stroke-width="0.05" stroke-dasharray="0.2 0.12"');
         }
         g += `<rect x="${x}" y="${y}" width="${w}" height="${hh}" rx="0.1" fill="#e2e8f0" stroke="#334155" stroke-width="0.05"/>`;
@@ -546,11 +691,37 @@ export function plantSvgParts(p, { world = null, vars = {}, io = [], pressed = {
       }
       case 'object':
         g += `<rect x="${x}" y="${y}" width="${w}" height="${hh}" rx="${it.shape === 'round' ? Math.min(w, hh) / 2 : 0.08}" fill="${it.color || (it.fixed ? '#cbd5e1' : MAT_COLOR[it.material] || '#f59e0b')}" stroke="#334155" stroke-width="0.04"/>`;
-        if (it.fixed && !it.color && !print) g += `<rect x="${x}" y="${y}" width="${w}" height="${hh}" fill="url(#ph)" opacity="0.5"/>`;
+        if (it.fixed && !it.color && !print && it.look !== 'wall') g += `<rect x="${x}" y="${y}" width="${w}" height="${hh}" fill="url(#ph)" opacity="0.5"/>`;
+        if (it.look === 'wall') g += brickLines(x, y, w, hh);
         break;
+      case 'gate': {
+        // Schiebetor: Platte fährt zum Öffnen nach links (pos = wie weit offen), Motor links an der Schiene
+        const travel = Math.max(0, it.travel ?? 8);
+        const pos = gatePos(it, world);
+        const gx = x - pos;
+        const ry = y + hh + 0.15;
+        g += `<line x1="${r3(x - travel - 0.6)}" y1="${r3(ry)}" x2="${r3(x + w)}" y2="${r3(ry)}" stroke="#475569" stroke-width="0.18"/>`;
+        g += `<circle cx="${r3(x - travel - 0.9)}" cy="${r3(ry)}" r="0.45" fill="#f8fafc" stroke="#334155" stroke-width="0.05"/>${txt(x - travel - 0.9, ry + 0.14, 'M', 0.4, '#334155')}`;
+        const mv = on(it.open) && !on(it.close) ? '◀' : on(it.close) && !on(it.open) ? '▶' : '';
+        if (mv) g += txt(x - travel - 0.9, ry - 0.6, mv, 0.4, '#16a34a');
+        g += `<rect x="${r3(gx)}" y="${r3(y)}" width="${r3(w)}" height="${r3(hh)}" fill="#d1d5db" stroke="#334155" stroke-width="0.05"/>`;
+        for (let k = 1; k < 6; k++) g += `<line x1="${r3(gx + (w * k) / 6)}" y1="${r3(y + 0.15)}" x2="${r3(gx + (w * k) / 6)}" y2="${r3(y + hh - 0.15)}" stroke="#9ca3af" stroke-width="0.05"/>`;
+        // Druckleiste an der Vorderkante (zum Schließen vorn) – antippen = betätigen
+        if (it.bar) {
+          const io = ioByName(it.bar);
+          const down = !!(io && pressed[io.id]);
+          g += `<g data-pbtn="${esc(it.id)}" data-pkey="bar"><rect x="${r3(gx + w - 0.45)}" y="${r3(y)}" width="0.45" height="${r3(hh)}" fill="${down ? '#f59e0b' : '#fde68a'}" stroke="#b45309" stroke-width="0.04"/></g>`;
+          g += txt(gx + w + 0.15, y + 0.4, it.bar, 0.3, '#92400e', 'start');
+        }
+        // Endlagen: auf (links) und zu (rechts)
+        const dot = (name, px, reached) => (name ? `<circle cx="${r3(px)}" cy="${r3(ry + 0.55)}" r="0.2" fill="${world && reached ? '#22c55e' : '#e2e8f0'}" stroke="#15803d" stroke-width="0.04"/>${txt(px, ry + 1.15, name, 0.32)}` : '');
+        g += dot(it.isOpen, x - travel + 0.2, pos >= travel - 0.02) + dot(it.isClosed, x + w - 0.2, pos <= 0.02);
+        break;
+      }
       case 'creator':
         g += `<path d="M${r3(x)} ${r3(y)}h${r3(w)}l-0.3 ${r3(hh)}h${r3(-(w - 0.6))}z" fill="#dbeafe" stroke="#2563eb" stroke-width="0.05"/>`;
-        g += txt(x + w / 2, y - 0.15, `⊕ ${it.out || (it.every ? `${it.every} s` : 'Erzeuger')}`, 0.32, '#2563eb');
+        g += txt(x + w / 2, y - 0.15, `⊕ ${it.manual ? (it.label || 'einlegen') : it.out || (it.every ? `${it.every} s` : 'Erzeuger')}`, 0.32, '#2563eb');
+        if (it.manual && world) g = `<g data-pcreate="${esc(it.id)}" style="cursor:pointer">${g}</g>`;
         break;
       case 'destroyer':
         g += `<rect x="${x}" y="${y}" width="${w}" height="${hh}" fill="#fee2e2" stroke="#dc2626" stroke-width="0.05" stroke-dasharray="0.2 0.12"/>`;
@@ -558,12 +729,12 @@ export function plantSvgParts(p, { world = null, vars = {}, io = [], pressed = {
         break;
       default: break;
     }
-    o += `<g data-pit="${esc(it.id)}"${it.type === 'button' ? ` data-pbtn="${esc(it.id)}"` : ''}>${g}</g>`;
+    o += `<g data-pit="${esc(it.id)}"${it.type === 'button' ? ` data-pbtn="${esc(it.id)}" data-pkey="in"` : ''}>${g}</g>`;
   }
-  // Werkstücke aus der Physik
+  // Werkstücke aus der Physik (pick: antippen = entnehmen)
   for (const b of world?.bodies || []) {
     if (b.bend > 0.01) { o += bentSheet(b); continue; }
-    o += `<rect x="${r3(b.x)}" y="${r3(b.y)}" width="${r3(b.w)}" height="${r3(b.h)}" rx="${b.shape === 'round' ? r3(Math.min(b.w, b.h) / 2) : 0.08}" fill="${b.color || MAT_COLOR[b.material] || '#f59e0b'}" stroke="#334155" stroke-width="0.04"/>`;
+    o += `<rect${b.pick ? ` data-body="${esc(b.id)}" style="cursor:pointer"` : ''} x="${r3(b.x)}" y="${r3(b.y)}" width="${r3(b.w)}" height="${r3(b.h)}" rx="${b.shape === 'round' ? r3(Math.min(b.w, b.h) / 2) : 0.08}" fill="${b.color || MAT_COLOR[b.material] || '#f59e0b'}" stroke="#334155" stroke-width="0.04"/>`;
   }
   for (const it of items.filter((x) => x.type === 'sensor')) {
     const { w, h: hh } = plantSize(it);
@@ -590,6 +761,18 @@ export function plantSvg(p, opts = {}) {
   const { w, h, defs, body } = plantSvgParts(p, opts);
   const cls = opts.cls ? ` class="plant-svg${opts.edit ? ' plant-edit' : ''}"` : '';
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}"${opts.cls ? '' : ` width="${w}cm" height="${h}cm"`}${cls}>${defs ? `<defs>${defs}</defs>` : ''}${body}</svg>`;
+}
+
+/** Mauerwerk: Fugen im Verband (Objekt mit look: 'wall'). */
+function brickLines(x, y, w, h) {
+  const bh = 0.45;
+  const bw = 0.9;
+  let o = '';
+  for (let r = 0, yy = y + bh; yy < y + h - 0.01; r++, yy += bh) o += `<line x1="${r3(x)}" y1="${r3(yy)}" x2="${r3(x + w)}" y2="${r3(yy)}" stroke="#9a3412" stroke-width="0.03" opacity="0.6"/>`;
+  for (let r = 0, yy = y; yy < y + h - 0.01; r++, yy += bh) {
+    for (let xx = x + (r % 2 ? bw / 2 : bw); xx < x + w - 0.01; xx += bw) o += `<line x1="${r3(xx)}" y1="${r3(yy)}" x2="${r3(xx)}" y2="${r3(Math.min(y + h, yy + bh))}" stroke="#9a3412" stroke-width="0.03" opacity="0.6"/>`;
+  }
+  return o;
 }
 
 /** Gebogenes Blech: gerades Stück auf der Auflage, abgeknicktes Stück über der Kante. */

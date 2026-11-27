@@ -5,7 +5,7 @@
 // sie steht. Taster und Sensoren hängen über ihr Symbol an der Zuordnungstabelle.
 
 import { PLANT_MATERIALS, PLANT_EXAMPLES, plantSize, cylinderHead, plantInputs, plantDefault, plantSymbols, plantRename, symbolAlias, cylinderSetStroke } from './plant-core.js';
-import { spsWalk, spsIsStep } from './lab-core.js';
+import { spsWalk, spsIsStep, spsInsertIo, spsNextAddr } from './lab-core.js';
 import { h, field, svgPoint } from './labs.js';
 
 const r3 = (v) => Math.round(v * 1000) / 1000;
@@ -233,14 +233,12 @@ export function mountPlant(host, ctx) {
   function useExample(ex) {
     const st = getSt();
     const io = (st.io ||= []);
-    const count = (k) => io.filter((x) => x.kind === k).length;
     // Vorhandene Namen nehmen (xSF1 für SF1), nur Fehlendes neu in die Tabelle.
     const map = {};
     for (const [kind, name, desc] of ex.io) {
       const have = symbolAlias(name, io.filter((x) => x.kind === kind).map((x) => x.name));
       if (have) { map[name] = have; continue; }
-      const n = count(kind);
-      io.push({ id: uid('io'), kind, name, addr: kind === 'in' ? `%I${Math.floor(n / 8)}.${n % 8}` : `%Q${Math.floor(n / 8)}.${n % 8}`, desc, ...(kind === 'in' ? { contact: 'NO' } : {}) });
+      spsInsertIo(io, { id: uid('io'), kind, name, addr: spsNextAddr(io, kind), desc, ...(kind === 'in' ? { contact: 'NO' } : {}) });
     }
     st.plant = ex.make();
     for (const [from, to] of Object.entries(map)) if (from !== to) plantRename(st.plant, from, to);

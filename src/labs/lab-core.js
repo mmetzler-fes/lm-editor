@@ -1096,6 +1096,59 @@ export function spsDefault() {
   };
 }
 
+// ---------- Zuordnungstabelle: Reihenfolge und Adressen ----------
+
+const IO_ORDER = { in: 0, out: 1, mem: 2, tim: 3 };
+const IO_AREA = { in: 'I', out: 'Q', mem: 'M' };
+
+/** Adresse %I0.3 / %Q1.7 / %M2.0 → [Byte, Bit] (sonst null). */
+export function spsAddrKey(addr) {
+  const m = /^%?\s*[IQM]\s*(\d+)\.(\d+)/i.exec(String(addr ?? '').trim());
+  return m ? [Number(m[1]), Number(m[2])] : null;
+}
+
+/** Sortierschlüssel einer Zeile: Art (IN, OUT, Merker, Zeitglied), dann Adresse, dann Name. */
+function ioKey(x) {
+  const a = spsAddrKey(x?.addr);
+  return [IO_ORDER[x?.kind] ?? 9, a ? a[0] : 1e9, a ? a[1] : 1e9, String(x?.name ?? '')];
+}
+function cmpKey(a, b) {
+  for (let i = 0; i < 3; i++) if (a[i] !== b[i]) return a[i] - b[i];
+  return a[3].localeCompare(b[3], 'de', { numeric: true });
+}
+
+/** Ganze Tabelle sortieren: IN, OUT, Merker, Zeitglieder – je nach Adresse (ändert `io`). */
+export function spsSortIo(io) {
+  return io.sort((a, b) => cmpKey(ioKey(a), ioKey(b)));
+}
+
+/** Nächste freie Adresse einer Art (Bit 0–7, dann nächstes Byte); Zeitglieder: ''. */
+export function spsNextAddr(io, kind) {
+  const area = IO_AREA[kind];
+  if (!area) return '';
+  const used = (io || []).filter((x) => x.kind === kind).map((x) => spsAddrKey(x.addr)).filter(Boolean);
+  if (!used.length) return `%${area}0.0`;
+  const [b, bit] = used.reduce((m, k) => (k[0] > m[0] || (k[0] === m[0] && k[1] > m[1]) ? k : m));
+  return bit >= 7 ? `%${area}${b + 1}.0` : `%${area}${b}.${bit + 1}`;
+}
+
+/**
+ * Neue Zeile an ihren Platz: hinter die letzte Zeile gleicher Art mit kleinerer Adresse – auch wenn die
+ * Lehrkraft von Hand umsortiert hat, bleibt der Rest, wie er ist. Liefert den Index.
+ */
+export function spsInsertIo(io, row) {
+  const k = ioKey(row);
+  let at = -1;
+  io.forEach((x, i) => { if (x.kind === row.kind && cmpKey(ioKey(x), k) <= 0) at = i; });
+  if (at < 0) {
+    const first = io.findIndex((x) => x.kind === row.kind);
+    if (first >= 0) at = first - 1;
+    else io.forEach((x, i) => { if ((IO_ORDER[x.kind] ?? 9) < (IO_ORDER[row.kind] ?? 9)) at = i; });
+  }
+  io.splice(at + 1, 0, row);
+  return at + 1;
+}
+
 /** T#2s, T#500ms, T#1m30s, T#1,5s → Millisekunden (oder NaN). */
 export function spsTime(src) {
   const m = /^\s*(?:T|TIME)#(.+)$/i.exec(String(src ?? ''));

@@ -9,7 +9,7 @@
 // Rechnen und Zeichnen: lab-core.js (spsGraph, spsCycle, spsSvg). Rechts die Anlage (plant-core.js, plant-ui.js):
 // Sensoren und Endlagen liefern dort ihre Eingänge selbst, Ausgänge bewegen Bänder und Zylinder.
 
-import { spsSvg, spsInit, spsCycle, spsCheck, spsInputSignal, spsFlat, spsLocate, spsGraph, SPS_QUALIFIERS, SPS_TIMED } from './lab-core.js';
+import { spsSvg, spsInit, spsCycle, spsCheck, spsInputSignal, spsFlat, spsLocate, spsGraph, spsSortIo, spsNextAddr, spsInsertIo, SPS_QUALIFIERS, SPS_TIMED } from './lab-core.js';
 import { h, field } from './labs.js';
 import { plantInit, plantStep, plantInputs, plantInputNames, plantUpgrade } from './plant-core.js';
 import { mountPlant } from './plant-ui.js';
@@ -340,7 +340,8 @@ export function mount(el, { state, mode, onChange, say = () => {} }) {
           for (const ev of ['pointerup', 'pointercancel']) control.addEventListener(ev, () => set(false));
         }
       } else control = h('span', { class: 'sps-lamp', 'data-lamp': name, title: 'Zustand' });
-      return h('tr', {},
+      return h('tr', { 'data-io': x.id },
+        h('td', { class: 'sps-grip-cell' }, ok ? h('span', { class: 'sps-grip', title: 'Zeile verschieben: anfassen und ziehen', onpointerdown: (e) => dragRow(e, x) }, '⠿') : null),
         h('td', {}, h('select', { disabled: !ok, onchange: (e) => { x.kind = e.target.value; if (x.kind !== 'in') delete x.contact; else x.contact ||= 'NO'; changed(); } },
           ...KINDS.map(([k, l]) => h('option', { value: k, selected: x.kind === k }, l)))),
         h('td', {}, field(x.name ?? '', (v) => { x.name = v.trim(); changed(); }, { size: 5, disabled: !ok, class: dup ? 'lab-bad' : '', title: dup ? 'Symbol doppelt' : 'Symbolname' })),
@@ -353,22 +354,75 @@ export function mount(el, { state, mode, onChange, say = () => {} }) {
           teacher ? h('button', { type: 'button', class: `lab-mini${x.locked ? ' lab-on' : ''}`, title: x.locked ? 'Für Schüler fest – zum Freigeben klicken' : 'Für Schüler festlegen', onclick: () => { x.locked = !x.locked; if (!x.locked) delete x.locked; changed(); } }, x.locked ? '🔒' : '🔓') : (x.locked ? h('span', { text: '🔒', title: 'vorgegeben' }) : null),
           ok ? h('button', { type: 'button', class: 'lab-mini lab-del', title: 'Zeile löschen', onclick: () => { st.io = io().filter((y) => y !== x); changed(); } }, '✕') : null));
     });
+    // Neue Zeile: freier Name, nächste freie Adresse, an ihrem Platz (Art, dann Adresse)
     const add = (kind) => () => {
-      const n = io().filter((x) => x.kind === kind).length;
-      const name = { in: 'S', out: 'Y', mem: 'M', tim: 'tonT' }[kind] + (n + 1);
-      io().push({ id: uid('io'), kind, name, addr: kind === 'in' ? `%I0.${n}` : kind === 'out' ? `%Q0.${n}` : kind === 'tim' ? '' : `%M0.${n}`, desc: '', ...(kind === 'in' ? { contact: 'NO' } : {}) });
+      const used = new Set(io().map((x) => String(x.name ?? '').trim()));
+      const base = { in: 'S', out: 'Y', mem: 'M', tim: 'tonT' }[kind];
+      let n = io().filter((x) => x.kind === kind).length + 1;
+      while (used.has(`${base}${n}`)) n++;
+      spsInsertIo(io(), { id: uid('io'), kind, name: `${base}${n}`, addr: spsNextAddr(io(), kind), desc: '', ...(kind === 'in' ? { contact: 'NO' } : {}) });
       changed();
     };
     return h('div', { class: 'sps-section' },
       h('div', { class: 'lab-label', text: 'Zuordnungstabelle' }),
       h('table', { class: 'lab-table sps-io' },
-        h('thead', {}, h('tr', {}, ...['', 'Symbol', 'Adresse', 'Beschreibung', 'Kontakt', 'Zustand', ''].map((t) => h('th', { text: t })))),
+        h('thead', {}, h('tr', {}, ...['', '', 'Symbol', 'Adresse', 'Beschreibung', 'Kontakt', 'Zustand', ''].map((t) => h('th', { text: t })))),
         h('tbody', {}, ...rows)),
       h('div', { class: 'lab-row' },
         h('button', { type: 'button', class: 'lab-btn', onclick: add('in') }, '+ Eingang'),
         h('button', { type: 'button', class: 'lab-btn', onclick: add('out') }, '+ Ausgang'),
         h('button', { type: 'button', class: 'lab-btn', onclick: add('mem') }, '+ Merker'),
-        h('button', { type: 'button', class: 'lab-btn', onclick: add('tim'), title: 'Zeitglied: im Aktionsblock mit D/L T#… ansteuern, in der Transition tonT1.Q abfragen' }, '+ Zeitglied')));
+        h('button', { type: 'button', class: 'lab-btn', onclick: add('tim'), title: 'Zeitglied: im Aktionsblock mit D/L T#… ansteuern, in der Transition tonT1.Q abfragen' }, '+ Zeitglied'),
+        h('button', { type: 'button', class: 'lab-btn', title: 'Ganze Tabelle ordnen: Eingänge, Ausgänge, Merker, Zeitglieder – je nach Adresse', onclick: () => { spsSortIo(io()); changed(); } }, '⇅ Sortieren')));
+  }
+
+  /**
+   * Zeile am Griff ⠿ ziehen (Maus, Finger, Stift): Die Zeile folgt dem Zeiger, eine Linie zeigt, wo sie
+   * landet; beim Loslassen wird die Tabelle umsortiert.
+   */
+  function dragRow(e, x) {
+    const tr = e.target.closest('tr');
+    const tbody = tr?.parentElement;
+    if (!tbody) return;
+    e.preventDefault();
+    e.target.setPointerCapture?.(e.pointerId);
+    const rows = [...tbody.children];
+    const from = rows.indexOf(tr);
+    const startY = e.clientY;
+    let to = from;
+    tr.classList.add('sps-dragging');
+    const mark = (i) => rows.forEach((r, k) => { r.classList.toggle('sps-drop-before', k === i && i < from); r.classList.toggle('sps-drop-after', k === i && i > from); });
+    const move = (ev) => {
+      tr.style.transform = `translateY(${ev.clientY - startY}px)`;
+      to = from;
+      rows.forEach((r, k) => {
+        if (r === tr) return;
+        const b = r.getBoundingClientRect();
+        const mid = b.top + b.height / 2;
+        if (k < from && ev.clientY < mid) to = Math.min(to, k);
+        if (k > from && ev.clientY > mid) to = Math.max(to, k);
+      });
+      mark(to);
+    };
+    const up = () => {
+      e.target.removeEventListener('pointermove', move);
+      e.target.removeEventListener('pointerup', up);
+      e.target.removeEventListener('pointercancel', up);
+      tr.style.transform = '';
+      tr.classList.remove('sps-dragging');
+      mark(-1);
+      if (to === from) return;
+      const list = io();
+      const i = list.indexOf(x);
+      const target = list.indexOf(io().find((y) => y.id === rows[to].dataset.io));
+      if (i < 0 || target < 0) return;
+      list.splice(i, 1);
+      list.splice(target, 0, x);
+      changed();
+    };
+    e.target.addEventListener('pointermove', move);
+    e.target.addEventListener('pointerup', up);
+    e.target.addEventListener('pointercancel', up);
   }
 
   // ---------- Schritte ----------

@@ -131,11 +131,11 @@ test('Zylinder bleibt stehen, wenn er ein Teil gegen eine feste Fläche drückt'
   const plant = { w: 20, h: 12, items: [
     { id: 't', type: 'object', x: 0, y: 10, w: 20, h: 1, fixed: true },
     { id: 'o', type: 'object', x: 1, y: 9, w: 2, h: 1 },
-    { id: 'c', type: 'cylinder', x: 1.5, y: 0, dir: 'down', stroke: 8, speed: 4, out: 'A', ext: 'E' },
+    { id: 'c', type: 'cylinder', x: 1.5, y: 0, dir: 'down', stroke: 5, speed: 4, out: 'A', ext: 'E' },
   ] };
   const w = plantInit(plant);
   run(plant, w, { A: 1 }, 3);
-  assert.ok(Math.abs(w.cyl.c - 5.6) < 0.05, `Hub ${w.cyl.c}`); // 3 + 0,4 + 5,6 = 9 (Oberkante des Teils)
+  assert.ok(Math.abs(w.cyl.c - 2.8) < 0.05, `Hub ${w.cyl.c}`); // Gehäuse 5,8 + Platte 0,4 + 2,8 = 9 (Oberkante des Teils)
   assert.deepEqual(plantInputs(plant, w), { E: 0 });
 });
 
@@ -150,4 +150,26 @@ test('Symbole: x-Namen erkennen (xSF1 für SF1), in der ganzen Anlage umbenennen
   assert.equal(plant.items.find((i) => i.id === 'mm1').home, 'xBG11');
   assert.ok(plantSymbols(plant).has('xBG11') && !plantSymbols(plant).has('BG11'));
   assert.equal(plantSymbols(plant).get('QM11').kind, 'out');
+});
+
+test('Zylinder: Gehäuse so lang wie Hub + Kolben; Hub ändern lässt die Platte stehen', async () => {
+  const { cylinderLen, cylinderSetStroke, cylinderHead, plantSize } = await import('../src/labs/plant-core.js');
+  for (const dir of ['right', 'left', 'up', 'down']) {
+    const it = { type: 'cylinder', x: 5, y: 5, dir, stroke: 3 };
+    assert.equal(cylinderLen(it), 3.8);
+    const head = cylinderHead(it, 0);
+    cylinderSetStroke(it, 6);
+    assert.equal(Math.max(plantSize(it).w, plantSize(it).h), 6.8);
+    assert.deepEqual(cylinderHead(it, 0), head, dir);
+  }
+});
+
+test('Anlage der ersten Fassung: Gehäuse wächst nach hinten, Platte bleibt', async () => {
+  const { plantUpgrade, cylinderHead } = await import('../src/labs/plant-core.js');
+  const old = { w: 18, h: 14, items: [{ id: 'c', type: 'cylinder', x: 10, y: 2, dir: 'down', stroke: 4.4 }, { id: 'r', type: 'cylinder', x: 1, y: 6, dir: 'right', stroke: 5 }] };
+  // Platte der alten Fassung (Gehäuse 3): bei y = 2 + 3 bzw. x = 1 + 3
+  assert.equal(plantUpgrade(old), true);
+  assert.equal(cylinderHead(old.items[0], 0).y, 5);
+  assert.equal(cylinderHead(old.items[1], 0).x, 4);
+  assert.equal(plantUpgrade(old), false, 'nur einmal');
 });

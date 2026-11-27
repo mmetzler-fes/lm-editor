@@ -16,7 +16,7 @@
 //                                                                      rastend) steht in der Zuordnungstabelle
 //   { type: 'lamp', x, y, out: 'H1', color: 'yellow'|'red'|'green'|'blue'|'white', label? }
 //   { type: 'conveyor', x, y, w, out: 'M1', rev?: 'M2', speed: 3 } – Band, Oberkante bei y
-//   { type: 'cylinder', x, y, dir: 'right'|'left'|'up'|'down', stroke: 4, speed: 4,
+//   { type: 'cylinder', x, y, dir: 'right'|'left'|'up'|'down', stroke: 4, speed: 4,   – Gehäuse = Hub + 0,8
 //     out: 'Y1', ret?: 'Y2', ext?: 'B1', home?: 'B0' }             – ohne ret: einfachwirkend (Feder)
 //   { type: 'object', x, y, w, h, fixed?: true, material: 'metal'|'plastic'|'wood', color?, shape?: 'box'|'round',
 //     bendable?: true }                                              – Blech: biegt über einer Kante ab
@@ -31,16 +31,49 @@ export const PLANT_TYPES = ['button', 'lamp', 'conveyor', 'cylinder', 'object', 
 export const PLANT_MATERIALS = [['metal', 'Metall'], ['plastic', 'Kunststoff'], ['wood', 'Holz']];
 export const GRAVITY = 40;
 const BELT_H = 0.8;
-const CYL = { len: 3, thick: 1, head: 0.4, plate: 1.6 };
+const CYL = { thick: 1, head: 0.4, plate: 1.6, extra: 0.8 };
+
+/** Gehäuselänge eines Zylinders: Hub plus Kolben und Deckel – die Stange kann nie länger ausfahren. */
+export function cylinderLen(it) {
+  return Math.max(0.2, num(it?.stroke, 4)) + CYL.extra;
+}
+
+/**
+ * Hub ändern, ohne dass die Kolbenplatte (eingefahren) wandert: Das Gehäuse wächst nach hinten.
+ * Für Bedienung und KI – setzt it.stroke und verschiebt x bzw. y.
+ */
+export function cylinderSetStroke(it, stroke) {
+  const before = cylinderLen(it);
+  it.stroke = Math.max(0.2, Math.round(stroke * 100) / 100);
+  const d = cylinderLen(it) - before;
+  if (it.dir === 'down') it.y = Math.round((num(it.y, 0) - d) * 100) / 100;
+  else if (it.dir !== 'up' && it.dir !== 'left') it.x = Math.round((num(it.x, 0) - d) * 100) / 100;
+}
 const EPS = 1e-6;
 const SUB = 1 / 120;
 
 const num = (v, d) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
 const sig = (out, name) => !!(name && out && out[String(name).trim()]);
 
-/** Leere Anlage. */
+/** Leere Anlage (v: 2 – Zylindergehäuse so lang wie der Hub). */
 export function plantDefault() {
-  return { w: 24, h: 12, items: [] };
+  return { v: 2, w: 24, h: 12, items: [] };
+}
+
+/**
+ * Anlage aus der ersten Fassung (ohne v): Zylinder hatten ein Gehäuse von 3 E. Das Gehäuse wächst
+ * auf Hub + 0,8 nach hinten, die Kolbenplatte bleibt, wo sie war. Ändert `plant`; true = umgestellt.
+ */
+export function plantUpgrade(plant) {
+  if (!plant || typeof plant !== 'object' || plant.v >= 2) return false;
+  for (const it of plant.items || []) {
+    if (it.type !== 'cylinder') continue;
+    const d = cylinderLen(it) - 3;
+    if (it.dir === 'down') it.y = Math.round((num(it.y, 0) - d) * 100) / 100;
+    else if (it.dir !== 'up' && it.dir !== 'left') it.x = Math.round((num(it.x, 0) - d) * 100) / 100;
+  }
+  plant.v = 2;
+  return true;
 }
 
 /** Größe eines Elements (für Bild, Treffer, Ziehen). */
@@ -49,7 +82,7 @@ export function plantSize(it) {
     case 'button': return { w: 1.4, h: 1.4 };
     case 'lamp': return { w: 1.2, h: 1.2 };
     case 'conveyor': return { w: num(it.w, 8), h: BELT_H };
-    case 'cylinder': return /^(up|down)$/.test(it.dir) ? { w: CYL.thick, h: CYL.len } : { w: CYL.len, h: CYL.thick };
+    case 'cylinder': return /^(up|down)$/.test(it.dir) ? { w: CYL.thick, h: cylinderLen(it) } : { w: cylinderLen(it), h: CYL.thick };
     case 'creator': return { w: num(it.object?.w, 1.5) + 0.6, h: 0.6 };
     default: return { w: num(it?.w, 1.5), h: num(it?.h, 1.5) };
   }
@@ -318,16 +351,16 @@ export function plantInputNames(plant) {
  */
 export function plantExample() {
   return {
-    w: 24, h: 12,
+    v: 2, w: 24, h: 12,
     items: [
       { id: 'p1', type: 'button', x: 1, y: 1, in: 'S1', label: 'Start' },
       { id: 'p2', type: 'lamp', x: 3.4, y: 1.1, out: 'H1', color: 'yellow', label: 'H1' },
       { id: 'p3', type: 'object', x: 1, y: 8, w: 9, h: 0.6, fixed: true, material: 'metal', color: '#94a3b8' },
-      { id: 'p4', type: 'cylinder', x: 1, y: 6.4, dir: 'right', stroke: 5, speed: 4, out: 'Y1', ext: 'B1', home: 'B0' },
-      { id: 'p5', type: 'object', x: 5, y: 6.2, w: 1.6, h: 1.8, material: 'plastic', color: '#f59e0b' },
-      { id: 'p6', type: 'sensor', x: 4.6, y: 6.6, w: 3, h: 0.3, in: 'B2', kind: 'light' },
+      { id: 'p4', type: 'cylinder', x: 1, y: 6.4, dir: 'right', stroke: 4, speed: 4, out: 'Y1', ext: 'B1', home: 'B0' },
+      { id: 'p5', type: 'object', x: 6.4, y: 6.2, w: 1.6, h: 1.8, material: 'plastic', color: '#f59e0b' },
+      { id: 'p6', type: 'sensor', x: 6.2, y: 6.6, w: 2.5, h: 0.3, in: 'B2', kind: 'light' },
       { id: 'p7', type: 'destroyer', x: 9.6, y: 9.4, w: 3.4, h: 2.4 },
-      { id: 'p8', type: 'creator', x: 4.6, y: 3.2, out: 'B0', object: { w: 1.6, h: 1.8, material: 'plastic', color: '#f59e0b' } },
+      { id: 'p8', type: 'creator', x: 6.1, y: 3.2, out: 'B0', object: { w: 1.6, h: 1.8, material: 'plastic', color: '#f59e0b' } },
     ],
   };
 }
@@ -339,12 +372,12 @@ export function plantExample() {
  */
 export function plantBending() {
   return {
-    w: 18, h: 14,
+    v: 2, w: 18, h: 14,
     items: [
       { id: 'tisch', type: 'object', x: 4, y: 10, w: 11, h: 3, fixed: true, material: 'metal', color: '#9590c8' },
       { id: 'blech', type: 'object', x: 2.4, y: 9.8, w: 12, h: 0.2, material: 'metal', color: '#475569', bendable: true },
-      { id: 'mm1', type: 'cylinder', x: 10, y: 2, dir: 'down', stroke: 4.4, speed: 3, out: 'QM11', ret: 'QM12', home: 'BG11', ext: 'BG12', label: 'MM1' },
-      { id: 'mm2', type: 'cylinder', x: 2.6, y: 2, dir: 'down', stroke: 6, speed: 3, out: 'QM21', home: 'BG21', ext: 'BG22', label: 'MM2' },
+      { id: 'mm1', type: 'cylinder', x: 10, y: 4.6, dir: 'down', stroke: 2, speed: 3, out: 'QM11', ret: 'QM12', home: 'BG11', ext: 'BG12', label: 'MM1' },
+      { id: 'mm2', type: 'cylinder', x: 2.6, y: 3, dir: 'down', stroke: 3.6, speed: 3, out: 'QM21', home: 'BG21', ext: 'BG22', label: 'MM2' },
       { id: 'sf1', type: 'button', x: 15.5, y: 1, in: 'SF1', label: 'SF1 Start' },
     ],
   };

@@ -4,7 +4,7 @@
 // Steuerung läuft; aufbauen (Elemente aus der Leiste, ziehen, antippen → Eigenschaften) geht, solange
 // sie steht. Taster und Sensoren hängen über ihr Symbol an der Zuordnungstabelle.
 
-import { PLANT_MATERIALS, PLANT_EXAMPLES, plantSize, cylinderHead, plantInputs, plantDefault, plantSymbols, plantRename, symbolAlias } from './plant-core.js';
+import { PLANT_MATERIALS, PLANT_EXAMPLES, plantSize, cylinderHead, plantInputs, plantDefault, plantSymbols, plantRename, symbolAlias, cylinderSetStroke } from './plant-core.js';
 import { spsWalk, spsIsStep } from './lab-core.js';
 import { h, field, svgPoint } from './labs.js';
 
@@ -103,24 +103,45 @@ export function mountPlant(host, ctx) {
         }
         case 'cylinder': {
           const pos = world?.cyl?.[it.id] || 0;
-          const head = cylinderHead(it, pos);
+          const stroke = Math.max(0.2, it.stroke ?? 4);
           const horiz = !/^(up|down)$/.test(it.dir);
-          g += `<rect x="${x}" y="${y}" width="${w}" height="${hh}" rx="0.1" fill="#cbd5e1" stroke="#334155" stroke-width="0.05"/>`;
+          const sgn = it.dir === 'left' || it.dir === 'up' ? -1 : 1; // Richtung des Ausfahrens
           const cx = x + w / 2;
           const cy = y + hh / 2;
-          const hx = head.x + head.w / 2;
-          const hy = head.y + head.h / 2;
-          // Kolbenstange ab dem Gehäuse (die Beschriftung im Gehäuse bleibt frei)
-          const sx = hx > cx ? x + w : x;
-          const sy = hy > cy ? y + hh : y;
-          g += horiz ? `<line x1="${r3(sx)}" y1="${r3(cy)}" x2="${r3(hx)}" y2="${r3(cy)}" stroke="#334155" stroke-width="0.2"/>` : `<line x1="${r3(cx)}" y1="${r3(sy)}" x2="${r3(cx)}" y2="${r3(hy)}" stroke="#334155" stroke-width="0.2"/>`;
-          g += `<rect x="${r3(head.x)}" y="${r3(head.y)}" width="${r3(head.w)}" height="${r3(head.h)}" fill="#1e293b"/>`;
-          g += txt(cx, cy + 0.14, it.label || it.out || 'Zylinder', 0.3, '#1e293b');
-          // Endlagensensoren als grüne Punkte (leuchten, wenn erreicht)
+          // Längs der Achse: hinteres Ende des Gehäuses, Kolben bei Hub `q`
+          const back = horiz ? (sgn > 0 ? x : x + w) : (sgn > 0 ? y : y + hh);
+          const pist = (q) => back + sgn * (0.3 + q);
+          const at = (a, d = 0) => (horiz ? [a, cy + d] : [cx + d, a]);
+          const ln = (a1, a2, sw, extra = '') => { const [x1, y1] = at(a1); const [x2, y2] = at(a2); return `<line x1="${r3(x1)}" y1="${r3(y1)}" x2="${r3(x2)}" y2="${r3(y2)}" stroke="#334155" stroke-width="${sw}"${extra}/>`; };
+          const plate = (head, extra) => `<rect x="${r3(head.x)}" y="${r3(head.y)}" width="${r3(head.w)}" height="${r3(head.h)}" ${extra}/>`;
+          // Eingestellt (Simulation steht): Endlage gestrichelt – so weit reicht der Hub.
+          if (!world) {
+            const end = cylinderHead(it, stroke);
+            const endMid = horiz ? end.x + end.w / 2 : end.y + end.h / 2;
+            g += ln(back + sgn * (horiz ? w : hh), endMid, 0.08, ' stroke-dasharray="0.15 0.12" opacity="0.6"');
+            g += plate(end, 'fill="none" stroke="#2563eb" stroke-width="0.05" stroke-dasharray="0.2 0.12"');
+          }
+          g += `<rect x="${x}" y="${y}" width="${w}" height="${hh}" rx="0.1" fill="#e2e8f0" stroke="#334155" stroke-width="0.05"/>`;
+          // Kolben im Gehäuse, Stange vom Kolben zur Platte
+          const head = cylinderHead(it, pos);
+          const headMid = horiz ? head.x + head.w / 2 : head.y + head.h / 2;
+          g += ln(pist(pos), headMid, 0.2);
+          const pk = pist(pos);
+          g += horiz ? `<rect x="${r3(pk - 0.1)}" y="${r3(y + 0.08)}" width="0.2" height="${r3(hh - 0.16)}" fill="#94a3b8"/>`
+            : `<rect x="${r3(x + 0.08)}" y="${r3(pk - 0.1)}" width="${r3(w - 0.16)}" height="0.2" fill="#94a3b8"/>`;
+          g += plate(head, 'fill="#1e293b"');
+          // Beschriftung neben dem Gehäuse (innen läuft der Kolben)
+          g += horiz ? txt(cx, y - 0.2, it.label || it.out || 'Zylinder', 0.3, '#1e293b') : txt(x - 0.15, cy + 0.1, it.label || it.out || 'Zylinder', 0.3, '#1e293b', 'end');
+          // Endlagensensoren als grüne Punkte (leuchten, wenn erreicht): eingefahren hinten, ausgefahren vorn
           const inp2 = world ? plantInputs(p, world) : {};
-          const dot = (name, px, py) => (name ? `<circle cx="${r3(px)}" cy="${r3(py)}" r="0.18" fill="${inp2[String(name).trim()] ? '#22c55e' : '#e2e8f0'}" stroke="#15803d" stroke-width="0.04"/>${txt(px + 0.3, py + 0.12, name, 0.3, '#334155', 'start')}` : '');
-          if (horiz) g += dot(it.home, x + 0.3, y - 0.25) + dot(it.ext, x + w - 0.3, y - 0.25);
-          else g += dot(it.home, x + w + 0.2, y + 0.3) + dot(it.ext, x + w + 0.2, y + hh - 0.3);
+          const dot = (name, a) => {
+            if (!name) return '';
+            const [px, py] = horiz ? [a, y + hh + 0.3] : [x + w + 0.25, a];
+            const on2 = inp2[String(name).trim()];
+            return `<circle cx="${r3(px)}" cy="${r3(py)}" r="0.18" fill="${on2 ? '#22c55e' : '#e2e8f0'}" stroke="#15803d" stroke-width="0.04"/>`
+              + (horiz ? txt(px, py + 0.55, name, 0.3) : txt(px + 0.3, py + 0.11, name, 0.3, '#334155', 'start'));
+          };
+          g += dot(it.home, pist(0)) + dot(it.ext, pist(stroke));
           break;
         }
         case 'object':
@@ -276,7 +297,7 @@ export function mountPlant(host, ctx) {
           row('Ausfahren', pick(it.out, ['out', 'mem'], set(it, 'out'))),
           row('Einfahren', pick(it.ret, ['out', 'mem'], set(it, 'ret'), 'Feder (einfachwirkend)')),
           row('Endlage aus', pick(it.ext, ['in'], set(it, 'ext'), 'ohne')), row('Endlage ein', pick(it.home, ['in'], set(it, 'home'), 'ohne')),
-          row('Hub', numF(it.stroke, set(it, 'stroke')), ' Tempo ', numF(it.speed, set(it, 'speed'))));
+          row('Hub', numF(it.stroke, (v) => { cylinderSetStroke(it, v); changed(); }), ' Tempo ', numF(it.speed, set(it, 'speed'))));
         break;
       case 'object':
         rows.push(sizeRow(), h('label', { class: 'lab-check' }, h('input', { type: 'checkbox', checked: !!it.fixed, onchange: (ev) => set(it, 'fixed')(ev.target.checked || '') }), ' feststehend (Tisch, Wand, Rutsche)'),

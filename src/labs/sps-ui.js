@@ -11,7 +11,7 @@
 
 import { spsSvg, spsInit, spsCycle, spsCheck, spsInputSignal, spsFlat, spsLocate, spsGraph, SPS_QUALIFIERS, SPS_TIMED } from './lab-core.js';
 import { h, field } from './labs.js';
-import { plantInit, plantStep, plantInputs, plantInputNames } from './plant-core.js';
+import { plantInit, plantStep, plantInputs, plantInputNames, plantUpgrade } from './plant-core.js';
 import { mountPlant } from './plant-ui.js';
 
 const clone = (v) => JSON.parse(JSON.stringify(v));
@@ -26,6 +26,7 @@ const Q_HELP = {
 
 export function mount(el, { state, mode, onChange, say = () => {} }) {
   let st = clone(state);
+  plantUpgrade(st.plant); // Anlage der ersten Fassung: Zylindergehäuse = Hub + 0,8
   const teacher = mode === 'teacher';
   let rt = null;          // Laufzeit (spsInit), null = gestoppt
   let world = null;       // Anlage während des Laufs (plantInit)
@@ -447,7 +448,7 @@ export function mount(el, { state, mode, onChange, say = () => {} }) {
   renderAll();
   return {
     getState: () => clone(st),
-    setState: (s) => { st = clone(s); stop(); },
+    setState: (s) => { st = clone(s); plantUpgrade(st.plant); stop(); },
     destroy: () => { clearInterval(timer); el.replaceChildren(); },
   };
 }

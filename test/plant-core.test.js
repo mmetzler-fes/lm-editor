@@ -238,3 +238,27 @@ test('Draufsicht: Band trägt in Laufrichtung, daneben bleibt die Felge liegen; 
   assert.equal(plantInputs(plant, w).BG10, 1, 'Prüfdruck nach 2 s in der Endlage');
   assert.equal(f.x, 6.6, 'MM2 wirkt nicht auf die Felge (von oben)');
 });
+
+test('Anlage: Bilder an Objekt, Werkstück, Erzeuger und Kolbenplatte (nur data:image)', async () => {
+  const { plantSvg, imgOk } = await import('../src/labs/plant-core.js');
+  const png = 'data:image/png;base64,iVBORw0KGgo=';
+  assert.ok(imgOk(png) && imgOk('data:image/svg+xml;base64,PHN2Zz4=') && !imgOk('https://x.de/a.png') && !imgOk('data:text/html;base64,PGI+'));
+  const plant = { v: 2, w: 20, h: 10, items: [
+    { id: 't', type: 'object', x: 0, y: 8, w: 10, h: 1, fixed: true, img: png },
+    { id: 'o', type: 'object', x: 2, y: 2, w: 1, h: 1, img: png },
+    { id: 'z', type: 'cylinder', x: 12, y: 1, dir: 'down', stroke: 2, out: 'Y1', plateImg: png },
+    { id: 'w', type: 'object', x: 11, y: 4, w: 3, h: 0.7, fixed: true, deco: true, mount: 'z', img: png },
+    { id: 'c', type: 'creator', x: 5, y: 0, out: 'Y2', object: { w: 1, h: 1, img: png } },
+    { id: 'x', type: 'object', x: 8, y: 2, w: 1, h: 1, img: 'javascript:alert(1)' },
+  ] };
+  const w = plantInit(plant);
+  assert.equal(w.bodies.find((b) => b.x === 2).img, png);
+  assert.equal(w.bodies.find((b) => b.x === 8).img, undefined);
+  run(plant, w, { Y1: 1, Y2: 1 }, 1);
+  assert.equal(w.bodies.filter((b) => b.img === png).length, 2, 'Erzeuger gibt das Bild mit');
+  const svg = plantSvg(plant, { world: w });
+  assert.equal((svg.match(/<image /g) || []).length, 5);
+  assert.ok(svg.includes('xmlns:xlink=') && svg.includes(`xlink:href="${png}"`));
+  assert.ok(!svg.includes('javascript:'));
+  assert.ok(svg.includes('<image x="11" y="6"'), 'Werkzeug fährt mit dem Zylinder (Hub 2)');
+});

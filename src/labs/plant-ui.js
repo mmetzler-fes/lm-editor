@@ -4,7 +4,7 @@
 // Steuerung läuft; aufbauen (Elemente aus der Leiste, ziehen, antippen → Eigenschaften) geht, solange
 // sie steht. Taster und Sensoren hängen über ihr Symbol an der Zuordnungstabelle.
 
-import { PLANT_MATERIALS, PLANT_EXAMPLES, MAT_COLOR, plantSvg, plantDefault, plantSymbols, plantRename, symbolAlias, cylinderSetStroke, plantSpawn, plantRemoveBody } from './plant-core.js';
+import { PLANT_MATERIALS, PLANT_EXAMPLES, MAT_COLOR, imgOk, plantSvg, plantDefault, plantSymbols, plantRename, symbolAlias, cylinderSetStroke, plantSpawn, plantRemoveBody } from './plant-core.js';
 import { spsWalk, spsIsStep, spsInsertIo, spsNextAddr } from './lab-core.js';
 import { h, field, svgPoint } from './labs.js';
 
@@ -18,7 +18,65 @@ const PALETTE = [
   ['creator', '⊕ Erzeuger', 'Legt Werkstücke nach – bei einem Signal oder im Takt'],
   ['destroyer', '⊗ Vernichter', 'Werkstücke verschwinden hier (Behälter, Ende der Anlage)'],
   ['gate', '⇤ Tor', 'Schiebetor mit Motor (auf/zu), Endlagen und Druckleiste'],
+  ['image', '🖼 Bild', 'Bild (.svg, .png, .bmp, .jpg) als festes Teil, Fläche oder Werkzeug – z. B. aus PLC-Lab'],
 ];
+
+// ---------- Bilder (img/plateImg als data:-URL, siehe plant-core.js) ----------
+const IMG_MAX_PX = 800; // längste Seite – reicht für die Anlage und hält das Dokument klein
+const IMG_MAX_LEN = 1_500_000; // Zeichen der data:-URL
+
+const loadImg = (src) => new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = () => rej(new Error('Bild lässt sich nicht lesen')); im.src = src; });
+const readAs = (file, how) => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = () => rej(r.error); r[how](file); });
+
+/** Rastergrafik neu als PNG (BMP kann der Druck nicht), verkleinert; white: fast weiße Pixel durchsichtig. */
+async function toPng(src, white) {
+  const im = await loadImg(src);
+  const k = Math.min(1, IMG_MAX_PX / Math.max(im.naturalWidth, im.naturalHeight, 1));
+  const cv = document.createElement('canvas');
+  cv.width = Math.max(1, Math.round(im.naturalWidth * k));
+  cv.height = Math.max(1, Math.round(im.naturalHeight * k));
+  const c = cv.getContext('2d');
+  c.drawImage(im, 0, 0, cv.width, cv.height);
+  if (white) {
+    const d = c.getImageData(0, 0, cv.width, cv.height);
+    const a = d.data;
+    for (let i = 0; i < a.length; i += 4) {
+      const m = Math.min(a[i], a[i + 1], a[i + 2]);
+      if (m >= 245) a[i + 3] = 0; else if (m > 230) a[i + 3] = Math.round((a[i + 3] * (245 - m)) / 15);
+    }
+    c.putImageData(d, 0, 0);
+  }
+  return { src: cv.toDataURL('image/png'), ratio: cv.height / cv.width };
+}
+
+/** Datei wählen → { src, ratio: Höhe/Breite } oder null. BMP: Weiß wird durchsichtig (Hintergrund wie in PLC-Lab). */
+function chooseImage() {
+  return new Promise((resolve, reject) => {
+    const inp = h('input', { type: 'file', accept: '.svg,.png,.bmp,.jpg,.jpeg,.gif,.webp,image/*', style: { display: 'none' } });
+    inp.onchange = async () => {
+      const f = inp.files?.[0];
+      inp.remove();
+      if (!f) { resolve(null); return; }
+      try {
+        const svg = /\.svg$/i.test(f.name) || f.type === 'image/svg+xml';
+        let out;
+        if (svg) {
+          const text = await readAs(f, 'readAsText');
+          const src = `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(text)))}`;
+          const im = await loadImg(src);
+          out = { src, ratio: im.naturalWidth ? im.naturalHeight / im.naturalWidth : 1 };
+        } else {
+          out = await toPng(await readAs(f, 'readAsDataURL'), /\.bmp$/i.test(f.name) || f.type === 'image/bmp');
+        }
+        if (out.src.length > IMG_MAX_LEN) throw new Error('Bild zu groß (höchstens etwa 1 MB)');
+        resolve(out);
+      } catch (err) { reject(err); }
+    };
+    document.body.append(inp);
+    inp.click();
+  });
+}
+
 const NEW = {
   button: () => ({ in: '' }),
   lamp: () => ({ out: '', color: 'yellow' }),
@@ -212,14 +270,24 @@ export function mountPlant(host, ctx) {
   }
 
   // ---------- Aufbauen ----------
-  function add(type) {
+  async function addImage() {
+    let pic;
+    try { pic = await chooseImage(); } catch (err) { say(`⚠️ ${err.message || err}`); return; }
+    if (!pic) return;
+    const w = 4;
+    add('object', { w, h: Math.round(w * pic.ratio * 100) / 100, fixed: true, deco: true, img: pic.src, material: 'metal' });
+    say('Bild als Fläche ohne Widerstand eingefügt – antippen: feststehend, Hindernis, Werkstück oder „Fährt mit“ einem Zylinder (Werkzeug).');
+  }
+
+  function add(type, init) {
+    if (type === 'image' && !init) { addImage(); return; }
     const p = plant();
     const n = p.items.length;
-    const it = { id: uid('p'), type, x: 1 + (n % 4) * 5, y: 1 + (Math.floor(n / 4) % 3) * 3.5, ...NEW[type]() };
+    const it = { id: uid('p'), type, x: 1 + (n % 4) * 5, y: 1 + (Math.floor(n / 4) % 3) * 3.5, ...(init || NEW[type]()) };
     p.items.push(it);
     sel = it.id;
     changed();
-    say('Neues Element oben links – ziehen zum Platzieren, antippen für die Eigenschaften.');
+    if (!init) say('Neues Element oben links – ziehen zum Platzieren, antippen für die Eigenschaften.');
   }
   const names = (kinds) => (getSt().io || []).filter((x) => kinds.includes(x.kind) && x.name).map((x) => String(x.name).trim());
   const pick = (value, kinds, onSet, none = '–') => h('select', { onchange: (e) => onSet(e.target.value) },
@@ -232,6 +300,30 @@ export function mountPlant(host, ctx) {
   const matSel = (value, onSet, all) => h('select', { onchange: (e) => onSet(e.target.value) },
     ...(all ? [h('option', { value: '', selected: !value }, all)] : []),
     ...PLANT_MATERIALS.map(([k, l]) => h('option', { value: k, selected: value === k }, l)));
+
+  /**
+   * Bild-Zeile: wählen, Weiß durchsichtig, Seitenverhältnis, entfernen. key: 'img' bzw. 'plateImg';
+   * fit(ratio): Kasten an das Bild anpassen (Höhe/Breite).
+   */
+  const imgRow = (label, obj, key, fit) => {
+    const has = imgOk(obj[key]);
+    const redo = () => { changed(); closePop(); };
+    const choose = async () => {
+      try {
+        const pic = await chooseImage();
+        if (!pic) return;
+        obj[key] = pic.src;
+        fit?.(pic.ratio);
+        redo();
+      } catch (err) { say(`⚠️ ${err.message || err}`); }
+    };
+    return row(label,
+      h('button', { type: 'button', class: 'lab-mini', title: '.svg, .png, .bmp, .jpg – wird ins Dokument eingebettet', onclick: choose }, has ? '🖼 anderes Bild…' : '🖼 Bild wählen…'),
+      has && !/^data:image\/svg/.test(obj[key]) ? h('button', { type: 'button', class: 'lab-mini', title: 'Fast weiße Pixel durchsichtig machen (Hintergrund)', onclick: async () => { try { obj[key] = (await toPng(obj[key], true)).src; redo(); } catch (err) { say(`⚠️ ${err.message || err}`); } } }, 'Weiß → durchsichtig') : null,
+      has && fit ? h('button', { type: 'button', class: 'lab-mini', title: 'Kasten auf das Seitenverhältnis des Bilds bringen', onclick: async () => { try { const im = await loadImg(obj[key]); fit(im.naturalHeight / (im.naturalWidth || 1)); redo(); } catch (err) { say(`⚠️ ${err.message || err}`); } } }, '⤢ Verhältnis') : null,
+      has ? h('button', { type: 'button', class: 'lab-mini lab-del', title: 'Bild entfernen', onclick: () => { delete obj[key]; redo(); } }, '✕') : null);
+  };
+  const r2 = (v) => Math.round(v * 100) / 100;
 
   function popItem(it, e) {
     const p = plant();
@@ -267,6 +359,7 @@ export function mountPlant(host, ctx) {
           h('label', { class: 'lab-check', title: 'z. B. Prüf- oder Presszylinder, der von oben wirkt (Draufsicht)' }, h('input', { type: 'checkbox', checked: !!it.ghost, onchange: (ev) => set(it, 'ghost')(ev.target.checked || '') }), ' wirkt nicht auf Teile'),
           row('Druck erreicht', pick(it.press, ['in'], set(it, 'press'), 'ohne'), ' nach ', numF(it.pressDelay ?? 2, set(it, 'pressDelay')), ' s'),
           row('Platte', numF(it.plate ?? 1.6, set(it, 'plate'), { title: 'quer zur Stange' }), ' × ', numF(it.plateThick ?? 0.4, set(it, 'plateThick'), { title: 'längs der Stange' }), ' (quer × längs)'),
+          imgRow('Platte als Bild', it, 'plateImg', (ratio) => { const pl = it.plate ?? 1.6; it.plateThick = r2(/^(up|down)$/.test(it.dir) ? pl * ratio : pl / ratio); }),
           row('Fährt mit', h('select', { title: 'Sitzt auf einem anderen Zylinder und fährt mit ihm', onchange: (ev) => set(it, 'mount')(ev.target.value) },
             h('option', { value: '', selected: !it.mount }, '– fest –'),
             ...(plant().items || []).filter((x) => x.type === 'cylinder' && x.id !== it.id).map((x) => h('option', { value: x.id, selected: it.mount === x.id }, x.label || x.out || x.id)))));
@@ -288,7 +381,11 @@ export function mountPlant(host, ctx) {
           it.fixed ? h('label', { class: 'lab-check', title: 'Teile fahren darüber (z. B. Prüfstation, Bedienfeld)' }, h('input', { type: 'checkbox', checked: !!it.deco, onchange: (ev) => set(it, 'deco')(ev.target.checked || '') }), ' nur Fläche (kein Hindernis)') : null,
           !it.fixed ? h('label', { class: 'lab-check' }, h('input', { type: 'checkbox', checked: it.look === 'rim', onchange: (ev) => set(it, 'look')(ev.target.checked ? 'rim' : '') }), ' als Felge zeichnen') : null,
           it.fixed ? h('label', { class: 'lab-check' }, h('input', { type: 'checkbox', checked: it.look === 'wall', onchange: (ev) => set(it, 'look')(ev.target.checked ? 'wall' : '') }), ' als Mauer zeichnen')
-            : h('label', { class: 'lab-check' }, h('input', { type: 'checkbox', checked: !!it.pick, onchange: (ev) => set(it, 'pick')(ev.target.checked || '') }), ' im Lauf antippen = entnehmen'));
+            : h('label', { class: 'lab-check' }, h('input', { type: 'checkbox', checked: !!it.pick, onchange: (ev) => set(it, 'pick')(ev.target.checked || '') }), ' im Lauf antippen = entnehmen'),
+          imgRow('Bild', it, 'img', (ratio) => { it.h = r2((it.w ?? 1.5) * ratio); }),
+          it.fixed ? row('Fährt mit', h('select', { title: 'Sitzt an einem Zylinder und fährt mit ihm (z. B. Werkzeug als Bild)', onchange: (ev) => set(it, 'mount')(ev.target.value) },
+            h('option', { value: '', selected: !it.mount }, '– fest –'),
+            ...(p.items || []).filter((x) => x.type === 'cylinder').map((x) => h('option', { value: x.id, selected: it.mount === x.id }, x.label || x.out || x.id)))) : null);
         break;
       case 'sensor':
         rows.push(row('Eingang', pick(it.in, ['in'], set(it, 'in'))),
@@ -304,6 +401,7 @@ export function mountPlant(host, ctx) {
           row('Takt', numF(it.every || 0, set(it, 'every')), ' s (0 = nur bei Signal)'),
           row('Teil', numF(o.w, setO('w')), ' × ', numF(o.h, setO('h')), ' ', matSel(o.material, setO('material'))),
           row('Farbe', h('input', { type: 'color', value: o.color || MAT_COLOR[o.material] || '#f59e0b', onchange: (ev) => setO('color')(ev.target.value) })),
+          imgRow('Teil als Bild', o, 'img', (ratio) => { o.h = r2((o.w ?? 1.5) * ratio); }),
           h('label', { class: 'lab-check' }, h('input', { type: 'checkbox', checked: !!it.manual, onchange: (ev) => set(it, 'manual')(ev.target.checked || '') }), ' im Lauf antippen = einlegen'),
           h('label', { class: 'lab-check' }, h('input', { type: 'checkbox', checked: !!o.pick, onchange: (ev) => setO('pick')(ev.target.checked || '') }), ' Teile lassen sich entnehmen'),
           row('Ablegen bei', numF(it.place?.x ?? '', (v) => { it.place = { ...(it.place || { y: it.y || 0 }), x: v }; changed(); }, { placeholder: 'x' }), ' ',

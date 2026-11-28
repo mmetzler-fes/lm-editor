@@ -327,7 +327,7 @@ const num = (v, d) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
 const FONT = 'font-family="Liberation Sans, Arial, sans-serif"';
 
 function svgOpen(w, h) {
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${r3(w)}cm" height="${r3(h)}cm" viewBox="0 0 ${r3(w)} ${r3(h)}">`
+  return `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${r3(w)}cm" height="${r3(h)}cm" viewBox="0 0 ${r3(w)} ${r3(h)}">`
     + `<rect x="0" y="0" width="${r3(w)}" height="${r3(h)}" fill="#ffffff"/>`;
 }
 function text(x, y, s, { size = 0.38, fill = '#222', anchor = 'start', bold = false } = {}) {

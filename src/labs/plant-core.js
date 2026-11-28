@@ -33,6 +33,9 @@
 // Zylinder zusätzlich: startExt (Grundstellung ausgefahren), plate/plateThick (Kolbenplatte quer/längs),
 // mount: ID eines Zylinders, auf dem er mitfährt. Objekte: pick (im Lauf antippen = entnehmen),
 // look: 'wall' (Mauer). Erzeuger: manual (im Lauf antippen = einlegen), place: { x, y } (wohin).
+// Bilder (wie in PLC-Lab): img – data:-URL (PNG, JPEG, GIF, WebP, SVG; BMP wird beim Laden zu PNG) – zeichnet
+//   ein Objekt (auch Werkstück des Erzeugers, auch mit mount an einem Zylinder) bzw. – plateImg – die
+//   Kolbenplatte eines Zylinders als Bild, auf die Größe des Kastens gezogen. Physik unverändert (Kasten).
 //
 // Ablauf: world = plantInit(plant); je Zyklus plantStep(plant, world, ausgänge, dt) und
 // plantInputs(plant, world) → Eingänge (Sensoren, Endlagen der Zylinder).
@@ -148,6 +151,14 @@ export function plantPlaced(plant, world) {
   });
 }
 
+/** Nur eingebettete Bilder (data:image/…;base64) – keine Adressen nach außen, läuft offline und im Druck. */
+export const imgOk = (src) => typeof src === 'string' && /^data:image\/(png|jpeg|gif|webp|bmp|svg\+xml);base64,[A-Za-z0-9+/=]+$/.test(src);
+
+/** Bild im Kasten (gestreckt wie in PLC-Lab); href und xlink:href, damit auch LibreOffice es im Druck zeigt. */
+function imgSvg(src, x, y, w, h, extra = '') {
+  return `<image x="${r3(x)}" y="${r3(y)}" width="${r3(w)}" height="${r3(h)}" preserveAspectRatio="none" href="${src}" xlink:href="${src}"${extra}/>`;
+}
+
 const overlap = (a, b, eps = EPS) => a.x < b.x + b.w - eps && a.x + a.w > b.x + eps && a.y < b.y + b.h - eps && a.y + a.h > b.y + eps;
 
 /** Laufzeit neu: bewegliche Objekte als Körper, Zylinder eingefahren. */
@@ -171,6 +182,7 @@ function newBody(world, o, x, y) {
     ...(o.bendable ? { bendable: true } : {}),
     ...(o.pick ? { pick: true } : {}),
     ...(o.look ? { look: o.look } : {}),
+    ...(imgOk(o.img) ? { img: o.img } : {}),
   };
 }
 
@@ -697,7 +709,7 @@ export function plantSvgParts(p, { world = null, vars = {}, io = [], pressed = {
   const items = plantPlaced(p, world);
   // Zuerst Flächen und Geräte, dann Werkstücke, dann Sensoren (Strahl über allem)
   const order = { destroyer: 0, creator: 1, gate: 1.5, object: 2, conveyor: 3, cylinder: 4, lamp: 5, button: 6, sensor: 8 };
-  const rank = (it) => (it.type === 'object' && it.deco ? -1 : it.type === 'conveyor' && it.dir ? -0.5 : order[it.type] ?? 5);
+  const rank = (it) => (it.type === 'object' && it.mount ? 4.5 : it.type === 'object' && it.deco ? -1 : it.type === 'conveyor' && it.dir ? -0.5 : order[it.type] ?? 5);
   for (const it of [...items].sort((a, b) => rank(a) - rank(b))) {
     if (it.type === 'object' && !it.fixed && world) continue; // beweglich: während des Laufs aus der Physik
     if (it.type === 'sensor') continue;
@@ -777,7 +789,7 @@ export function plantSvgParts(p, { world = null, vars = {}, io = [], pressed = {
         const pk = pist(pos);
         g += horiz ? `<rect x="${r3(pk - 0.1)}" y="${r3(y + 0.08)}" width="0.2" height="${r3(hh - 0.16)}" fill="#94a3b8"/>`
           : `<rect x="${r3(x + 0.08)}" y="${r3(pk - 0.1)}" width="${r3(w - 0.16)}" height="0.2" fill="#94a3b8"/>`;
-        g += plate(head, 'fill="#1e293b"');
+        g += imgOk(it.plateImg) ? imgSvg(it.plateImg, head.x, head.y, head.w, head.h) : plate(head, 'fill="#1e293b"');
         // Beschriftung neben dem Gehäuse (innen läuft der Kolben)
         g += horiz ? txt(cx, y - 0.2, it.label || it.out || 'Zylinder', 0.3, '#1e293b') : txt(x - 0.15, cy + 0.1, it.label || it.out || 'Zylinder', 0.3, '#1e293b', 'end');
         // Endlagensensoren als grüne Punkte (leuchten, wenn erreicht): eingefahren hinten, ausgefahren vorn
@@ -803,6 +815,11 @@ export function plantSvgParts(p, { world = null, vars = {}, io = [], pressed = {
       }
       case 'object':
         if (it.look === 'rim') { g += rimSvg(x, y, w, hh, it.color); break; }
+        if (imgOk(it.img)) {
+          g += imgSvg(it.img, x, y, w, hh);
+          if (it.label) g += txt(x + w / 2, y + 0.5, it.label, 0.36, '#334155');
+          break;
+        }
         g += `<rect x="${x}" y="${y}" width="${w}" height="${hh}" rx="${it.shape === 'round' ? Math.min(w, hh) / 2 : 0.08}" fill="${it.color || (it.fixed ? '#cbd5e1' : MAT_COLOR[it.material] || '#f59e0b')}" stroke="#334155" stroke-width="0.04"${it.deco ? ' stroke-dasharray="0.2 0.1"' : ''}/>`;
         if (it.fixed && !it.color && !print && it.look !== 'wall' && !it.deco) g += `<rect x="${x}" y="${y}" width="${w}" height="${hh}" fill="url(#ph)" opacity="0.5"/>`;
         if (it.look === 'wall') g += brickLines(x, y, w, hh);
@@ -848,6 +865,7 @@ export function plantSvgParts(p, { world = null, vars = {}, io = [], pressed = {
   // Werkstücke aus der Physik (pick: antippen = entnehmen)
   for (const b of world?.bodies || []) {
     if (b.bend > 0.01) { o += bentSheet(b); continue; }
+    if (imgOk(b.img)) { o += imgSvg(b.img, b.x, b.y, b.w, b.h, b.pick ? ` data-body="${esc(b.id)}" style="cursor:pointer"` : ''); continue; }
     if (b.look === 'rim') { o += `<g${b.pick ? ` data-body="${esc(b.id)}" style="cursor:pointer"` : ''}>${rimSvg(b.x, b.y, b.w, b.h, b.color)}</g>`; continue; }
     o += `<rect${b.pick ? ` data-body="${esc(b.id)}" style="cursor:pointer"` : ''} x="${r3(b.x)}" y="${r3(b.y)}" width="${r3(b.w)}" height="${r3(b.h)}" rx="${b.shape === 'round' ? r3(Math.min(b.w, b.h) / 2) : 0.08}" fill="${b.color || MAT_COLOR[b.material] || '#f59e0b'}" stroke="#334155" stroke-width="0.04"/>`;
   }
@@ -875,7 +893,7 @@ export function plantSvgParts(p, { world = null, vars = {}, io = [], pressed = {
 export function plantSvg(p, opts = {}) {
   const { w, h, defs, body } = plantSvgParts(p, opts);
   const cls = opts.cls ? ` class="plant-svg${opts.edit ? ' plant-edit' : ''}"` : '';
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}"${opts.cls ? '' : ` width="${w}cm" height="${h}cm"`}${cls}>${defs ? `<defs>${defs}</defs>` : ''}${body}</svg>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 ${w} ${h}"${opts.cls ? '' : ` width="${w}cm" height="${h}cm"`}${cls}>${defs ? `<defs>${defs}</defs>` : ''}${body}</svg>`;
 }
 
 /** Felge von oben: Reifenring, Felgenbett, fünf Speichen. */

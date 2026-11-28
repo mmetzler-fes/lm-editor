@@ -2035,13 +2035,13 @@ const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-r
     return entries;
   }
 
-  async function runInsert(fn) {
+  async function runInsert(fn, saved = paper.insertBlock ? '💾 Im Dokument gespeichert' : '') {
     try {
       status('Wird eingefügt …');
       const done = await fn();
       if (done === false) { status(''); return; }
       await layoutPaper();
-      status(paper.insertBlock ? '💾 Im Dokument gespeichert' : '');
+      status(saved);
     } catch (err) {
       status(`⚠️ ${err?.message || err}`);
     }
@@ -2952,8 +2952,11 @@ const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-r
       return;
     }
     const image = { type: 'image', src: png, width: `${(b.w / CM).toFixed(2)}cm` };
+    const ask = asSolution ? 'Die Auswahl als Lösung (Bild) in die Schülervorlage übernehmen? Sie verschwindet dann aus deiner Lehrerlösung.'
+      : 'Die Auswahl als Bild in die Schülervorlage übernehmen – alle Schüler sehen es? Sie verschwindet dann aus deiner Lehrerlösung.';
+    if (!(await (window.appConfirm ? window.appConfirm(ask) : Promise.resolve(confirm(ask))))) return;
     deleteSelection();
-    runInsert(() => paper.insertBlock(after, asSolution ? { type: 'solution', blocks: [image] } : image));
+    await runInsert(() => paper.toTemplate(after, asSolution ? { type: 'solution', blocks: [image] } : image), '💾 In der Schülervorlage gespeichert');
   }
 
   // ---------- Kopieren, Einfügen, Gruppieren ----------
@@ -3247,10 +3250,11 @@ const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-r
       entries.push({ label: `Ausschneiden (${key}X)`, onClick: () => cutSelection() });
     }
     if (canPaste()) entries.push({ label: `Einfügen (${key}V)`, onClick: () => { void pasteFromMenu(); } });
-    // Lehrkraft am eigenen Dokument: Beschriftung als Baustein ins Dokument (z. B. aus .xopp übernommene Lösungen).
-    if (items.length && paper?.insertBlock && doc.bg === 'paper') {
-      entries.push({ label: '💡 Als Lösung ins Dokument', onClick: () => selectionToDocument(true) });
-      entries.push({ label: '🖼 Als Bild ins Dokument', onClick: () => selectionToDocument(false) });
+    // Lehrkraft am eigenen Dokument: einzige Brücke aus ihrer Ebene in die Vorlage – die Auswahl als Bild
+    // (z. B. eine Zeichnung mit dem Geodreieck oder aus .xopp übernommene Lösungen).
+    if (items.length && paper?.toTemplate && doc.bg === 'paper') {
+      entries.push({ label: '→ In die Schülervorlage übernehmen (als Bild)', onClick: () => selectionToDocument(false) });
+      entries.push({ label: '→ In die Schülervorlage übernehmen (als Lösung)', onClick: () => selectionToDocument(true) });
     }
     const shape = items.length === 1 && items[0].type === 'shape' ? items[0] : null;
     if (shape && isClosed(shape)) entries.push({ label: shape.text ? '✏️ Text in der Form bearbeiten' : '✏️ Text in die Form', onClick: () => editShapeText(shape.id) });

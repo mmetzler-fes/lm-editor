@@ -456,3 +456,7 @@ body.ink-open { overflow: hidden; }
   .ink-toolbar .ink-zoom-pct { min-width: 42px; padding: 0 2px; font-size: 0.78rem; }
   .ink-toolbar .ink-status:empty { display: none; }
 }
+/* Selbst eingefügter Baustein (eigene Ebene, Schritt C): dezent markiert, im Druck nicht */
+.ink-own-block { position: relative; }
+.ink-own-block::before { content: ''; position: absolute; left: -10px; top: 0; bottom: 0; border-left: 3px dotted #60a5fa; pointer-events: none; }
+@media print { .ink-own-block::before { display: none; } }

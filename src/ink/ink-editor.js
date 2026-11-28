@@ -16,6 +16,7 @@ import {
 import { showContextMenu, solutionSwitch } from '../util/dom.js';
 import { FONT_SIZES } from '../doc/docspec.js';
 import { headStripFromPdf } from './template-head.js';
+import { safeInsertContent } from './ink-print.js';
 
 // ==================== STIFT-EDITOR ====================
 //
@@ -1359,7 +1360,17 @@ const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-r
     if (state.undo.length > 100) state.undo.shift();
     state.redo = [];
   }
-  function restoreLayer(saved) {
+  async function restoreLayer(saved) {
+    const was = JSON.stringify(inserts);
+    const next = Array.isArray(saved.inserts) ? saved.inserts : [];
+    if (JSON.stringify(next) !== was) {
+      // Eingefügtes kam dazu oder fiel weg: Blatt neu setzen, die Ebene so, wie sie war.
+      inserts = next;
+      layer = saved;
+      await layoutPaper({ keep: true });
+      changed();
+      return;
+    }
     layer = saved;
     karoMap = karoOf(layer);
     applyKaro();
@@ -1569,9 +1580,9 @@ const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-r
     overlay.querySelector('.ink-stage')?.classList.remove('ink-has-bank');
   }
 
-  async function layoutPaper() {
+  async function layoutPaper({ keep = false } = {}) {
     undockBank();
-    if (paperView) { layer = toLayer(); captureForms(); }
+    if (paperView) { if (!keep) layer = toLayer(); captureForms(); }
     leavePaper();
     status('Wird geladen …');
     // Gastgeber mit eigenem, lebendem Blatt (Schüler im Durchlauf): erst zurückgeben, dann leeren.
@@ -1850,6 +1861,16 @@ const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-r
     return null;
   }
 
+  /** Selbst eingefügter Baustein (eigene Ebene) unter dem Punkt – seine Kennung oder null. */
+  function ownBlockAt(clientX, clientY) {
+    if (!paperView) return null;
+    for (const n of document.elementsFromPoint(clientX, clientY)) {
+      const el = n.closest?.('[data-btype="insert"][data-inserted]');
+      if (el && paperView.el.contains(el)) return el.dataset.bid;
+    }
+    return null;
+  }
+
   /** Menüeinträge eines Schreibfelds: Muster (✓ das aktuelle), bei selbst eingefügten Entfernen. */
   function fieldEntries(el) {
     const karo = el.querySelector('.ds-karo');
@@ -1919,17 +1940,29 @@ const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-r
 
   // ---------- Einfügen zwischen Bausteinen (⊕ am Rand) ----------
 
-  /** Selbst eingefügte Schreibfelder ins Blatt setzen – hinter ihren Baustein, sonst ans Ende. */
+  /**
+   * Selbst Eingefügtes ins Blatt setzen – hinter seinen Baustein, sonst ans Ende: Schreibfelder und
+   * (mit `content`) Textblöcke, Tabellen, Bilder der eigenen Ebene. Sie schieben den Rest nach unten.
+   */
   function placeInserts(sheet) {
     const root = sheet.querySelector('.docspec') || sheet;
     for (const ins of inserts) {
       const box = document.createElement('div');
       box.className = 'ds-b';
       box.dataset.bid = ins.id;
-      box.dataset.btype = 'karo';
       box.dataset.inserted = '1';
-      const pattern = ['linien', 'leer', 'frei'].includes(ins.pattern) ? ` ds-karo-${ins.pattern}` : '';
-      box.innerHTML = `<div class="ds-karo${pattern}" style="height:0.5cm" aria-hidden="true"></div>`;
+      if (ins.content !== undefined) {
+        const clean = safeInsertContent(ins.content);
+        if (!clean) continue;
+        box.dataset.btype = 'insert';
+        box.classList.add('ink-own-block');
+        box.title = 'Selbst eingefügt – Rechtsklick bzw. lange drücken: bearbeiten oder entfernen';
+        box.innerHTML = richHtml({ content: clean });
+      } else {
+        box.dataset.btype = 'karo';
+        const pattern = ['linien', 'leer', 'frei'].includes(ins.pattern) ? ` ds-karo-${ins.pattern}` : '';
+        box.innerHTML = `<div class="ds-karo${pattern}" style="height:0.5cm" aria-hidden="true"></div>`;
+      }
       const after = ins.after ? sheet.querySelector(`[data-bid="${CSS.escape(ins.after)}"]`) : null;
       if (after) after.after(box);
       else if (ins.after === null) root.prepend(box);
@@ -2052,27 +2085,60 @@ const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-r
     const b = topBlocks().find((x) => x.bid === after);
     return { page: 0, x: b?.left ?? 40, y: b ? b.bottom + 2 : 4 };
   };
-  /** Wo ein neuer Text entsteht: als Baustein (Lehrkraft) oder frei unter dem Baustein (eigene Ebene). */
+  /**
+   * Eigene Bausteine (Schritt C, docs/dokumente.md): Was über ⊕ entsteht, kommt als Baustein in die eigene
+   * Ebene (layer.inserts mit content) und schiebt den Rest nach unten. Nicht in Klassenarbeiten
+   * (paper.ownBlocks === false) – dort bleibt es ein freies Objekt.
+   */
+  const ownBlocks = () => !paper.insertBlock && paper.ownBlocks !== false && !!paperView;
+  /** Wo ein neuer Text entsteht: als Baustein (im Dokument oder in der eigenen Ebene) oder frei unter dem Baustein. */
   const newTextPlace = (after) => {
-    if (paper.insertBlock) return { after };
+    if (paper.insertBlock || ownBlocks()) return { after };
     const at = belowBlock(after);
     return { free: { page: at.page, x: at.x, y: at.y, w: Math.min(RICH_WIDTH, Math.max(40, pages[0].w - at.x - 4)) } };
   };
+  function addOwnBlock(after, content) {
+    const clean = safeInsertContent(content);
+    if (!clean) { notice('⚠️ Das lässt sich hier nicht einfügen (nur Text, Tabellen, Formeln und Bilder).'); return; }
+    snapshot();
+    inserts = [...inserts, { id: `ins${uid()}`, after, content: clean }];
+    void runInsert(async () => { changed(); });
+  }
+  const ownInsert = (bid) => inserts.find((i) => i.id === bid && i.content !== undefined) || null;
+  async function editOwnBlock(bid) {
+    const ins = ownInsert(bid);
+    if (!ins) return;
+    const result = await openEditor({ title: 'Eingefügtes bearbeiten', spec: { content: structuredClone(ins.content) }, formula: true }, { bid });
+    if (!result) return;
+    if (!result.content.length) { removeOwnBlock(bid); return; }
+    const clean = safeInsertContent(mergeParagraphs(result.content));
+    if (!clean) { notice('⚠️ Das lässt sich hier nicht einfügen (nur Text, Tabellen, Formeln und Bilder).'); return; }
+    snapshot();
+    inserts = inserts.map((i) => (i.id === bid ? { ...i, content: clean } : i));
+    void runInsert(async () => { changed(); });
+  }
+  function removeOwnBlock(bid) {
+    snapshot();
+    inserts = inserts.filter((i) => i.id !== bid);
+    void runInsert(async () => { changed(); });
+  }
   async function insertContent(after, content) {
     if (!content.length) return;
     if (paper.insertBlock) { await blocksIn(after, mergeParagraphs(content)); return; }
+    if (ownBlocks()) { addOwnBlock(after, mergeParagraphs(content)); return; }
     const at = belowBlock(after);
     addRich(at.page, at.x, at.y, content);
   }
+  const asBlock = () => !!paper.insertBlock || ownBlocks();
   async function insertText(after) {
-    const result = await openEditor({ title: 'Neuer Textblock', spec: { content: [] }, formula: !!paper.insertBlock }, newTextPlace(after));
+    const result = await openEditor({ title: 'Neuer Textblock', spec: { content: [] }, formula: asBlock() }, newTextPlace(after));
     if (result) await insertContent(after, result.content);
   }
   async function insertTable(after) {
     const block = await askTable();
     if (!block) return;
     // Gleich zum Ausfüllen öffnen.
-    const result = await openEditor({ title: 'Neue Tabelle', spec: { content: [block] }, formula: !!paper.insertBlock }, newTextPlace(after));
+    const result = await openEditor({ title: 'Neue Tabelle', spec: { content: [block] }, formula: asBlock() }, newTextPlace(after));
     if (result) await insertContent(after, result.content);
   }
   /** Baustein mit Vorgabe gleich in der Textfläche öffnen (Kasten, Code, Lösung, Spalten) – wie ▤ Tabelle. */
@@ -2092,6 +2158,14 @@ const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-r
       try { image = await imageFromFile(file); } catch (err) { notice(`⚠️ ${err.message}`); return; }
       const stored = await window.appImageStore?.(file);
       await blocksIn(after, [{ type: 'image', src: stored?.src || image.src, width: '12cm', alt: (file.name || '').replace(/\.[^.]+$/, '') }]);
+      return;
+    }
+    if (ownBlocks()) {
+      let image;
+      try { image = await imageFromFile(file); } catch (err) { notice(`⚠️ ${err.message}`); return; }
+      // So breit wie das Bild selbst (96 dpi), höchstens 12 cm.
+      const cm = Math.min(12, Math.max(2, (image.wPx / 96) * 2.54));
+      addOwnBlock(after, [{ type: 'image', src: image.src, width: `${cm.toFixed(1)}cm`, alt: (file.name || '').replace(/\.[^.]+$/, '') }]);
       return;
     }
     await pasteImageFile(file, belowBlock(after));
@@ -4257,6 +4331,10 @@ const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-r
       const hit = itemAt(doc.pages[p.i].items, x, y, 6 / state.zoom);
       if (hit?.type === 'text') { e.preventDefault(); editText(hit.id); }
       else if (hit?.type === 'shape' && isClosed(hit)) { e.preventDefault(); editShapeText(hit.id); }
+      else if (!hit && p.paper) {
+        const own = ownBlockAt(e.clientX, e.clientY);
+        if (own) { e.preventDefault(); void editOwnBlock(own); }
+      }
     });
     // Rechtsklick (auch Ctrl+Klick am Mac) – in jedem Werkzeug ein Menü, nie ein Strich:
     // auf einem Strich oder Textfeld das Menü der Auswahl, sonst Werkzeuge, Rückgängig, Einfügen.
@@ -4292,8 +4370,11 @@ const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-r
       const key = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Strg+';
       // Auf einem Schreibfeld zuerst dessen Muster.
       const field = p.paper ? karoAt(clientX, clientY) : null;
+      const own = p.paper ? ownBlockAt(clientX, clientY) : null;
       const entries = [
         ...(field ? [...fieldEntries(field), '-'] : []),
+        ...(own ? [{ label: '✏️ Eingefügtes bearbeiten', onClick: () => { void editOwnBlock(own); } },
+          { label: '✕ Eingefügtes entfernen', danger: true, onClick: () => removeOwnBlock(own) }, '-'] : []),
         tool('pen', '✏️ Stift'), tool('marker', '🖍 Textmarker'), tool('eraser', '🧽 Radierer'),
         tool('text', 'T Textfeld'), tool('select', '➚ Pfeil'), tool('area', '⬚ Bereich'),
         fingerEntry(),
@@ -4372,7 +4453,7 @@ const INK_CONTROL = '.ink-insert-mark, .ink-karo-handle, .ink-karo-tools, .ink-r
     const karo = Object.entries(karoMap).filter(([bid]) => !insertIds.has(bid))
       .map(([bid, k]) => ({ path: pathOf(bid), ...k })).filter((k) => k.path != null);
     const ins = inserts.map((i) => ({
-      id: i.id, pattern: i.pattern, ...karoMap[i.id],
+      id: i.id, ...(i.content !== undefined ? { content: i.content } : { pattern: i.pattern, ...karoMap[i.id] }),
       after: i.after == null ? null : pathOf(i.after) ?? 'end',
     }));
     return { data: { overlays, karo, inserts: ins }, loose };

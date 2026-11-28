@@ -44,3 +44,18 @@ describe('Druck über den Renderer: applyInkToSpec', () => {
     expect(applyInkToSpec(spec, { overlays: [{ path: '9.9', ...ink }], karo: [{ path: 'x', lines: 3 }] })).toEqual(spec);
   });
 });
+
+describe('Eigene Bausteine (layer.inserts mit content)', () => {
+  it('werden hinter ihrem Baustein eingesetzt, Striche hängen am ersten', async () => {
+    const { applyInkToSpec, safeInsertContent } = await import('../src/ink/ink-print.js');
+    const spec = { content: [{ type: 'section', text: 'A' }, { type: 'karo', lines: 2 }] };
+    const ink = { svg: '<svg/>', x: 1, y: 2, w: 3, h: 4 };
+    const out = applyInkToSpec(spec, { inserts: [{ id: 'i1', after: '0', content: [{ type: 'text', text: 'X' }, { type: 'text', text: 'Y' }] }], overlays: [{ insert: 'i1', ...ink }] });
+    expect(out.content.map((b) => b.text || b.type)).toEqual(['A', 'X', 'Y', 'karo']);
+    expect(out.content[1].ink).toEqual(ink);
+    expect(spec.content.length).toBe(2);
+    expect(safeInsertContent([{ type: 'lab', lab: 'sps' }])).toBe(null);
+    expect(safeInsertContent([{ type: 'text', text: 'a ![b](https://x.de/c.png) d' }])).toEqual([{ type: 'text', text: 'a b d' }]);
+  });
+});
+

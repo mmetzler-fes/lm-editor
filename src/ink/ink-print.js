@@ -53,10 +53,44 @@ function applyField(block, { lines, width, pattern } = {}, fullCm = 16.5) {
 const inkOf = (o) => ({ svg: o.svg, x: o.x, y: o.y, w: o.w, h: o.h });
 
 /**
+ * Was Schüler (und die Lehrkraft in ihrer Ebene) selbst als Baustein einfügen dürfen – Text, Tabellen,
+ * Bilder und Verwandtes; keine Quizze, Labore, Rohdaten. Bilder nur eingebettet (data:image/…), damit der
+ * Renderer nichts von außen oder von der Platte liest.
+ */
+const INSERT_TYPES = new Set(['section', 'task', 'subtask', 'heading', 'text', 'list', 'code', 'image', 'table', 'formula', 'box', 'columns', 'column', 'note', 'karo']);
+const DATA_IMAGE = /^data:image\/(png|jpeg|gif|webp);base64,[A-Za-z0-9+/=]+$/;
+export const MAX_INSERT_CHARS = 3_000_000;
+
+/** Eingefügte Bausteine prüfen: bereinigte Kopie oder null (dann fällt die Einfügung weg). */
+export function safeInsertContent(content) {
+  if (!Array.isArray(content) || !content.length) return null;
+  if (JSON.stringify(content).length > MAX_INSERT_CHARS) return null;
+  let ok = true;
+  // Bild im Text `![alt](src)`: nur eingebettet, sonst bleibt die Beschreibung.
+  const text = (v) => v.replace(/!\[([^\]]*)\]\(([^)\s]*)\)(\{[^}]*\})?/g, (m, alt, src) => (DATA_IMAGE.test(src) ? m : alt));
+  const walk = (v) => {
+    if (typeof v === 'string') return text(v);
+    if (Array.isArray(v)) return v.map(walk);
+    if (!v || typeof v !== 'object') return v;
+    if (typeof v.type === 'string' && !INSERT_TYPES.has(v.type)) ok = false;
+    const out = {};
+    for (const [k, x] of Object.entries(v)) {
+      if (k === 'src' && !(typeof x === 'string' && DATA_IMAGE.test(x))) { ok = false; continue; }
+      if (k === 'ink') continue;
+      out[k] = walk(x);
+    }
+    return out;
+  };
+  const clean = walk(content);
+  return ok ? clean : null;
+}
+
+/**
  * Dokument zum Drucken: `spec` mit den Änderungen aus dem Stift-Editor.
  * `karo`: [{ path, lines?, width?, pattern? }];
  * `overlays`: [{ path | insert, svg, x, y, w, h }];
- * `inserts`: [{ id, after: Pfad | null (an den Anfang) | 'end', pattern?, lines?, width? }].
+ * `inserts`: [{ id, after: Pfad | null (an den Anfang) | 'end', pattern?, lines?, width? }] – Schreibfelder,
+ *   oder mit `content` (DocSpec-Bausteine, safeInsertContent) eingefügte Textblöcke, Tabellen, Bilder.
  * Das Original bleibt unverändert.
  */
 export function applyInkToSpec(spec, { karo = [], overlays = [], inserts = [] } = {}, { fullCm = spec?.orientation === 'landscape' ? 25 : 16.5 } = {}) {
@@ -74,19 +108,27 @@ export function applyInkToSpec(spec, { karo = [], overlays = [], inserts = [] } 
   // Eingefügte Felder: Ziele zuerst bestimmen, dann von hinten einsetzen –
   // so verschieben frühere Einfügungen die späteren nicht.
   const targets = inserts.map((ins, n) => {
-    const block = { type: 'karo', lines: 1 };
-    applyField(block, ins, fullCm);
+    let blocks;
+    if (ins.content !== undefined) {
+      blocks = safeInsertContent(ins.content);
+      if (!blocks) return null;
+    } else {
+      const block = { type: 'karo', lines: 1 };
+      applyField(block, ins, fullCm);
+      blocks = [block];
+    }
+    // Striche auf dem Eingefügten hängen am ersten Baustein (y ab seiner Oberkante).
     const ink = overlays.find((o) => o.insert === ins.id);
-    if (ink) block.ink = inkOf(ink);
-    if (ins.after === null) return { list: out.content, i: -1, n, block };
+    if (ink && blocks[0] && typeof blocks[0] === 'object') blocks[0].ink = inkOf(ink);
+    if (ins.after === null) return { list: out.content, i: -1, n, blocks };
     const at = ins.after === 'end' ? null : locate(out.content, ins.after);
-    return at ? { ...at, n, block } : { list: out.content, i: out.content.length - 1, n, block };
-  });
+    return at ? { ...at, n, blocks } : { list: out.content, i: out.content.length - 1, n, blocks };
+  }).filter(Boolean);
   const byList = new Map();
   for (const t of targets) byList.set(t.list, [...(byList.get(t.list) || []), t]);
   for (const [list, group] of byList) {
     group.sort((a, b) => b.i - a.i || b.n - a.n);
-    for (const t of group) list.splice(t.i + 1, 0, t.block);
+    for (const t of group) list.splice(t.i + 1, 0, ...t.blocks);
   }
   return out;
 }

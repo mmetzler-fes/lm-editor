@@ -1,6 +1,7 @@
 import { strokeOutline, polyline, bounds, moved, MM } from './ink-geometry.js';
 import { shapeCenter, arrowHead, dashArray, shapeTextLayout } from './ink-shapes.js';
 import { isRich, richHtml, richToSvg, PX_PT as RICH_PX_PT } from './ink-rich.js';
+import { safeInsertContent } from './ink-print.js';
 
 // ==================== BESCHRIFTUNG ANZEIGEN ====================
 //
@@ -289,15 +290,22 @@ export async function showInkView(view, stand, { landscape = false } = {}) {
   wrap.appendChild(sheet);
   sheet.appendChild(docEl);
 
-  // Selbst eingefügte Schreibfelder (⊕ im Editor).
+  // Selbst Eingefügtes (⊕ im Editor): Schreibfelder und eigene Bausteine (Text, Tabelle, Bild).
   for (const ins of layer.inserts || []) {
     const box = document.createElement('div');
     box.className = 'ds-b';
     box.dataset.bid = ins.id;
-    box.dataset.btype = 'karo';
     box.dataset.inserted = '1';
-    const pattern = ['linien', 'leer', 'frei'].includes(ins.pattern) ? ` ds-karo-${ins.pattern}` : '';
-    box.innerHTML = `<div class="ds-karo${pattern}" style="height:0.5cm" aria-hidden="true"></div>`;
+    if (ins.content !== undefined) {
+      const clean = safeInsertContent(ins.content);
+      if (!clean) continue;
+      box.dataset.btype = 'insert';
+      box.innerHTML = richHtml({ content: clean });
+    } else {
+      box.dataset.btype = 'karo';
+      const pattern = ['linien', 'leer', 'frei'].includes(ins.pattern) ? ` ds-karo-${ins.pattern}` : '';
+      box.innerHTML = `<div class="ds-karo${pattern}" style="height:0.5cm" aria-hidden="true"></div>`;
+    }
     const after = ins.after ? docEl.querySelector(`[data-bid="${CSS.escape(ins.after)}"]`) : null;
     if (after) after.after(box);
     else if (ins.after === null) docEl.prepend(box);

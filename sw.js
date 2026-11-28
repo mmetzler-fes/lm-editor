@@ -42,6 +42,7 @@ const CORE = [
   'src/editor/pm-link.js',
   'src/ink/template-head.js',
   'src/editor/pm-editor.js',
+  'src/editor/pm-gutter.js',
   'src/editor/pm-ids.js',
   'src/editor/pm-delete.js',
   'src/editor/pm-toolbar.js',

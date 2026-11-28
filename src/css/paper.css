@@ -37,3 +37,14 @@
 .lm-paper .ds-karo { position: relative; }
 /* Auf dem festen Blatt kein Bildlauf in Formeln (overflow-x: auto erzwänge bei 1,15 Zeilenhöhe eine senkrechte Leiste). */
 .lm-paper .docspec .ds-formula { overflow: visible; }
+
+/* Modul-Editor: ⠿ und (+) am Rand des Bausteins unter der Maus (editor/pm-gutter.js) */
+.ds-pm-gutter { position: absolute; z-index: 5; display: flex; align-items: center; gap: 2px; height: 22px; user-select: none; }
+.ds-pm-gutter[hidden], .ds-pm-gline[hidden] { display: none; }
+.ds-pm-grip { width: 18px; height: 22px; line-height: 22px; text-align: center; color: #94a3b8; cursor: grab; border-radius: 4px; font-size: 14px; }
+.ds-pm-grip:hover { background: #e2e8f0; color: #334155; }
+.ds-pm-grip:active { cursor: grabbing; }
+.ds-pm-gplus { width: 22px; height: 22px; padding: 0; border: 1px solid #94a3b8; border-radius: 50%; background: #fff; color: #2563eb; font: 600 16px/20px 'LM Sans', Arial, sans-serif; cursor: pointer; }
+.ds-pm-gplus:hover { background: #2563eb; border-color: #2563eb; color: #fff; }
+.ds-pm-gline { position: absolute; z-index: 4; height: 0; border-top: 2px solid #2563eb; pointer-events: none; margin-top: -1px; }
+@media print { .ds-pm-gutter, .ds-pm-gline { display: none !important; } }

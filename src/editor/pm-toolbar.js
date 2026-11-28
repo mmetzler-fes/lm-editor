@@ -8,6 +8,7 @@ import { CODE_SIZES, FONT_SIZES } from '../doc/docspec.js';
 import { groupRow, ungroup } from '../doc/image-group.js';
 import { htmlToDocSpec, specToEditorHtml } from '../doc/docspec-html.js';
 import { escapeAttr, showContextMenu } from '../util/dom.js';
+import { mountBlockGutter } from './pm-gutter.js';
 import { openParagraphDialog } from './paragraph-dialog.js';
 import { openSpecialCharDialog } from './special-chars.js';
 import { openLinkDialog } from './link-dialog.js';
@@ -242,7 +243,7 @@ export function mountTiptapSurface(box, host) {
       <button type="button" class="rt-btn" data-do="redo" title="Wiederholen (Strg+Y)">↷</button>
     </div>
     <div class="ds-surface ds-pm-surface worksheet-content lm-paper"></div>
-    <p class="hint">${host.hint ?? 'Neuer Editor (Tiptap). '}➕ oder Rechtsklick fügt ein. Bausteine (grau) anklicken zum Verschieben, Doppelklick zum Bearbeiten; Strg+Z macht auch das rückgängig.</p>`;
+    <p class="hint">${host.hint ?? 'Neuer Editor (Tiptap). '}➕, Rechtsklick oder (+) links am Baustein fügt ein, ⠿ zieht ihn woandershin. Bausteine (grau) anklicken zum Verschieben, Doppelklick zum Bearbeiten; Strg+Z macht auch das rückgängig.</p>`;
   const toolbar = box.querySelector('.ds-pm-toolbar');
   const select = toolbar.querySelector('.ds-vblock');
   const refresh = () => {
@@ -264,6 +265,12 @@ export function mountTiptapSurface(box, host) {
     penSelects: host.penSelects,
   });
   pm.el = el;
+  const insertMenu = () => [
+    ...(pm.editor.state.selection.$from.parent.isTextblock && host.imageFromFile ? [{ label: '🖼 Bild im Text …', onClick: insertInlineImage }, '-'] : []),
+    ...host.insertEntries(pm),
+  ];
+  // (+) und ⠿ am Rand jedes Bausteins (wie im Stift-Editor).
+  mountBlockGutter(el, pm, (x, y) => showContextMenu(x, y, host.insertEntries(pm)));
 
   /**
    * ⚙-Dialog des alten Editors: arbeitet auf einer Kopie der Tabelle im Dokument (unsichtbar);
@@ -472,10 +479,7 @@ export function mountTiptapSurface(box, host) {
       showContextMenu(r.left, r.bottom + 4, menus[b.dataset.dd]());
     } else if (b.classList.contains('ds-pm-plus')) {
       const r = b.getBoundingClientRect();
-      showContextMenu(r.left, r.bottom + 4, [
-        ...(pm.editor.state.selection.$from.parent.isTextblock && host.imageFromFile ? [{ label: '🖼 Bild im Text …', onClick: insertInlineImage }, '-'] : []),
-        ...host.insertEntries(pm),
-      ]);
+      showContextMenu(r.left, r.bottom + 4, insertMenu());
     }
   });
   /** Bilder nebeneinander in einen Zeichenrahmen: Seitenverhältnisse erst messen. */

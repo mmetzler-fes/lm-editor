@@ -831,6 +831,8 @@ const partialCells = (sel) => sel instanceof CellSelection && !(sel.isRowSelecti
 
 export function createPmEditor(element, spec, host = {}) {
   let lastCopy = null;
+  // Stelle vom (+) am Rand (pm-gutter.js): gilt für das nächste Einfügen, solange Dokument und Auswahl gleich bleiben.
+  let insertTarget = null;
   const nodeViews = Object.fromEntries(ATOMS.map((t) => [t, atomView(host)]));
   nodeViews.inlineMath = mathView;
   nodeViews.inlineImage = inlineImageView(host);
@@ -929,7 +931,7 @@ export function createPmEditor(element, spec, host = {}) {
       },
     },
     onUpdate: ({ editor: e }) => host.onChange?.(pmToSpec(e.getJSON())),
-    onSelectionUpdate: () => host.onSelection?.(),
+    onSelectionUpdate: () => { insertTarget = null; host.onSelection?.(); },
   });
 
   function insertAtSelection(blocks) {
@@ -938,6 +940,15 @@ export function createPmEditor(element, spec, host = {}) {
     let at = cur ? cur.pos + cur.node.nodeSize : 0;
     const nodes = specToPm({ content: blocks }).content.map((j) => PmNode.fromJSON(state.schema, j));
     const tr = state.tr;
+    const target = insertTarget && insertTarget.doc === state.doc ? insertTarget.pos : null;
+    insertTarget = null;
+    if (target !== null) {
+      tr.insert(target, nodes);
+      tr.setSelection(nodes[0].isAtom ? NodeSelection.create(tr.doc, target) : TextSelection.near(tr.doc.resolve(target + 1)));
+      view.dispatch(tr.scrollIntoView());
+      view.focus();
+      return;
+    }
     // Schreibmarke mitten in einem Absatz oder Code-Block: dort teilen – obere Hälfte, das Neue, untere Hälfte.
     // Die untere Hälfte bekommt eine eigene ID (missingIds vergibt sie).
     const sel = state.selection;
@@ -1132,8 +1143,10 @@ export function createPmEditor(element, spec, host = {}) {
       for (let d = $from.depth; d > 0; d--) if (names.includes($from.node(d).type.name)) return { pos: $from.before(d), node: $from.node(d) };
       return null;
     },
-    /** Bausteine hinter dem Block an der Auswahl einfügen; der erste wird gewählt. */
+    /** Bausteine hinter dem Block an der Auswahl einfügen (bzw. an der Stelle von setInsertTarget); der erste wird gewählt. */
     insertBlocks: insertAtSelection,
+    /** Nächstes Einfügen an `pos` (oberste Ebene, zwischen zwei Bausteinen) – bis sich Auswahl oder Dokument ändern. */
+    setInsertTarget(pos) { insertTarget = { pos, doc: editor.state.doc }; },
     /** Ausrichtung: in einer Tabelle für die Zelle, sonst für die Absätze. */
     setAlign(dir) {
       if (eachCell(() => ({ align: dir === 'justify' ? 'left' : dir }))) return;
